@@ -58,13 +58,12 @@
   <div id="root"></div>
 
   <script>
-const {
-  useState,
-  useEffect,
-  useRef,
-  useCallback,
-  useMemo
-} = React;
+const _React = React,
+  useState = _React.useState,
+  useEffect = _React.useEffect,
+  useRef = _React.useRef,
+  useCallback = _React.useCallback,
+  useMemo = _React.useMemo;
 const MEMBERS = [{
   id: "veena",
   name: "Veena"
@@ -119,8 +118,24 @@ const PRACTICE_COLOR = {
   rusty: "var(--rusty)",
   learn: "var(--learn)"
 };
+const EQUIPMENT_CATEGORIES = [{
+  id: "pa",
+  label: "PA & sound"
+}, {
+  id: "instruments",
+  label: "Instruments"
+}, {
+  id: "lighting",
+  label: "Lighting & FX"
+}, {
+  id: "cables",
+  label: "Cables & misc"
+}, {
+  id: "other",
+  label: "Other"
+}];
 
-// ---- Schedule seed
+// ---- Schedule seed (events) — UNCHANGED for migration stability
 const SEED_EVENTS = [{
   date: "2025-10-09",
   startTime: "18:00",
@@ -129,7 +144,7 @@ const SEED_EVENTS = [{
   venueType: "in-person-studio",
   location: "Earlsfield",
   bookingOwner: "",
-  bookedAndPaid: false,
+  confirmed: false,
   status: "confirmed",
   title: "",
   comments: "Could do remote instead from 7pm? JRO could do remote but not live."
@@ -141,7 +156,7 @@ const SEED_EVENTS = [{
   venueType: "in-person-studio",
   location: "Earlsfield",
   bookingOwner: "mike",
-  bookedAndPaid: true,
+  confirmed: true,
   status: "confirmed",
   title: "",
   comments: "Booked 6-10pm."
@@ -153,7 +168,7 @@ const SEED_EVENTS = [{
   venueType: "in-person-studio",
   location: "Earlsfield",
   bookingOwner: "veena",
-  bookedAndPaid: true,
+  confirmed: true,
   status: "confirmed",
   title: "",
   comments: "Booked."
@@ -165,7 +180,7 @@ const SEED_EVENTS = [{
   venueType: "jamkazam",
   location: "Jamkazam",
   bookingOwner: "",
-  bookedAndPaid: false,
+  confirmed: false,
   status: "proposed",
   title: "Backup remote practice",
   comments: "Backup remote practice if needed."
@@ -177,7 +192,7 @@ const SEED_EVENTS = [{
   venueType: "in-person-studio",
   location: "Jolly Gardeners, Earlsfield",
   bookingOwner: "veena",
-  bookedAndPaid: true,
+  confirmed: true,
   status: "confirmed",
   title: "50th Birthday Gig",
   comments: "90 min rehearsal 6-7:30pm, then 50th Birthday gig at the Jolly Gardeners."
@@ -189,7 +204,7 @@ const SEED_EVENTS = [{
   venueType: "in-person-studio",
   location: "Earlsfield",
   bookingOwner: "",
-  bookedAndPaid: false,
+  confirmed: false,
   status: "proposed",
   title: "",
   comments: "4-7pm or 3-6pm please. Out that evening."
@@ -201,7 +216,7 @@ const SEED_EVENTS = [{
   venueType: "in-person-studio",
   location: "",
   bookingOwner: "",
-  bookedAndPaid: false,
+  confirmed: false,
   status: "proposed",
   title: "",
   comments: "JRO: have a work thing in diary but can slip out if we need this slot. MG: I can no longer make this date (in Berlin)."
@@ -213,7 +228,7 @@ const SEED_EVENTS = [{
   venueType: "in-person-studio",
   location: "",
   bookingOwner: "",
-  bookedAndPaid: false,
+  confirmed: false,
   status: "proposed",
   title: "",
   comments: ""
@@ -225,7 +240,7 @@ const SEED_EVENTS = [{
   venueType: "in-person-studio",
   location: "Earlsfield",
   bookingOwner: "",
-  bookedAndPaid: false,
+  confirmed: false,
   status: "proposed",
   title: "Long sesh",
   comments: "Can do the full long sesh if needed (V)."
@@ -237,7 +252,7 @@ const SEED_EVENTS = [{
   venueType: "in-person-studio",
   location: "Earlsfield",
   bookingOwner: "",
-  bookedAndPaid: false,
+  confirmed: false,
   status: "proposed",
   title: "Dress rehearsal",
   comments: "Night before dress rehearsal. In the office so will arrive after 6."
@@ -249,26 +264,23 @@ const SEED_EVENTS = [{
   venueType: "in-person-studio",
   location: "",
   bookingOwner: "",
-  bookedAndPaid: false,
+  confirmed: false,
   status: "confirmed",
   title: "PTA Gig",
   comments: ""
 }];
 
-// ---- Songs seed: [title, artist, status, jamtrax, proposer, lessonUrl, comments]
-// (Unchanged from v3 — keeping identical title+artist so songIds stay stable across migrations.)
+// ---- Songs seed (unchanged)
 const SEED_SONGS = [["Creep", "Kelly Clarkson cover (in D)", "repertoire", true, "Sourberry", "", ""], ["Dog Days Are Over", "Florence & The Machine", "repertoire", true, "", "", ""], ["Groove Is In The Heart", "Deee-Lite", "repertoire", false, "Sourberry", "", ""], ["Livin' On A Prayer", "Bon Jovi", "repertoire", true, "", "", ""], ["Mr. Brightside", "Killers, The", "repertoire", true, "Sourberry", "", ""], ["Nothing Compares 2 U", "Sinead O'Connor", "repertoire", true, "", "", ""], ["Proud Mary", "Tina Turner", "repertoire", true, "", "", ""], ["Rolling In The Deep", "Adele", "repertoire", true, "Sourberry", "", ""], ["Sex on Fire", "Kings of Leon", "repertoire", true, "Veca", "", ""], ["Son Of A Preacher Man", "Dusty Springfield", "repertoire", true, "Sourberry", "", ""], ["Sweet Child O' Mine", "Guns N Roses", "repertoire", true, "Sourberry", "", ""], ["Titanium", "David Guetta", "repertoire", false, "Sourberry", "", ""], ["Valerie", "Amy Winehouse", "repertoire", true, "Sourberry", "", ""], ["Zombie", "Cranberries, The", "repertoire", true, "", "", ""], ["Glorybox", "Portishead", "repertoire", true, "", "", ""], ["Snowman", "Sia", "repertoire", false, "", "", ""], ["Rockin' Around The Christmas Tree", "Brenda Lee", "repertoire", false, "", "", ""], ["I've Had The Time Of My Life", "Bill Medley & Jennifer Warnes", "shortlist", false, "", "https://www.youtube.com/watch?v=4b5FAOdUg4o", ""], ["I Wanna Dance With Somebody", "Whitney Houston", "shortlist", false, "", "https://www.youtube.com/watch?v=ZAB1h_2Uo1M", ""], ["If I Could Turn Back Time", "Cher", "shortlist", false, "", "https://www.youtube.com/watch?v=BVFQDXo-mvs", ""], ["Standing In The Way Of Control", "Gossip", "shortlist", false, "Sourberry", "", ""], ["Like A Virgin", "Madonna", "shortlist", false, "", "https://www.youtube.com/watch?v=cuio-0WJmMY", ""], ["Uptown Funk", "Mark Ronson ft. Bruno Mars", "shortlist", false, "", "https://www.youtube.com/watch?v=UiJbXW3ehjo", ""], ["Summer of '69", "Bryan Adams", "shortlist", false, "Sourberry", "", ""], ["Seven Nation Army / Sweet Dreams (Mashup)", "", "shortlist", false, "", "", ""], ["Turn The Lights Down Low", "Lauryn Hill & Bob Marley", "shortlist", false, "", "", ""], ["Sway", "Bic Runga", "shortlist", false, "", "", ""], ["A Little Less Conversation (JXL Edit)", "Elvis Presley, JXL", "suggested", false, "Sourberry", "", ""], ["All About That Bass", "Meghan Trainor", "suggested", false, "Sourberry", "", ""], ["Alone", "Heart", "suggested", false, "", "https://www.youtube.com/watch?v=z9aBFPfk6zw", ""], ["Always On The Run", "Lenny Kravitz", "suggested", false, "", "https://www.youtube.com/watch?v=FnzgqGsLcsk", ""], ["American Boy", "Estelle", "suggested", false, "Sourberry", "", ""], ["Are You Gonna Go My Way", "Lenny Kravitz", "suggested", false, "Sourberry", "", ""], ["Basket Case", "Green Day", "suggested", false, "Sourberry", "https://www.youtube.com/watch?v=Y17wx3K2gu0", ""], ["Bette Davis Eyes", "Kim Carnes", "suggested", false, "", "https://www.youtube.com/watch?v=RwcqS-7uINs", ""], ["Billie Jean", "Michael Jackson", "suggested", false, "Sourberry", "https://www.youtube.com/watch?v=1QvAYSNpz8I", ""], ["Black Magic", "Little Mix", "suggested", false, "Sourberry", "", ""], ["Black Or White", "Michael Jackson", "suggested", false, "", "https://www.youtube.com/watch?v=txUVEQgwvC0", ""], ["Bonfire Heart", "James Blunt", "suggested", false, "Sourberry", "", ""], ["Bring Me To Life", "Evanescence", "suggested", false, "", "https://www.youtube.com/watch?v=dC5L1gx1YI4", ""], ["Broken Wings", "Mr. Mister", "suggested", false, "", "https://www.youtube.com/watch?v=nbbw3oHyOg0", ""], ["Brown Eyed Girl", "Van Morrison", "suggested", false, "Sourberry", "", ""], ["Buck Rogers", "Feeder", "suggested", false, "Sourberry", "", ""], ["C'est La Vie", "B*Witched", "suggested", false, "Sourberry", "", ""], ["Cake By The Ocean", "DNCE", "suggested", false, "Sourberry", "", ""], ["Can't Feel My Face", "The Weeknd", "suggested", false, "Sourberry", "", ""], ["Chasing Cars", "Snow Patrol", "suggested", false, "Sourberry", "", ""], ["Counting Stars", "OneRepublic", "suggested", false, "Sourberry", "", ""], ["Dakota", "Stereophonics", "suggested", false, "Sourberry", "", ""], ["Danger Zone", "Kenny Loggins", "suggested", false, "", "https://www.youtube.com/watch?v=-1emuTeIlKs", ""], ["Dirty Diana", "Michael Jackson", "suggested", false, "", "https://www.youtube.com/watch?v=-JUscJVq1gc", ""], ["Don't Look Back In Anger", "Oasis", "suggested", false, "", "https://www.youtube.com/watch?v=USkBvDIGsuk", ""], ["Don't Speak", "No Doubt", "suggested", false, "", "", ""], ["Don't Stop Believing", "Journey", "suggested", false, "", "https://www.youtube.com/watch?v=UvTgfpJUxig", ""], ["Do You Love Me", "Contours, The", "suggested", false, "Sourberry", "", ""], ["Disco 2000", "Pulp", "suggested", false, "Sourberry", "", ""], ["Easy", "Faith No More", "suggested", false, "", "", ""], ["Fire", "Kasabian", "suggested", false, "Sourberry", "", ""], ["Footloose", "Kenny Loggins", "suggested", false, "Sourberry", "https://www.youtube.com/watch?v=Hht8FmassjQ", ""], ["Get Lucky", "Daft Punk", "suggested", false, "Sourberry", "https://www.youtube.com/watch?v=bENUhLskboo", ""], ["Girls Just Want To Have Fun", "Cyndi Lauper", "suggested", false, "", "https://www.youtube.com/watch?v=YsEEhKhITmU", ""], ["Ghostbusters", "Ray Parker Jr.", "suggested", false, "", "https://www.youtube.com/watch?v=E2Wj94F2ckQ", ""], ["Good Riddance (Time Of Your Life)", "Green Day", "suggested", false, "Sourberry", "", ""], ["Go Your Own Way", "Fleetwood Mac", "suggested", false, "Sourberry", "", ""], ["Green Light", "Lorde", "suggested", false, "Sourberry", "", ""], ["Happy", "Pharrell Williams", "suggested", false, "Sourberry", "", ""], ["Hard To Handle", "Black Crowes, The", "suggested", false, "Sourberry", "", ""], ["Hey Ya!", "Outkast", "suggested", false, "Sourberry", "", ""], ["Heaven Is A Place On Earth", "Belinda Carlisle", "suggested", false, "", "https://www.youtube.com/watch?v=RUByf45A1Oc", ""], ["Hungry Eyes", "Eric Carmen", "suggested", false, "Omar", "", ""], ["Hysteria", "Def Leppard", "suggested", false, "", "https://www.youtube.com/watch?v=pmqr9l-LOp4", ""], ["Hysteria", "Muse", "suggested", false, "", "", ""], ["I Love Rock and Roll", "Joan Jett", "suggested", false, "Sourberry", "https://www.youtube.com/watch?v=uUQxZKzjSoc", ""], ["I'm A Believer", "Monkees, The", "suggested", false, "Sourberry", "", ""], ["I'm Gonna Be (500 Miles)", "Proclaimers, The", "suggested", false, "Sourberry", "", ""], ["It Ain't Over Til It's Over", "Lenny Kravitz", "suggested", false, "", "", ""], ["Johnny B. Goode", "Chuck Berry", "suggested", false, "", "https://www.youtube.com/watch?v=M8c4LzrEudk", ""], ["Jumping Jack Flash", "Rolling Stones (covered by Tina Turner)", "suggested", false, "", "", ""], ["Killing In The Name", "Rage Against The Machine", "suggested", false, "", "https://www.youtube.com/watch?v=fxUEgJ2kGmo", ""], ["Lithium", "Nirvana", "suggested", false, "Sourberry", "", ""], ["Lonely Eyes", "Chris Young", "suggested", false, "Sourberry", "", ""], ["Lovely Day", "Bill Withers", "suggested", false, "", "", ""], ["Love Shack", "B-52's, The", "suggested", false, "Sourberry", "", ""], ["Mercy", "Duffy", "suggested", true, "", "", ""], ["Never Tear Us Apart", "INXS", "suggested", false, "", "", ""], ["Nothing's Gonna Stop Us Now", "Starship", "suggested", false, "Omar", "https://www.youtube.com/watch?v=tgUvXyf2-qE", ""], ["Nutbush City Limits", "Tina Turner", "suggested", false, "", "https://www.youtube.com/watch?v=DbivX78Degg", ""], ["One", "U2", "suggested", false, "", "", ""], ["Praise You", "Fatboy Slim", "suggested", false, "", "", ""], ["Purple Rain", "Prince", "suggested", false, "Sourberry", "", ""], ["Radioactive", "Imagine Dragons", "suggested", false, "Sourberry", "", ""], ["Raise Your Glass", "Pink", "suggested", false, "Sourberry", "", ""], ["Rapper's Delight / Good Times", "Sugarhill Gang / Chic", "suggested", false, "Sourberry", "", ""], ["Roar", "Katy Perry", "suggested", false, "Sourberry", "", ""], ["Royals", "Lorde", "suggested", false, "Sourberry", "", ""], ["Seven Nation Army", "White Stripes, The", "suggested", false, "Sourberry", "https://www.youtube.com/watch?v=YmVPp-DmRSw", ""], ["Shout Out To My Ex", "Little Mix", "suggested", false, "Sourberry", "", ""], ["Shut Up And Dance", "Walk The Moon", "suggested", false, "Sourberry", "", ""], ["Sing It Back", "Moloko", "suggested", false, "", "", ""], ["Sk8er Boi", "Avril Lavigne", "suggested", false, "Sourberry", "", ""], ["Smells Like Teen Spirit", "Nirvana", "suggested", false, "Sourberry", "https://www.youtube.com/watch?v=Pl-nk1ToL9M", ""], ["Song 2", "Blur", "suggested", false, "Sourberry", "https://www.youtube.com/watch?v=kiPEZqVjaq8", ""], ["St. Elmo's Fire", "John Parr", "suggested", false, "", "https://www.youtube.com/watch?v=ELg94joX6ZQ", ""], ["Steal My Girl", "One Direction", "suggested", false, "Sourberry", "", ""], ["Take Me To The River", "Commitments, The", "suggested", false, "", "", ""], ["Teenage Dirtbag", "Wheatus", "suggested", false, "Sourberry", "", ""], ["Teenage Kicks", "Undertones, The", "suggested", false, "Sourberry", "", ""], ["The Best", "Tina Turner", "suggested", false, "", "https://www.youtube.com/watch?v=Fs-atrEZ7Wo", ""], ["The Final Countdown", "Europe", "suggested", false, "", "https://www.youtube.com/watch?v=OgwXfrMEDpQ", ""], ["The Power Of Love", "Huey Lewis & The News", "suggested", false, "", "https://www.youtube.com/watch?v=1Xtm0L6JyNw", ""], ["Thinking Out Loud", "Ed Sheeran", "suggested", false, "Sourberry", "", ""], ["Thriller", "Michael Jackson", "suggested", false, "", "https://www.youtube.com/watch?v=uJxIFLpp9Cs", ""], ["Thunderstruck", "AC/DC", "suggested", false, "", "https://www.youtube.com/watch?v=7XYxzcI_c5Q", ""], ["Time After Time", "Cyndi Lauper", "suggested", false, "Sourberry", "https://www.youtube.com/watch?v=RinUIzeg1JQ", ""], ["Torn", "Natalie Imbruglia", "suggested", false, "", "", ""], ["Twist and Shout", "Beatles, The", "suggested", false, "Sourberry", "", ""], ["Use Somebody", "Kings Of Leon", "suggested", false, "Sourberry", "", ""], ["Wake Me Up", "Avicii", "suggested", false, "Sourberry", "", ""], ["Walk Like An Egyptian", "Bangles, The", "suggested", false, "Sourberry", "", ""], ["Walk This Way", "Run DMC", "suggested", false, "Sourberry", "", ""], ["Walking On Sunshine", "Katrina and the Waves", "suggested", false, "Sourberry", "https://www.youtube.com/watch?v=RmaXkZE9R2c", ""], ["Wanted Dead or Alive", "Bon Jovi", "suggested", false, "", "", ""], ["We Don't Need Another Hero", "Tina Turner", "suggested", false, "", "https://www.youtube.com/watch?v=XkwueU2KUbo", ""], ["What's Up", "4 Non Blondes", "suggested", false, "Sourberry", "", ""], ["Weight Of Love", "Black Keys, The", "suggested", false, "James", "", ""], ["Where Is My Mind?", "The Pixies", "suggested", false, "", "", ""], ["Where The Streets Have No Name", "U2", "suggested", false, "Sourberry", "", ""], ["Wherever You Will Go", "Calling, The", "suggested", false, "Sourberry", "", ""], ["White Wedding", "Billy Idol", "suggested", false, "Sourberry", "", ""], ["With Or Without You", "U2", "suggested", false, "Sourberry", "", ""]];
 const slug = s => (s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 const songId = (title, artist) => `s_${slug(title)}__${slug(artist)}`;
-
-// ---- Setlist seeds — using exact title+artist from SEED_SONGS so songIds match
 const SEED_SETLISTS = [{
   name: "Pre-Veena set — Set 1",
   notes: "Imported from spreadsheet. Rename or delete if no longer relevant.",
   songRefs: [["Groove Is In The Heart", "Deee-Lite"], ["Rolling In The Deep", "Adele"], ["Zombie", "Cranberries, The"], ["Titanium", "David Guetta"], ["Nothing Compares 2 U", "Sinead O'Connor"], ["Shut Up And Dance", "Walk The Moon"], ["Livin' On A Prayer", "Bon Jovi"], ["Sweet Child O' Mine", "Guns N Roses"], ["Mr. Brightside", "Killers, The"]]
 }, {
   name: "Pre-Veena set — Set 2",
-  notes: "Imported from spreadsheet. Rename or delete if no longer relevant.",
+  notes: "Imported from spreadsheet.",
   songRefs: [["Son Of A Preacher Man", "Dusty Springfield"], ["Valerie", "Amy Winehouse"], ["Glorybox", "Portishead"], ["Creep", "Kelly Clarkson cover (in D)"], ["Proud Mary", "Tina Turner"], ["Dog Days Are Over", "Florence & The Machine"], ["Teenage Dirtbag", "Wheatus"], ["Sex on Fire", "Kings of Leon"]]
 }, {
   name: "Christmas 2025 — Set 1",
@@ -280,8 +292,146 @@ const SEED_SETLISTS = [{
   songRefs: [["Son Of A Preacher Man", "Dusty Springfield"], ["Valerie", "Amy Winehouse"], ["Glorybox", "Portishead"], ["Creep", "Kelly Clarkson cover (in D)"], ["Snowman", "Sia"], ["Teenage Dirtbag", "Wheatus"], ["Sex on Fire", "Kings of Leon"]]
 }, {
   name: "Short set / Encore",
-  notes: "Imported from spreadsheet. Possibly an encore or backup short set.",
+  notes: "Imported from spreadsheet.",
   songRefs: [["Mr. Brightside", "Killers, The"], ["Proud Mary", "Tina Turner"], ["Shut Up And Dance", "Walk The Moon"], ["Summer of '69", "Bryan Adams"]]
+}];
+
+// ---- Equipment seed (from spreadsheet)
+const SEED_EQUIPMENT = [{
+  name: "PA speakers (2x JBL IRX112BT)",
+  category: "pa",
+  ownerType: "band",
+  ownerMember: "",
+  heldBy: "James",
+  quantity: 2,
+  status: "available",
+  notes: "New JBLs. Old ones stolen from Matt's."
+}, {
+  name: "PA speaker stands (2x)",
+  category: "pa",
+  ownerType: "band",
+  ownerMember: "",
+  heldBy: "James",
+  quantity: 2,
+  status: "available",
+  notes: ""
+}, {
+  name: "Sub-woofer",
+  category: "pa",
+  ownerType: "band",
+  ownerMember: "",
+  heldBy: "James",
+  quantity: 1,
+  status: "available",
+  notes: ""
+}, {
+  name: "Microphones (Shure)",
+  category: "pa",
+  ownerType: "band",
+  ownerMember: "",
+  heldBy: "James",
+  quantity: 0,
+  status: "available",
+  notes: "Recently ordered to James's."
+}, {
+  name: "Microphone stands",
+  category: "pa",
+  ownerType: "band",
+  ownerMember: "",
+  heldBy: "James",
+  quantity: 0,
+  status: "available",
+  notes: ""
+}, {
+  name: "Mixer",
+  category: "pa",
+  ownerType: "band",
+  ownerMember: "",
+  heldBy: "Omar",
+  quantity: 1,
+  status: "available",
+  notes: "In Omar's attic."
+}, {
+  name: "Cable bags (3x)",
+  category: "cables",
+  ownerType: "band",
+  ownerMember: "",
+  heldBy: "Mike",
+  quantity: 3,
+  status: "partial",
+  notes: "Have green and orange/white bags. Blue bag location unknown."
+}, {
+  name: "Bass guitar",
+  category: "instruments",
+  ownerType: "member",
+  ownerMember: "mike",
+  heldBy: "Mike",
+  quantity: 1,
+  status: "available",
+  notes: ""
+}, {
+  name: "Bass amp / speaker",
+  category: "instruments",
+  ownerType: "member",
+  ownerMember: "mike",
+  heldBy: "—",
+  quantity: 0,
+  status: "missing",
+  notes: "Borrowed Jeff's Marshall amp for Nov 6th gig."
+}, {
+  name: "Bass pedals",
+  category: "instruments",
+  ownerType: "member",
+  ownerMember: "mike",
+  heldBy: "Mike",
+  quantity: 1,
+  status: "available",
+  notes: ""
+}, {
+  name: "Acoustic guitar (Breedlove)",
+  category: "instruments",
+  ownerType: "member",
+  ownerMember: "mike",
+  heldBy: "Mike",
+  quantity: 1,
+  status: "available",
+  notes: ""
+}, {
+  name: "Lights",
+  category: "lighting",
+  ownerType: "band",
+  ownerMember: "",
+  heldBy: "Mike",
+  quantity: 2,
+  status: "partial",
+  notes: "Mike has 2. Other ~3 missing from Matt's."
+}, {
+  name: "Bubble machine",
+  category: "lighting",
+  ownerType: "band",
+  ownerMember: "",
+  heldBy: "—",
+  quantity: 0,
+  status: "missing",
+  notes: "Couldn't locate at Matt's."
+}, {
+  name: "Smoke machine",
+  category: "lighting",
+  ownerType: "band",
+  ownerMember: "",
+  heldBy: "—",
+  quantity: 0,
+  status: "missing",
+  notes: "Couldn't locate at Matt's."
+}, {
+  name: "Light stand",
+  category: "lighting",
+  ownerType: "band",
+  ownerMember: "",
+  heldBy: "—",
+  quantity: 0,
+  status: "missing",
+  notes: "Couldn't locate at Matt's. Not essential — lights can sit on floor."
 }];
 const buildEventsSeed = () => {
   const events = {};
@@ -298,7 +448,13 @@ const buildEventsSeed = () => {
 const buildSongsSeed = () => {
   const songs = {};
   SEED_SONGS.forEach((_ref, i) => {
-    let [title, artist, status, jamtrax, proposer, lessonUrl, comments] = _ref;
+    let title = _ref[0],
+      artist = _ref[1],
+      status = _ref[2],
+      jamtrax = _ref[3],
+      proposer = _ref[4],
+      lessonUrl = _ref[5],
+      comments = _ref[6];
     const id = songId(title, artist);
     songs[id] = {
       title,
@@ -323,7 +479,8 @@ const buildSetlistsSeed = () => {
       name: sl.name,
       notes: sl.notes,
       songIds: sl.songRefs.map(_ref2 => {
-        let [t, a] = _ref2;
+        let t = _ref2[0],
+          a = _ref2[1];
         return songId(t, a);
       }),
       gigEventId: null,
@@ -332,26 +489,36 @@ const buildSetlistsSeed = () => {
   });
   return setlists;
 };
+const buildEquipmentSeed = () => {
+  const eq = {};
+  SEED_EQUIPMENT.forEach((e, i) => {
+    const id = `seed_eq_${i}_${Math.random().toString(36).slice(2, 7)}`;
+    eq[id] = {
+      ...e,
+      createdAt: Date.now() + i
+    };
+  });
+  return eq;
+};
 const buildSeedState = () => ({
-  schemaVersion: 4,
+  schemaVersion: 5,
   events: buildEventsSeed(),
   songs: buildSongsSeed(),
   setlists: buildSetlistsSeed(),
-  polls: {}
+  polls: {},
+  equipment: buildEquipmentSeed(),
+  wishlist: {}
 });
 
 // ---- Migration
 const migrate = data => {
   let migrated = false;
   const sv = data.schemaVersion || 1;
-
-  // v1 → v2: add songs
   if (sv < 2 || !data.songs) {
     data.songs = data.songs || buildSongsSeed();
     data.schemaVersion = 2;
     migrated = true;
   }
-  // v2 → v3: re-map song statuses, add practice, add setlists, add venueType
   if (data.schemaVersion < 3) {
     Object.keys(data.songs || {}).forEach(id => {
       const s = data.songs[id];
@@ -368,19 +535,29 @@ const migrate = data => {
     data.schemaVersion = 3;
     migrated = true;
   }
-  // v3 → v4: rename venue types, seed setlists if empty, add polls
   if (data.schemaVersion < 4) {
     Object.keys(data.events || {}).forEach(id => {
       const e = data.events[id];
       if (e.venueType === "in-person") e.venueType = "in-person-studio";else if (e.venueType === "virtual") e.venueType = "jamkazam";
       if (!e.venueType) e.venueType = "in-person-studio";
     });
-    // Seed historical setlists ONLY if user hasn't created any yet
-    if (!data.setlists || Object.keys(data.setlists).length === 0) {
-      data.setlists = buildSetlistsSeed();
-    }
+    if (!data.setlists || Object.keys(data.setlists).length === 0) data.setlists = buildSetlistsSeed();
     data.polls = data.polls || {};
     data.schemaVersion = 4;
+    migrated = true;
+  }
+  // v4 → v5: rename bookedAndPaid → confirmed, add equipment + wishlist
+  if (data.schemaVersion < 5) {
+    Object.keys(data.events || {}).forEach(id => {
+      const e = data.events[id];
+      if ("bookedAndPaid" in e) {
+        e.confirmed = !!e.bookedAndPaid;
+        delete e.bookedAndPaid;
+      }
+    });
+    if (!data.equipment || Object.keys(data.equipment).length === 0) data.equipment = buildEquipmentSeed();
+    data.wishlist = data.wishlist || {};
+    data.schemaVersion = 5;
     migrated = true;
   }
   return migrated;
@@ -442,11 +619,18 @@ const jbUpdateBin = async (binId, data) => {
 const fmtDate = iso => {
   if (!iso) return "";
   const d = new Date(iso + "T00:00:00");
-  return d.toLocaleDateString(undefined, {
+  const thisYear = new Date().getFullYear();
+  const opts = d.getFullYear() === thisYear ? {
     weekday: "short",
     day: "numeric",
     month: "short"
-  });
+  } : {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric"
+  };
+  return d.toLocaleDateString(undefined, opts);
 };
 const fmtDateLong = iso => {
   if (!iso) return "";
@@ -458,6 +642,7 @@ const fmtDateLong = iso => {
     year: "numeric"
   });
 };
+const yearOf = iso => iso ? Number(iso.slice(0, 4)) : null;
 const todayISO = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -465,31 +650,43 @@ const todayISO = () => {
 const isPast = iso => iso < todayISO();
 const sortByDateAsc = (a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime);
 const eventsList = events => Object.entries(events || {}).map(_ref3 => {
-  let [id, ev] = _ref3;
+  let id = _ref3[0],
+    ev = _ref3[1];
   return {
     id,
     ...ev
   };
 }).sort(sortByDateAsc);
 const songsList = songs => Object.entries(songs || {}).map(_ref4 => {
-  let [id, s] = _ref4;
+  let id = _ref4[0],
+    s = _ref4[1];
   return {
     id,
     ...s
   };
 });
 const setlistsList = sls => Object.entries(sls || {}).map(_ref5 => {
-  let [id, s] = _ref5;
+  let id = _ref5[0],
+    s = _ref5[1];
   return {
     id,
     ...s
   };
 });
 const pollsList = polls => Object.entries(polls || {}).map(_ref6 => {
-  let [id, p] = _ref6;
+  let id = _ref6[0],
+    p = _ref6[1];
   return {
     id,
     ...p
+  };
+});
+const equipmentList = eq => Object.entries(eq || {}).map(_ref7 => {
+  let id = _ref7[0],
+    e = _ref7[1];
+  return {
+    id,
+    ...e
   };
 });
 const newId = function (p) {
@@ -498,27 +695,29 @@ const newId = function (p) {
   }
   return `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
 };
-
-// ---- Fuzzy search: normalise (strip non-alphanum), split query by whitespace, every token must appear as substring
 const normalize = s => (s || "").toLowerCase().normalize("NFD").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
 const matchesQuery = (text, query) => {
   if (!query) return true;
   const t = normalize(text);
-  const tokens = normalize(query).split(" ").filter(Boolean);
-  return tokens.every(tk => t.includes(tk));
+  return normalize(query).split(" ").filter(Boolean).every(tk => t.includes(tk));
 };
-const songMatchesQuery = (s, query) => {
-  if (!query) return true;
-  return matchesQuery(`${s.title || ""} ${s.artist || ""} ${s.proposer || ""}`, query);
-};
-const isNew = createdAt => {
-  if (!createdAt) return false;
-  return Date.now() - createdAt < NEW_BADGE_DAYS * 24 * 60 * 60 * 1000;
+const songMatchesQuery = (s, query) => !query || matchesQuery(`${s.title || ""} ${s.artist || ""} ${s.proposer || ""}`, query);
+const isNew = createdAt => createdAt && Date.now() - createdAt < NEW_BADGE_DAYS * 86400000;
+
+// Build a unique list of past locations from events for autocomplete
+const uniqueLocations = events => {
+  const set = new Set();
+  Object.values(events || {}).forEach(e => {
+    if (e.location && e.venueType !== "jamkazam") set.add(e.location);
+  });
+  return Array.from(set).sort();
 };
 
 // ---- Identity
 const useMemberIdentity = () => {
-  const [memberId, setMemberIdState] = useState(() => localStorage.getItem("sourberry.memberId") || null);
+  const _useState = useState(() => localStorage.getItem("sourberry.memberId") || null),
+    memberId = _useState[0],
+    setMemberIdState = _useState[1];
   const setMemberId = id => {
     setMemberIdState(id);
     if (id) localStorage.setItem("sourberry.memberId", id);
@@ -530,15 +729,23 @@ const getStoredBinId = () => localStorage.getItem("sourberry.binId");
 const setStoredBinId = id => {
   if (id) localStorage.setItem("sourberry.binId", id);else localStorage.removeItem("sourberry.binId");
 };
-
-// ---- Sync (slowed to 30s; shows error details; manual refresh)
 const POLL_MS = 30000;
 const useSyncedState = binId => {
-  const [state, setState] = useState(null);
-  const [status, setStatus] = useState("loading");
-  const [errorMsg, setErrorMsg] = useState("");
-  const [errorStatus, setErrorStatus] = useState(null);
-  const [lastSyncedAt, setLastSyncedAt] = useState(null);
+  const _useState2 = useState(null),
+    state = _useState2[0],
+    setState = _useState2[1];
+  const _useState3 = useState("loading"),
+    status = _useState3[0],
+    setStatus = _useState3[1];
+  const _useState4 = useState(""),
+    errorMsg = _useState4[0],
+    setErrorMsg = _useState4[1];
+  const _useState5 = useState(null),
+    errorStatus = _useState5[0],
+    setErrorStatus = _useState5[1];
+  const _useState6 = useState(null),
+    lastSyncedAt = _useState6[0],
+    setLastSyncedAt = _useState6[1];
   const stateRef = useRef(state);
   stateRef.current = state;
   const writeTimerRef = useRef(null);
@@ -575,11 +782,13 @@ const useSyncedState = binId => {
   const mutate = useCallback(updater => {
     setState(prev => {
       const next = updater(prev || {
-        schemaVersion: 4,
+        schemaVersion: 5,
         events: {},
         songs: {},
         setlists: {},
-        polls: {}
+        polls: {},
+        equipment: {},
+        wishlist: {}
       });
       stateRef.current = next;
       return next;
@@ -606,7 +815,6 @@ const useSyncedState = binId => {
     }
   }, [binId, scheduleWrite]);
   const reloadFromServer = useCallback(async () => {
-    // Discard pending writes and re-fetch authoritatively
     if (writeTimerRef.current) {
       clearTimeout(writeTimerRef.current);
       writeTimerRef.current = null;
@@ -650,13 +858,17 @@ const useSyncedState = binId => {
 // =========================================================================
 // SETUP & SHARE
 // =========================================================================
-const SetupScreen = _ref7 => {
-  let {
-    onCreated
-  } = _ref7;
-  const [apiKey, setApiKey] = useState("");
-  const [working, setWorking] = useState(false);
-  const [err, setErr] = useState("");
+const SetupScreen = _ref8 => {
+  let onCreated = _ref8.onCreated;
+  const _useState7 = useState(""),
+    apiKey = _useState7[0],
+    setApiKey = _useState7[1];
+  const _useState8 = useState(false),
+    working = _useState8[0],
+    setWorking = _useState8[1];
+  const _useState9 = useState(""),
+    err = _useState9[0],
+    setErr = _useState9[1];
   const create = async () => {
     const key = apiKey.trim();
     if (!key) {
@@ -692,9 +904,7 @@ const SetupScreen = _ref7 => {
     className: "card p-5"
   }, /*#__PURE__*/React.createElement("h2", {
     className: "display text-2xl mb-2"
-  }, "Connect your database"), /*#__PURE__*/React.createElement("p", {
-    className: "text-sm text-[var(--ink-soft)] mb-4"
-  }, "One-time setup, ~30 seconds."), /*#__PURE__*/React.createElement("ol", {
+  }, "Connect your database"), /*#__PURE__*/React.createElement("ol", {
     className: "text-sm space-y-2 mb-5 pl-5 list-decimal"
   }, /*#__PURE__*/React.createElement("li", null, "Open ", /*#__PURE__*/React.createElement("a", {
     className: "text-[var(--berry)] underline",
@@ -718,19 +928,19 @@ const SetupScreen = _ref7 => {
   })), err && /*#__PURE__*/React.createElement("div", {
     className: "mt-3 p-3 border border-[var(--berry)] bg-[var(--berry)]/10 text-sm"
   }, /*#__PURE__*/React.createElement("strong", null, "Couldn't set up:"), " ", err), /*#__PURE__*/React.createElement("div", {
-    className: "mt-4 flex items-center gap-3 flex-wrap"
+    className: "mt-4"
   }, /*#__PURE__*/React.createElement("button", {
     onClick: create,
     disabled: working,
     className: "btn berry-bg px-5 py-2.5 font-semibold"
   }, working ? "Creating…" : "Create database"))));
 };
-const ShareScreen = _ref8 => {
-  let {
-    binId,
-    onContinue
-  } = _ref8;
-  const [copied, setCopied] = useState(false);
+const ShareScreen = _ref9 => {
+  let binId = _ref9.binId,
+    onContinue = _ref9.onContinue;
+  const _useState0 = useState(false),
+    copied = _useState0[0],
+    setCopied = _useState0[1];
   const url = `${window.location.origin}${window.location.pathname}?bin=${binId}`;
   const copy = async () => {
     try {
@@ -783,23 +993,17 @@ const ShareScreen = _ref8 => {
 // =========================================================================
 // SHARED UI
 // =========================================================================
-const TypeBadge = _ref9 => {
-  let {
-    type,
-    status
-  } = _ref9;
+const TypeBadge = _ref0 => {
+  let type = _ref0.type,
+    status = _ref0.status;
   const isGig = type === "gig";
   const cancelled = status === "cancelled";
   return /*#__PURE__*/React.createElement("span", {
     className: "ticker px-2 py-0.5 " + (cancelled ? "bg-gray-200 text-gray-500" : isGig ? "berry-bg" : "acid-bg")
   }, cancelled ? "Cancelled" : isGig ? "Gig" : "Rehearsal");
 };
-const VenueBadge = _ref0 => {
-  let {
-    venueType
-  } = _ref0;
-  const v = VENUE_TYPES.find(x => x.id === venueType);
-  if (!v) return null;
+const VenueBadge = _ref1 => {
+  let venueType = _ref1.venueType;
   if (venueType === "jamkazam") return /*#__PURE__*/React.createElement("span", {
     className: "ticker bg-blue-100 px-2 py-0.5"
   }, "Jamkazam");
@@ -807,10 +1011,8 @@ const VenueBadge = _ref0 => {
     className: "ticker bg-orange-100 px-2 py-0.5"
   }, "Studio");
 };
-const StatusDot = _ref1 => {
-  let {
-    status
-  } = _ref1;
+const StatusDot = _ref10 => {
+  let status = _ref10.status;
   const map = {
     yes: "var(--good)",
     no: "var(--learn)",
@@ -826,11 +1028,9 @@ const StatusDot = _ref1 => {
     }
   });
 };
-const MemberPicker = _ref10 => {
-  let {
-    value,
-    onChange
-  } = _ref10;
+const MemberPicker = _ref11 => {
+  let value = _ref11.value,
+    onChange = _ref11.onChange;
   return /*#__PURE__*/React.createElement("div", {
     className: "flex items-center gap-2"
   }, /*#__PURE__*/React.createElement("span", {
@@ -843,19 +1043,17 @@ const MemberPicker = _ref10 => {
     className: "pill px-3 py-1 text-sm font-semibold " + (value?.id === m.id ? "berry-bg" : "bg-white hover:bg-[var(--acid)]")
   }, m.name))));
 };
-
-// ---- Sync indicator + clickable error panel
-const SyncPanel = _ref11 => {
-  let {
-    sync,
-    onClose
-  } = _ref11;
-  const [retrying, setRetrying] = useState(false);
+const SyncPanel = _ref12 => {
+  let sync = _ref12.sync,
+    onClose = _ref12.onClose;
+  const _useState1 = useState(false),
+    retrying = _useState1[0],
+    setRetrying = _useState1[1];
   const ago = sync.lastSyncedAt ? Math.round((Date.now() - sync.lastSyncedAt) / 1000) : null;
   const isRateLimit = sync.errorStatus === 429;
   const is404 = sync.errorStatus === 404;
   const reset = () => {
-    if (!confirm("This will clear the saved bin ID on this device and you'll have to re-enter your share URL. Continue?")) return;
+    if (!confirm("This will clear the saved bin ID on this device. Continue?")) return;
     setStoredBinId(null);
     window.location.href = window.location.origin + window.location.pathname;
   };
@@ -896,7 +1094,7 @@ const SyncPanel = _ref11 => {
     className: "ticker text-[var(--ink-soft)] mb-1"
   }, "Last successful sync"), /*#__PURE__*/React.createElement("div", null, ago !== null ? `${ago} seconds ago` : "Never this session")), sync.status === "error" && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     className: "ticker text-[var(--ink-soft)] mb-1"
-  }, "What happened"), isRateLimit ? /*#__PURE__*/React.createElement("p", null, "You've hit JSONBin's rate limit. The free tier allows a limited number of requests per month, and the band has used them up. The simplest fix: ", /*#__PURE__*/React.createElement("strong", null, "upgrade JSONBin to the paid tier"), " (it's cheap, ~\xA33/month for far more requests), or wait until next month for the limit to reset.") : is404 ? /*#__PURE__*/React.createElement("p", null, "The database (bin) wasn't found. It may have been deleted, or your URL has the wrong bin ID. Check the share URL is correct, or contact whoever set up the app.") : /*#__PURE__*/React.createElement("p", null, "The app couldn't reach JSONBin or the request failed. This could be a temporary network blip, or something more persistent.")), /*#__PURE__*/React.createElement("details", null, /*#__PURE__*/React.createElement("summary", {
+  }, "What happened"), isRateLimit ? /*#__PURE__*/React.createElement("p", null, "You've hit JSONBin's rate limit. The free tier allows a limited number of requests per month. Upgrade JSONBin (~\xA33/month) or wait until next month.") : is404 ? /*#__PURE__*/React.createElement("p", null, "The database wasn't found. The bin may have been deleted or your URL is wrong.") : /*#__PURE__*/React.createElement("p", null, "The app couldn't reach JSONBin or the request failed. Could be a temporary network blip.")), /*#__PURE__*/React.createElement("details", null, /*#__PURE__*/React.createElement("summary", {
     className: "ticker text-[var(--ink-soft)]"
   }, "Technical details \u25BE"), /*#__PURE__*/React.createElement("pre", {
     className: "mt-2 p-2 bg-black/5 text-xs overflow-x-auto whitespace-pre-wrap break-all"
@@ -910,18 +1108,14 @@ const SyncPanel = _ref11 => {
     onClick: reload,
     disabled: retrying,
     className: "btn bg-white px-3 py-1.5 text-sm"
-  }, "Force reload from server"), /*#__PURE__*/React.createElement("button", {
+  }, "Force reload"), /*#__PURE__*/React.createElement("button", {
     onClick: reset,
     className: "btn bg-white px-3 py-1.5 text-sm text-[var(--berry)] ml-auto"
-  }, "Reset connection")), /*#__PURE__*/React.createElement("p", {
-    className: "text-xs text-[var(--ink-soft)] italic"
-  }, "\"Force reload\" discards any unsaved local changes and pulls the latest data from JSONBin. \"Reset\" clears the saved bin URL on this device only \u2014 useful if you need to re-enter the share URL."))));
+  }, "Reset connection")))));
 };
-const SyncBadge = _ref12 => {
-  let {
-    sync,
-    onOpen
-  } = _ref12;
+const SyncBadge = _ref13 => {
+  let sync = _ref13.sync,
+    onOpen = _ref13.onOpen;
   const ago = sync.lastSyncedAt ? Math.round((Date.now() - sync.lastSyncedAt) / 1000) : null;
   let label,
     cls = "text-[var(--ink-soft)]";
@@ -938,10 +1132,8 @@ const SyncBadge = _ref12 => {
 // =========================================================================
 // SCHEDULE & AVAILABILITY
 // =========================================================================
-const AvailabilityRow = _ref13 => {
-  let {
-    ev
-  } = _ref13;
+const AvailabilityRow = _ref14 => {
+  let ev = _ref14.ev;
   return /*#__PURE__*/React.createElement("div", {
     className: "flex items-center gap-3 text-xs"
   }, MEMBERS.map(m => /*#__PURE__*/React.createElement("div", {
@@ -953,12 +1145,10 @@ const AvailabilityRow = _ref13 => {
     className: "font-medium"
   }, m.name[0]))));
 };
-const AvailabilityButtons = _ref14 => {
-  let {
-    ev,
-    member,
-    onSet
-  } = _ref14;
+const AvailabilityButtons = _ref15 => {
+  let ev = _ref15.ev,
+    member = _ref15.member,
+    onSet = _ref15.onSet;
   if (!member) return /*#__PURE__*/React.createElement("p", {
     className: "text-xs text-[var(--ink-soft)] italic"
   }, "Pick who you are above to mark availability.");
@@ -987,25 +1177,28 @@ const blankEvent = function (type) {
     venueType: "in-person-studio",
     location: "",
     bookingOwner: "",
-    bookedAndPaid: false,
+    confirmed: false,
     status: "proposed",
     title: "",
     comments: ""
   };
 };
-const EventForm = _ref15 => {
-  let {
-    initial,
-    onSave,
-    onCancel,
-    onDelete
-  } = _ref15;
-  const [f, setF] = useState(initial || blankEvent());
+const EventForm = _ref16 => {
+  let initial = _ref16.initial,
+    onSave = _ref16.onSave,
+    onCancel = _ref16.onCancel,
+    onDelete = _ref16.onDelete,
+    locationSuggestions = _ref16.locationSuggestions;
+  const _useState10 = useState(initial || blankEvent()),
+    f = _useState10[0],
+    setF = _useState10[1];
   const set = (k, v) => setF(prev => ({
     ...prev,
     [k]: v
   }));
   const isRehearsal = f.type === "rehearsal";
+  const isJamkazam = isRehearsal && f.venueType === "jamkazam";
+  const datalistId = "loc-suggestions-" + (initial?.date || "new");
   return /*#__PURE__*/React.createElement("div", {
     className: "card p-5 mb-4"
   }, /*#__PURE__*/React.createElement("div", {
@@ -1034,7 +1227,7 @@ const EventForm = _ref15 => {
     value: "proposed"
   }, "Proposed"), /*#__PURE__*/React.createElement("option", {
     value: "confirmed"
-  }, "Confirmed"), /*#__PURE__*/React.createElement("option", {
+  }, "Confirmed (going ahead)"), /*#__PURE__*/React.createElement("option", {
     value: "cancelled"
   }, "Cancelled"))), isRehearsal && /*#__PURE__*/React.createElement("label", {
     className: "text-sm md:col-span-2"
@@ -1069,12 +1262,18 @@ const EventForm = _ref15 => {
     className: "text-sm"
   }, /*#__PURE__*/React.createElement("div", {
     className: "ticker mb-1"
-  }, isRehearsal && f.venueType === "jamkazam" ? "Session / link" : "Location"), /*#__PURE__*/React.createElement("input", {
+  }, isJamkazam ? "Session / link" : "Location"), /*#__PURE__*/React.createElement("input", {
     className: "input",
     value: f.location,
     onChange: e => set("location", e.target.value),
-    placeholder: isRehearsal && f.venueType === "jamkazam" ? "Jamkazam session name or link" : "e.g. Earlsfield"
-  })), /*#__PURE__*/React.createElement("label", {
+    placeholder: isJamkazam ? "Jamkazam session" : "e.g. Earlsfield, Cambridge…",
+    list: isJamkazam ? undefined : datalistId
+  }), !isJamkazam && locationSuggestions && locationSuggestions.length > 0 && /*#__PURE__*/React.createElement("datalist", {
+    id: datalistId
+  }, locationSuggestions.map(l => /*#__PURE__*/React.createElement("option", {
+    key: l,
+    value: l
+  })))), /*#__PURE__*/React.createElement("label", {
     className: "text-sm"
   }, /*#__PURE__*/React.createElement("div", {
     className: "ticker mb-1"
@@ -1105,14 +1304,14 @@ const EventForm = _ref15 => {
   }, "\u2014 none \u2014"), MEMBERS.map(m => /*#__PURE__*/React.createElement("option", {
     key: m.id,
     value: m.id
-  }, m.name)))), /*#__PURE__*/React.createElement("label", {
+  }, m.name)))), !isJamkazam && /*#__PURE__*/React.createElement("label", {
     className: "text-sm flex items-center gap-2 md:mt-6"
   }, /*#__PURE__*/React.createElement("input", {
     type: "checkbox",
-    checked: !!f.bookedAndPaid,
-    onChange: e => set("bookedAndPaid", e.target.checked),
+    checked: !!f.confirmed,
+    onChange: e => set("confirmed", e.target.checked),
     className: "w-4 h-4"
-  }), /*#__PURE__*/React.createElement("span", null, "Booked & paid")), /*#__PURE__*/React.createElement("label", {
+  }), /*#__PURE__*/React.createElement("span", null, "Booking confirmed")), /*#__PURE__*/React.createElement("label", {
     className: "text-sm md:col-span-2"
   }, /*#__PURE__*/React.createElement("div", {
     className: "ticker mb-1"
@@ -1136,31 +1335,35 @@ const EventForm = _ref15 => {
     className: "btn bg-white px-4 py-2 ml-auto text-[var(--berry)]"
   }, "Delete")));
 };
-const EventCard = _ref16 => {
-  let {
-    ev,
-    member,
-    onEdit,
-    onSetAvailability
-  } = _ref16;
+const EventCard = _ref17 => {
+  let ev = _ref17.ev,
+    member = _ref17.member,
+    onEdit = _ref17.onEdit,
+    onSetAvailability = _ref17.onSetAvailability,
+    onDelete = _ref17.onDelete;
   const owner = MEMBERS.find(m => m.id === ev.bookingOwner);
   const yesCount = MEMBERS.filter(m => ev.availability?.[m.id] === "yes").length;
   const isRehearsal = ev.type === "rehearsal";
+  const past = isPast(ev.date);
+  const d = new Date(ev.date + "T00:00:00");
+  const yr = d.getFullYear();
   return /*#__PURE__*/React.createElement("div", {
-    className: "card p-4 sm:p-5"
+    className: "card p-4 sm:p-5 " + (past ? "opacity-90" : "")
   }, /*#__PURE__*/React.createElement("div", {
     className: "flex items-start gap-4"
   }, /*#__PURE__*/React.createElement("div", {
     className: "shrink-0 text-center min-w-[68px]"
   }, /*#__PURE__*/React.createElement("div", {
     className: "ticker text-[var(--berry)]"
-  }, fmtDate(ev.date).split(",")[0]), /*#__PURE__*/React.createElement("div", {
+  }, d.toLocaleDateString(undefined, {
+    weekday: "short"
+  })), /*#__PURE__*/React.createElement("div", {
     className: "display text-3xl leading-none mt-1"
-  }, new Date(ev.date + "T00:00:00").getDate()), /*#__PURE__*/React.createElement("div", {
+  }, d.getDate()), /*#__PURE__*/React.createElement("div", {
     className: "ticker mt-1"
-  }, new Date(ev.date + "T00:00:00").toLocaleDateString(undefined, {
+  }, d.toLocaleDateString(undefined, {
     month: "short"
-  }))), /*#__PURE__*/React.createElement("div", {
+  }), " ", yr)), /*#__PURE__*/React.createElement("div", {
     className: "flex-1 min-w-0"
   }, /*#__PURE__*/React.createElement("div", {
     className: "flex items-center gap-2 flex-wrap"
@@ -1169,11 +1372,13 @@ const EventCard = _ref16 => {
     status: ev.status
   }), isRehearsal && /*#__PURE__*/React.createElement(VenueBadge, {
     venueType: ev.venueType
-  }), ev.status === "proposed" && /*#__PURE__*/React.createElement("span", {
+  }), ev.status === "proposed" && !past && /*#__PURE__*/React.createElement("span", {
     className: "ticker bg-yellow-100 px-2 py-0.5"
-  }, "Proposed"), ev.bookedAndPaid && /*#__PURE__*/React.createElement("span", {
+  }, "Proposed"), ev.confirmed && !past && /*#__PURE__*/React.createElement("span", {
     className: "ticker bg-green-100 px-2 py-0.5"
-  }, "Booked & paid")), ev.title && /*#__PURE__*/React.createElement("div", {
+  }, "Booking confirmed"), past && /*#__PURE__*/React.createElement("span", {
+    className: "ticker bg-gray-200 text-gray-600 px-2 py-0.5"
+  }, "Past")), ev.title && /*#__PURE__*/React.createElement("div", {
     className: "display text-xl mt-1.5 leading-tight"
   }, ev.title), /*#__PURE__*/React.createElement("div", {
     className: "text-sm mt-1 text-[var(--ink-soft)]"
@@ -1183,7 +1388,7 @@ const EventCard = _ref16 => {
     className: "ticker text-[var(--ink-soft)] hover:text-[var(--berry)]"
   }, "Notes \u25BE"), /*#__PURE__*/React.createElement("p", {
     className: "mt-1.5 italic text-[var(--ink-soft)]"
-  }, ev.comments)), /*#__PURE__*/React.createElement("div", {
+  }, ev.comments)), !past && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
     className: "mt-3 flex flex-wrap items-center gap-x-4 gap-y-2"
   }, /*#__PURE__*/React.createElement(AvailabilityRow, {
     ev: ev
@@ -1198,21 +1403,28 @@ const EventCard = _ref16 => {
   }), /*#__PURE__*/React.createElement("button", {
     onClick: onEdit,
     className: "ticker ml-auto text-[var(--ink-soft)] hover:text-[var(--berry)]"
-  }, "Edit \u25B8")))));
+  }, "Edit \u25B8"))), past && /*#__PURE__*/React.createElement("div", {
+    className: "mt-3 flex items-center gap-2"
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: onEdit,
+    className: "ticker text-[var(--ink-soft)] hover:text-[var(--berry)]"
+  }, "Edit \u25B8"), /*#__PURE__*/React.createElement("button", {
+    onClick: onDelete,
+    className: "ticker text-[var(--ink-soft)] hover:text-[var(--berry)] ml-auto"
+  }, "Delete \u2715")))));
 };
-const ScheduleSection = _ref17 => {
-  let {
-    title,
-    items,
-    member,
-    editingId,
-    onEdit,
-    onCancelEdit,
-    onUpdate,
-    onDelete,
-    onSetAvailability,
-    emptyMsg
-  } = _ref17;
+const ScheduleSection = _ref18 => {
+  let title = _ref18.title,
+    items = _ref18.items,
+    member = _ref18.member,
+    editingId = _ref18.editingId,
+    onEdit = _ref18.onEdit,
+    onCancelEdit = _ref18.onCancelEdit,
+    onUpdate = _ref18.onUpdate,
+    onDelete = _ref18.onDelete,
+    onSetAvailability = _ref18.onSetAvailability,
+    emptyMsg = _ref18.emptyMsg,
+    locationSuggestions = _ref18.locationSuggestions;
   return /*#__PURE__*/React.createElement("section", {
     className: "mb-6"
   }, /*#__PURE__*/React.createElement("h2", {
@@ -1228,30 +1440,39 @@ const ScheduleSection = _ref17 => {
     initial: ev,
     onSave: f => onUpdate(ev.id, f),
     onCancel: onCancelEdit,
-    onDelete: () => onDelete(ev.id)
+    onDelete: () => onDelete(ev.id),
+    locationSuggestions: locationSuggestions
   }) : /*#__PURE__*/React.createElement(EventCard, {
     key: ev.id,
     ev: ev,
     member: member,
     onEdit: () => onEdit(ev.id),
-    onSetAvailability: onSetAvailability
+    onSetAvailability: onSetAvailability,
+    onDelete: () => {
+      if (confirm("Delete this past event?")) onDelete(ev.id);
+    }
   }))));
 };
-const ScheduleView = _ref18 => {
-  let {
-    events,
-    member,
-    mutate
-  } = _ref18;
-  const [editingId, setEditingId] = useState(null);
-  const [adding, setAdding] = useState(null);
-  const [showPast, setShowPast] = useState(false);
+const ScheduleView = _ref19 => {
+  let events = _ref19.events,
+    member = _ref19.member,
+    mutate = _ref19.mutate;
+  const _useState11 = useState(null),
+    editingId = _useState11[0],
+    setEditingId = _useState11[1];
+  const _useState12 = useState(null),
+    adding = _useState12[0],
+    setAdding = _useState12[1];
+  const _useState13 = useState(false),
+    showPast = _useState13[0],
+    setShowPast = _useState13[1];
   const all = eventsList(events);
   const upcoming = all.filter(e => !isPast(e.date));
   const past = all.filter(e => isPast(e.date)).reverse();
   const list = showPast ? past : upcoming;
   const gigs = list.filter(e => e.type === "gig");
   const rehearsals = list.filter(e => e.type === "rehearsal");
+  const locationSuggestions = uniqueLocations(events);
   const setAvailability = (eid, mid, val) => mutate(prev => {
     const events = {
       ...(prev.events || {})
@@ -1310,6 +1531,21 @@ const ScheduleView = _ref18 => {
     });
     setEditingId(null);
   };
+  const clearAllPastRehearsals = () => {
+    const pastRehearsalIds = past.filter(e => e.type === "rehearsal").map(e => e.id);
+    if (pastRehearsalIds.length === 0) return;
+    if (!confirm(`Delete ${pastRehearsalIds.length} past rehearsal${pastRehearsalIds.length === 1 ? "" : "s"}? Past gigs will be kept.`)) return;
+    mutate(prev => {
+      const events = {
+        ...(prev.events || {})
+      };
+      pastRehearsalIds.forEach(id => delete events[id]);
+      return {
+        ...prev,
+        events
+      };
+    });
+  };
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     className: "flex items-center justify-between mb-4 flex-wrap gap-2"
   }, /*#__PURE__*/React.createElement("div", {
@@ -1334,10 +1570,18 @@ const ScheduleView = _ref18 => {
       setEditingId(null);
     },
     className: "btn bg-white px-3 py-2 text-sm font-semibold"
-  }, "+ Rehearsal"))), adding && /*#__PURE__*/React.createElement(EventForm, {
+  }, "+ Rehearsal"))), showPast && past.filter(e => e.type === "rehearsal").length > 0 && /*#__PURE__*/React.createElement("div", {
+    className: "card-flat p-3 mb-4 flex items-center justify-between gap-2 flex-wrap"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "text-sm text-[var(--ink-soft)]"
+  }, "Tidy up: ", past.filter(e => e.type === "rehearsal").length, " past rehearsal", past.filter(e => e.type === "rehearsal").length === 1 ? "" : "s", " on file."), /*#__PURE__*/React.createElement("button", {
+    onClick: clearAllPastRehearsals,
+    className: "btn bg-white px-3 py-1.5 text-sm text-[var(--berry)]"
+  }, "Delete all past rehearsals")), adding && /*#__PURE__*/React.createElement(EventForm, {
     initial: blankEvent(adding),
     onSave: createEvent,
-    onCancel: () => setAdding(null)
+    onCancel: () => setAdding(null),
+    locationSuggestions: locationSuggestions
   }), /*#__PURE__*/React.createElement(ScheduleSection, {
     title: "Gigs",
     items: gigs,
@@ -1351,7 +1595,8 @@ const ScheduleView = _ref18 => {
     onUpdate: updateEvent,
     onDelete: deleteEvent,
     onSetAvailability: setAvailability,
-    emptyMsg: showPast ? "No past gigs." : "No gigs in the diary yet."
+    emptyMsg: showPast ? "No past gigs." : "No gigs in the diary yet.",
+    locationSuggestions: locationSuggestions
   }), /*#__PURE__*/React.createElement(ScheduleSection, {
     title: "Rehearsals",
     items: rehearsals,
@@ -1365,15 +1610,14 @@ const ScheduleView = _ref18 => {
     onUpdate: updateEvent,
     onDelete: deleteEvent,
     onSetAvailability: setAvailability,
-    emptyMsg: showPast ? "No past rehearsals." : "No rehearsals booked."
+    emptyMsg: showPast ? "No past rehearsals." : "No rehearsals booked.",
+    locationSuggestions: locationSuggestions
   }));
 };
-const AvailabilityView = _ref19 => {
-  let {
-    events,
-    member,
-    mutate
-  } = _ref19;
+const AvailabilityView = _ref20 => {
+  let events = _ref20.events,
+    member = _ref20.member,
+    mutate = _ref20.mutate;
   const upcoming = eventsList(events).filter(e => !isPast(e.date));
   const setAvailability = (eid, mid, val) => mutate(prev => {
     const events = {
@@ -1478,14 +1722,14 @@ const blankSong = () => ({
   votes: {},
   practice: {}
 });
-const SongForm = _ref20 => {
-  let {
-    initial,
-    onSave,
-    onCancel,
-    onDelete
-  } = _ref20;
-  const [f, setF] = useState(initial || blankSong());
+const SongForm = _ref21 => {
+  let initial = _ref21.initial,
+    onSave = _ref21.onSave,
+    onCancel = _ref21.onCancel,
+    onDelete = _ref21.onDelete;
+  const _useState14 = useState(initial || blankSong()),
+    f = _useState14[0],
+    setF = _useState14[1];
   const set = (k, v) => setF(prev => ({
     ...prev,
     [k]: v
@@ -1543,7 +1787,7 @@ const SongForm = _ref20 => {
     className: "font-semibold"
   }, "Jamtrax available"), /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("span", {
     className: "text-xs text-[var(--ink-soft)]"
-  }, "Jamtrax is a Jamkazam feature \u2014 guided backing tracks for online jamming, useful when not all band members can make it."))), /*#__PURE__*/React.createElement("label", {
+  }, "A Jamkazam feature \u2014 guided backing tracks for online jamming, useful when not all members can make it."))), /*#__PURE__*/React.createElement("label", {
     className: "text-sm md:col-span-2"
   }, /*#__PURE__*/React.createElement("div", {
     className: "ticker mb-1"
@@ -1577,11 +1821,9 @@ const SongForm = _ref20 => {
     className: "btn bg-white px-4 py-2 ml-auto text-[var(--berry)]"
   }, "Delete")));
 };
-const VotePill = _ref21 => {
-  let {
-    initial,
-    vote
-  } = _ref21;
+const VotePill = _ref22 => {
+  let initial = _ref22.initial,
+    vote = _ref22.vote;
   const bg = vote === "yes" ? "var(--good)" : vote === "no" ? "var(--learn)" : "transparent";
   const color = vote ? "#fff" : "var(--ink-soft)";
   return /*#__PURE__*/React.createElement("span", {
@@ -1595,13 +1837,11 @@ const VotePill = _ref21 => {
     title: vote || "no vote"
   }, initial);
 };
-const PracticeChip = _ref22 => {
-  let {
-    initial,
-    state,
-    isMe,
-    onClick
-  } = _ref22;
+const PracticeChip = _ref23 => {
+  let initial = _ref23.initial,
+    state = _ref23.state,
+    isMe = _ref23.isMe,
+    onClick = _ref23.onClick;
   const bg = state ? PRACTICE_COLOR[state] : "transparent";
   const color = state ? "#fff" : "var(--ink-soft)";
   return /*#__PURE__*/React.createElement("button", {
@@ -1624,16 +1864,14 @@ const cyclePractice = current => {
   if (current === "learn") return null;
   return "good";
 };
-const SongCard = _ref23 => {
-  let {
-    song,
-    member,
-    onEdit,
-    onVote,
-    onSetStatus,
-    onSetPractice,
-    onPromote
-  } = _ref23;
+const SongCard = _ref24 => {
+  let song = _ref24.song,
+    member = _ref24.member,
+    onEdit = _ref24.onEdit,
+    onVote = _ref24.onVote,
+    onSetStatus = _ref24.onSetStatus,
+    onSetPractice = _ref24.onSetPractice,
+    onPromote = _ref24.onPromote;
   const showVotes = song.status === "suggested";
   const showPractice = ["shortlist", "learning", "repertoire"].includes(song.status);
   const yesCount = MEMBERS.filter(m => song.votes?.[m.id] === "yes").length;
@@ -1659,7 +1897,7 @@ const SongCard = _ref23 => {
     className: "flex flex-wrap items-center gap-1.5 mt-1.5"
   }, song.jamtrax && /*#__PURE__*/React.createElement("span", {
     className: "ticker acid-bg px-2 py-0.5",
-    title: "Jamkazam Jamtrax: guided backing track for online jamming, useful when not all members can make it"
+    title: "Jamkazam Jamtrax: backing track for online jamming"
   }, "Jamtrax (Jamkazam)"), song.proposer && /*#__PURE__*/React.createElement("span", {
     className: "ticker text-[var(--ink-soft)]"
   }, "prop: ", song.proposer), song.lessonUrl && /*#__PURE__*/React.createElement("a", {
@@ -1732,18 +1970,25 @@ const SongCard = _ref23 => {
     className: "pill px-2.5 py-1 text-xs font-semibold " + (s.id === song.status ? "berry-bg text-white" : "bg-white hover:bg-[var(--acid)]")
   }, s.label))));
 };
-const SongsView = _ref24 => {
-  let {
-    songs,
-    member,
-    mutate
-  } = _ref24;
-  const [editingId, setEditingId] = useState(null);
-  const [adding, setAdding] = useState(false);
-  const [view, setView] = useState("repertoire");
-  const [query, setQuery] = useState("");
-  const [sortMode, setSortMode] = useState("smart"); // smart | newest | title
-
+const SongsView = _ref25 => {
+  let songs = _ref25.songs,
+    member = _ref25.member,
+    mutate = _ref25.mutate;
+  const _useState15 = useState(null),
+    editingId = _useState15[0],
+    setEditingId = _useState15[1];
+  const _useState16 = useState(false),
+    adding = _useState16[0],
+    setAdding = _useState16[1];
+  const _useState17 = useState("repertoire"),
+    view = _useState17[0],
+    setView = _useState17[1];
+  const _useState18 = useState(""),
+    query = _useState18[0],
+    setQuery = _useState18[1];
+  const _useState19 = useState("smart"),
+    sortMode = _useState19[0],
+    setSortMode = _useState19[1];
   const all = songsList(songs);
   const counts = {};
   SONG_STATUSES.forEach(s => {
@@ -1753,9 +1998,7 @@ const SongsView = _ref24 => {
   list.sort((a, b) => {
     if (sortMode === "newest") return (b.createdAt || 0) - (a.createdAt || 0);
     if (sortMode === "title") return (a.title || "").localeCompare(b.title || "");
-    // smart: suggested → newest first then by votes; others → title
     if (view === "suggested") {
-      // brand-new (NEW badge) sorted to top by createdAt desc
       const aNew = isNew(a.createdAt),
         bNew = isNew(b.createdAt);
       if (aNew && !bNew) return -1;
@@ -1845,20 +2088,17 @@ const SongsView = _ref24 => {
       songs
     };
   });
-  const promoteSong = id => mutate(prev => {
-    const songs = {
-      ...(prev.songs || {})
-    };
-    songs[id] = {
-      ...(songs[id] || {}),
-      status: "shortlist",
-      votes: {}
-    };
-    return {
-      ...prev,
-      songs
-    };
-  });
+  const promoteSong = id => mutate(prev => ({
+    ...prev,
+    songs: {
+      ...(prev.songs || {}),
+      [id]: {
+        ...(prev.songs?.[id] || {}),
+        status: "shortlist",
+        votes: {}
+      }
+    }
+  }));
   const allInSuggested = all.filter(c => c.status === "suggested" && MEMBERS.every(m => c.votes?.[m.id] === "yes")).length;
   const newSuggested = all.filter(c => c.status === "suggested" && isNew(c.createdAt)).length;
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
@@ -1941,19 +2181,23 @@ const SongsView = _ref24 => {
 };
 
 // =========================================================================
-// SETLISTS
+// SETLISTS (unchanged from v4)
 // =========================================================================
-const SetlistsView = _ref25 => {
-  let {
-    setlists,
-    songs,
-    events,
-    member,
-    mutate
-  } = _ref25;
-  const [openId, setOpenId] = useState(null);
-  const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState("");
+const SetlistsView = _ref26 => {
+  let setlists = _ref26.setlists,
+    songs = _ref26.songs,
+    events = _ref26.events,
+    member = _ref26.member,
+    mutate = _ref26.mutate;
+  const _useState20 = useState(null),
+    openId = _useState20[0],
+    setOpenId = _useState20[1];
+  const _useState21 = useState(false),
+    creating = _useState21[0],
+    setCreating = _useState21[1];
+  const _useState22 = useState(""),
+    newName = _useState22[0],
+    setNewName = _useState22[1];
   const all = setlistsList(setlists).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const createSetlist = name => {
     const id = newId("sl");
@@ -2046,9 +2290,7 @@ const SetlistsView = _ref25 => {
     className: "card p-6 text-center"
   }, /*#__PURE__*/React.createElement("p", {
     className: "display text-xl"
-  }, "No setlists yet."), /*#__PURE__*/React.createElement("p", {
-    className: "text-sm text-[var(--ink-soft)] mt-2"
-  }, "Tap \"+ New setlist\" to start one for your next gig.")), /*#__PURE__*/React.createElement("div", {
+  }, "No setlists yet.")), /*#__PURE__*/React.createElement("div", {
     className: "space-y-3"
   }, all.map(sl => {
     const songCount = (sl.songIds || []).length;
@@ -2070,27 +2312,35 @@ const SetlistsView = _ref25 => {
     }, "Open \u25B8")));
   })));
 };
-const SetlistDetail = _ref26 => {
-  let {
-    setlist,
-    songs,
-    events,
-    member,
-    onBack,
-    onUpdate,
-    onDelete
-  } = _ref26;
-  const [editingName, setEditingName] = useState(false);
-  const [name, setName] = useState(setlist.name);
-  const [picker, setPicker] = useState(false);
-  const [viewMode, setViewMode] = useState("detailed"); // detailed | summary
+const SetlistDetail = _ref27 => {
+  let setlist = _ref27.setlist,
+    songs = _ref27.songs,
+    events = _ref27.events,
+    member = _ref27.member,
+    onBack = _ref27.onBack,
+    onUpdate = _ref27.onUpdate,
+    onDelete = _ref27.onDelete;
+  const _useState23 = useState(false),
+    editingName = _useState23[0],
+    setEditingName = _useState23[1];
+  const _useState24 = useState(setlist.name),
+    name = _useState24[0],
+    setName = _useState24[1];
+  const _useState25 = useState(false),
+    picker = _useState25[0],
+    setPicker = _useState25[1];
+  const _useState26 = useState("detailed"),
+    viewMode = _useState26[0],
+    setViewMode = _useState26[1];
   const songIds = setlist.songIds || [];
   const gigOptions = eventsList(events).filter(e => e.type === "gig");
   const moveSong = (idx, dir) => {
     const arr = [...songIds];
     const ni = idx + dir;
     if (ni < 0 || ni >= arr.length) return;
-    [arr[idx], arr[ni]] = [arr[ni], arr[idx]];
+    var _ref28 = [arr[ni], arr[idx]];
+    arr[idx] = _ref28[0];
+    arr[ni] = _ref28[1];
     onUpdate({
       songIds: arr
     });
@@ -2193,9 +2443,7 @@ const SetlistDetail = _ref26 => {
     className: "card-flat p-6 text-center"
   }, /*#__PURE__*/React.createElement("p", {
     className: "display text-xl"
-  }, "No songs yet."), /*#__PURE__*/React.createElement("p", {
-    className: "text-sm text-[var(--ink-soft)] mt-2"
-  }, "Tap \"+ Add songs\" above.")) : viewMode === "summary" ? /*#__PURE__*/React.createElement("div", {
+  }, "No songs yet.")) : viewMode === "summary" ? /*#__PURE__*/React.createElement("div", {
     className: "card p-5"
   }, /*#__PURE__*/React.createElement("h3", {
     className: "display text-2xl mb-3"
@@ -2219,7 +2467,7 @@ const SetlistDetail = _ref26 => {
     }, "\u2014 ", s.artist));
   })), /*#__PURE__*/React.createElement("p", {
     className: "text-xs text-[var(--ink-soft)] italic mt-4"
-  }, songIds.length, " song", songIds.length === 1 ? "" : "s", ". Switch to \"Detailed\" to edit.")) : /*#__PURE__*/React.createElement("ol", {
+  }, songIds.length, " song", songIds.length === 1 ? "" : "s", ".")) : /*#__PURE__*/React.createElement("ol", {
     className: "space-y-2"
   }, songIds.map((sid, i) => {
     const s = songs?.[sid];
@@ -2270,15 +2518,17 @@ const SetlistDetail = _ref26 => {
     }, "\xD7"))));
   })));
 };
-const SongPicker = _ref27 => {
-  let {
-    songs,
-    excludeIds,
-    onPick,
-    onClose
-  } = _ref27;
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+const SongPicker = _ref29 => {
+  let songs = _ref29.songs,
+    excludeIds = _ref29.excludeIds,
+    onPick = _ref29.onPick,
+    onClose = _ref29.onClose;
+  const _useState27 = useState(""),
+    query = _useState27[0],
+    setQuery = _useState27[1];
+  const _useState28 = useState("all"),
+    statusFilter = _useState28[0],
+    setStatusFilter = _useState28[1];
   const all = songsList(songs).filter(s => !excludeIds.includes(s.id));
   const list = all.filter(s => {
     if (statusFilter !== "all" && s.status !== statusFilter) return false;
@@ -2297,7 +2547,7 @@ const SongPicker = _ref27 => {
     className: "input mb-2",
     value: query,
     onChange: e => setQuery(e.target.value),
-    placeholder: "Search by title or artist (fuzzy match)\u2026"
+    placeholder: "Search by title or artist (fuzzy)\u2026"
   }), /*#__PURE__*/React.createElement("div", {
     className: "flex gap-1.5 flex-wrap mb-3"
   }, /*#__PURE__*/React.createElement("button", {
@@ -2329,9 +2579,8 @@ const SongPicker = _ref27 => {
 };
 
 // =========================================================================
-// PLAN — Doodle-style date polls
+// PLAN — Doodle-style date polls (unchanged from v4)
 // =========================================================================
-
 const blankPoll = () => ({
   name: "",
   description: "",
@@ -2342,20 +2591,21 @@ const blankPoll = () => ({
   slots: [],
   votes: {},
   status: "open",
-  // open | decided | archived
   decidedSlotId: null,
   createdEventId: null,
   createdAt: Date.now()
 });
-const PlanView = _ref28 => {
-  let {
-    polls,
-    events,
-    member,
-    mutate
-  } = _ref28;
-  const [openId, setOpenId] = useState(null);
-  const [creating, setCreating] = useState(false);
+const PlanView = _ref30 => {
+  let polls = _ref30.polls,
+    events = _ref30.events,
+    member = _ref30.member,
+    mutate = _ref30.mutate;
+  const _useState29 = useState(null),
+    openId = _useState29[0],
+    setOpenId = _useState29[1];
+  const _useState30 = useState(false),
+    creating = _useState30[0],
+    setCreating = _useState30[1];
   const all = pollsList(polls).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   const open = all.filter(p => p.status === "open");
   const decided = all.filter(p => p.status !== "open");
@@ -2399,7 +2649,6 @@ const PlanView = _ref28 => {
     setOpenId(null);
   };
   const scheduleFromSlot = (pollId, slot) => {
-    // Create event from slot, mark poll decided
     const eId = newId("e");
     const poll = polls[pollId];
     mutate(prev => {
@@ -2414,7 +2663,7 @@ const PlanView = _ref28 => {
         venueType: poll.venueType || "in-person-studio",
         location: poll.location || "",
         bookingOwner: "",
-        bookedAndPaid: false,
+        confirmed: false,
         status: "confirmed",
         title: poll.name || "",
         comments: poll.description || "",
@@ -2491,13 +2740,13 @@ const PlanView = _ref28 => {
     onOpen: () => setOpenId(p.id)
   })))));
 };
-const PollForm = _ref29 => {
-  let {
-    initial,
-    onSave,
-    onCancel
-  } = _ref29;
-  const [f, setF] = useState(initial || blankPoll());
+const PollForm = _ref31 => {
+  let initial = _ref31.initial,
+    onSave = _ref31.onSave,
+    onCancel = _ref31.onCancel;
+  const _useState31 = useState(initial || blankPoll()),
+    f = _useState31[0],
+    setF = _useState31[1];
   const set = (k, v) => setF(prev => ({
     ...prev,
     [k]: v
@@ -2547,7 +2796,7 @@ const PollForm = _ref29 => {
     className: "input",
     value: f.location,
     onChange: e => set("location", e.target.value),
-    placeholder: "e.g. Earlsfield"
+    placeholder: "e.g. Earlsfield, Cambridge"
   })), /*#__PURE__*/React.createElement("label", {
     className: "text-sm md:col-span-2"
   }, /*#__PURE__*/React.createElement("div", {
@@ -2556,8 +2805,7 @@ const PollForm = _ref29 => {
     className: "input",
     rows: "2",
     value: f.description,
-    onChange: e => set("description", e.target.value),
-    placeholder: "Anything to note about why we're meeting"
+    onChange: e => set("description", e.target.value)
   }))), /*#__PURE__*/React.createElement("div", {
     className: "flex gap-2 mt-4"
   }, /*#__PURE__*/React.createElement("button", {
@@ -2567,15 +2815,11 @@ const PollForm = _ref29 => {
   }, "Create poll"), /*#__PURE__*/React.createElement("button", {
     onClick: onCancel,
     className: "btn bg-white px-4 py-2"
-  }, "Cancel")), /*#__PURE__*/React.createElement("p", {
-    className: "text-xs text-[var(--ink-soft)] mt-3 italic"
-  }, "After creating, you'll add candidate date/time slots and the band can vote."));
+  }, "Cancel")));
 };
-const PollListItem = _ref30 => {
-  let {
-    poll,
-    onOpen
-  } = _ref30;
+const PollListItem = _ref32 => {
+  let poll = _ref32.poll,
+    onOpen = _ref32.onOpen;
   const slots = poll.slots || [];
   const allInSlots = slots.filter(s => MEMBERS.every(m => poll.votes?.[s.id]?.[m.id] === "yes")).length;
   return /*#__PURE__*/React.createElement("button", {
@@ -2593,43 +2837,42 @@ const PollListItem = _ref30 => {
     className: "ticker text-[var(--berry)]"
   }, "Open \u25B8")));
 };
-const PollDetail = _ref31 => {
-  let {
-    poll,
-    events,
-    member,
-    onBack,
-    onUpdate,
-    onDelete,
-    onSchedule
-  } = _ref31;
-  const [addingSlot, setAddingSlot] = useState(false);
-  const [slot, setSlot] = useState({
-    date: todayISO(),
-    startTime: "18:00",
-    endTime: "21:00"
-  });
+const PollDetail = _ref33 => {
+  let poll = _ref33.poll,
+    events = _ref33.events,
+    member = _ref33.member,
+    onBack = _ref33.onBack,
+    onUpdate = _ref33.onUpdate,
+    onDelete = _ref33.onDelete,
+    onSchedule = _ref33.onSchedule;
+  const _useState32 = useState(false),
+    addingSlot = _useState32[0],
+    setAddingSlot = _useState32[1];
+  const _useState33 = useState({
+      date: todayISO(),
+      startTime: "18:00",
+      endTime: "21:00"
+    }),
+    slot = _useState33[0],
+    setSlot = _useState33[1];
   const slots = poll.slots || [];
   const sortedSlots = [...slots].sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime));
   const addSlot = () => {
-    const newSlot = {
-      id: newId("slot"),
-      ...slot
-    };
     onUpdate({
-      slots: [...slots, newSlot]
+      slots: [...slots, {
+        id: newId("slot"),
+        ...slot
+      }]
     });
     setAddingSlot(false);
   };
-  const removeSlot = slotId => {
-    onUpdate({
-      slots: slots.filter(s => s.id !== slotId),
-      votes: Object.fromEntries(Object.entries(poll.votes || {}).filter(_ref32 => {
-        let [k] = _ref32;
-        return k !== slotId;
-      }))
-    });
-  };
+  const removeSlot = slotId => onUpdate({
+    slots: slots.filter(s => s.id !== slotId),
+    votes: Object.fromEntries(Object.entries(poll.votes || {}).filter(_ref34 => {
+      let k = _ref34[0];
+      return k !== slotId;
+    }))
+  });
   const setVote = (slotId, memberId, val) => {
     const votes = {
       ...(poll.votes || {})
@@ -2680,7 +2923,7 @@ const PollDetail = _ref31 => {
     className: "btn bg-white px-4 py-2 text-sm"
   }, "Re-open poll"), /*#__PURE__*/React.createElement("button", {
     onClick: () => {
-      if (confirm(`Delete poll "${poll.name}"? This won't delete any scheduled event.`)) onDelete();
+      if (confirm(`Delete poll "${poll.name}"?`)) onDelete();
     },
     className: "btn bg-white px-4 py-2 text-sm text-[var(--berry)] ml-auto"
   }, "Delete"))), addingSlot && /*#__PURE__*/React.createElement("div", {
@@ -2737,17 +2980,15 @@ const PollDetail = _ref31 => {
     className: "card-flat p-6 text-center"
   }, /*#__PURE__*/React.createElement("p", {
     className: "display text-xl"
-  }, "No candidate slots yet."), /*#__PURE__*/React.createElement("p", {
-    className: "text-sm text-[var(--ink-soft)] mt-2"
-  }, "Add 3\u20135 dates to give the band options.")) : /*#__PURE__*/React.createElement("div", {
+  }, "No candidate slots yet.")) : /*#__PURE__*/React.createElement("div", {
     className: "space-y-2.5"
   }, sortedSlots.map(s => {
     const slotVotes = poll.votes?.[s.id] || {};
     const yesCount = MEMBERS.filter(m => slotVotes[m.id] === "yes").length;
     const noCount = MEMBERS.filter(m => slotVotes[m.id] === "no").length;
     const allYes = yesCount === MEMBERS.length;
-    const myVote = member ? slotVotes[member.id] : null;
     const isDecided = poll.decidedSlotId === s.id;
+    const d = new Date(s.date + "T00:00:00");
     return /*#__PURE__*/React.createElement("div", {
       key: s.id,
       className: "card-flat p-3 sm:p-4 " + (isDecided ? "ring-2 ring-[var(--berry)]" : allYes ? "ring-2 ring-[var(--good)]" : "")
@@ -2757,13 +2998,15 @@ const PollDetail = _ref31 => {
       className: "shrink-0 text-center min-w-[68px]"
     }, /*#__PURE__*/React.createElement("div", {
       className: "ticker text-[var(--berry)]"
-    }, fmtDate(s.date).split(",")[0]), /*#__PURE__*/React.createElement("div", {
+    }, d.toLocaleDateString(undefined, {
+      weekday: "short"
+    })), /*#__PURE__*/React.createElement("div", {
       className: "display text-3xl leading-none mt-1"
-    }, new Date(s.date + "T00:00:00").getDate()), /*#__PURE__*/React.createElement("div", {
+    }, d.getDate()), /*#__PURE__*/React.createElement("div", {
       className: "ticker mt-1"
-    }, new Date(s.date + "T00:00:00").toLocaleDateString(undefined, {
+    }, d.toLocaleDateString(undefined, {
       month: "short"
-    }))), /*#__PURE__*/React.createElement("div", {
+    }), " ", d.getFullYear())), /*#__PURE__*/React.createElement("div", {
       className: "flex-1 min-w-0"
     }, /*#__PURE__*/React.createElement("div", {
       className: "text-sm font-semibold"
@@ -2804,9 +3047,763 @@ const PollDetail = _ref31 => {
       onClick: () => removeSlot(s.id),
       className: "ticker text-[var(--ink-soft)] hover:text-[var(--berry)] ml-auto"
     }, "Remove"))))));
-  })), poll.status === "open" && member && sortedSlots.length > 0 && /*#__PURE__*/React.createElement("p", {
-    className: "text-xs text-[var(--ink-soft)] italic mt-3"
-  }, "Tap your initial on each slot to cycle: Yes \u2192 Maybe \u2192 No \u2192 \u2014"));
+  })));
+};
+
+// =========================================================================
+// EQUIPMENT
+// =========================================================================
+const blankEquipment = () => ({
+  name: "",
+  category: "pa",
+  ownerType: "band",
+  ownerMember: "",
+  heldBy: "",
+  quantity: 1,
+  status: "available",
+  notes: ""
+});
+const EQUIPMENT_STATUSES = [{
+  id: "available",
+  label: "Available",
+  bg: "bg-green-100",
+  color: "var(--good)"
+}, {
+  id: "partial",
+  label: "Partial",
+  bg: "bg-yellow-100",
+  color: "var(--rusty)"
+}, {
+  id: "missing",
+  label: "Missing",
+  bg: "bg-red-100",
+  color: "var(--learn)"
+}, {
+  id: "broken",
+  label: "Broken",
+  bg: "bg-gray-200",
+  color: "var(--ink-soft)"
+}, {
+  id: "ordered",
+  label: "Ordered",
+  bg: "bg-blue-100",
+  color: "#1f6fb8"
+}];
+const EquipmentForm = _ref35 => {
+  let initial = _ref35.initial,
+    onSave = _ref35.onSave,
+    onCancel = _ref35.onCancel,
+    onDelete = _ref35.onDelete,
+    holderSuggestions = _ref35.holderSuggestions;
+  const _useState34 = useState(initial || blankEquipment()),
+    f = _useState34[0],
+    setF = _useState34[1];
+  const set = (k, v) => setF(prev => ({
+    ...prev,
+    [k]: v
+  }));
+  return /*#__PURE__*/React.createElement("div", {
+    className: "card p-5 mb-4"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-1 md:grid-cols-2 gap-3"
+  }, /*#__PURE__*/React.createElement("label", {
+    className: "text-sm md:col-span-2"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ticker mb-1"
+  }, "Item"), /*#__PURE__*/React.createElement("input", {
+    className: "input",
+    value: f.name,
+    onChange: e => set("name", e.target.value),
+    placeholder: "e.g. PA speakers, Mixer"
+  })), /*#__PURE__*/React.createElement("label", {
+    className: "text-sm"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ticker mb-1"
+  }, "Category"), /*#__PURE__*/React.createElement("select", {
+    className: "input",
+    value: f.category,
+    onChange: e => set("category", e.target.value)
+  }, EQUIPMENT_CATEGORIES.map(c => /*#__PURE__*/React.createElement("option", {
+    key: c.id,
+    value: c.id
+  }, c.label)))), /*#__PURE__*/React.createElement("label", {
+    className: "text-sm"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ticker mb-1"
+  }, "Status"), /*#__PURE__*/React.createElement("select", {
+    className: "input",
+    value: f.status,
+    onChange: e => set("status", e.target.value)
+  }, EQUIPMENT_STATUSES.map(s => /*#__PURE__*/React.createElement("option", {
+    key: s.id,
+    value: s.id
+  }, s.label)))), /*#__PURE__*/React.createElement("label", {
+    className: "text-sm"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ticker mb-1"
+  }, "Owned by"), /*#__PURE__*/React.createElement("select", {
+    className: "input",
+    value: f.ownerType === "band" ? "band" : f.ownerMember,
+    onChange: e => {
+      if (e.target.value === "band") {
+        set("ownerType", "band");
+        set("ownerMember", "");
+      } else {
+        set("ownerType", "member");
+        set("ownerMember", e.target.value);
+      }
+    }
+  }, /*#__PURE__*/React.createElement("option", {
+    value: "band"
+  }, "Band (shared)"), MEMBERS.map(m => /*#__PURE__*/React.createElement("option", {
+    key: m.id,
+    value: m.id
+  }, m.name, " (personal)")))), /*#__PURE__*/React.createElement("label", {
+    className: "text-sm"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ticker mb-1"
+  }, "Quantity"), /*#__PURE__*/React.createElement("input", {
+    className: "input",
+    type: "number",
+    min: "0",
+    value: f.quantity,
+    onChange: e => set("quantity", Number(e.target.value) || 0)
+  })), /*#__PURE__*/React.createElement("label", {
+    className: "text-sm md:col-span-2"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ticker mb-1"
+  }, "Currently with"), /*#__PURE__*/React.createElement("input", {
+    className: "input",
+    value: f.heldBy,
+    onChange: e => set("heldBy", e.target.value),
+    placeholder: "e.g. Veena, James, in storage\u2026",
+    list: "holder-suggestions"
+  }), holderSuggestions && holderSuggestions.length > 0 && /*#__PURE__*/React.createElement("datalist", {
+    id: "holder-suggestions"
+  }, holderSuggestions.map(h => /*#__PURE__*/React.createElement("option", {
+    key: h,
+    value: h
+  })))), /*#__PURE__*/React.createElement("label", {
+    className: "text-sm md:col-span-2"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ticker mb-1"
+  }, "Notes"), /*#__PURE__*/React.createElement("textarea", {
+    className: "input",
+    rows: "2",
+    value: f.notes,
+    onChange: e => set("notes", e.target.value)
+  }))), /*#__PURE__*/React.createElement("div", {
+    className: "flex flex-wrap gap-2 mt-4"
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => onSave(f),
+    disabled: !f.name.trim(),
+    className: "btn berry-bg px-4 py-2 font-semibold"
+  }, "Save"), /*#__PURE__*/React.createElement("button", {
+    onClick: onCancel,
+    className: "btn bg-white px-4 py-2"
+  }, "Cancel"), onDelete && /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      if (confirm("Delete this item?")) onDelete();
+    },
+    className: "btn bg-white px-4 py-2 ml-auto text-[var(--berry)]"
+  }, "Delete")));
+};
+const EquipmentCard = _ref36 => {
+  let item = _ref36.item,
+    member = _ref36.member,
+    onEdit = _ref36.onEdit,
+    onAssign = _ref36.onAssign;
+  const status = EQUIPMENT_STATUSES.find(s => s.id === item.status) || EQUIPMENT_STATUSES[0];
+  const owner = item.ownerType === "member" ? MEMBERS.find(m => m.id === item.ownerMember) : null;
+  return /*#__PURE__*/React.createElement("div", {
+    className: "card-flat p-3 sm:p-4"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-start gap-3 flex-wrap"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex-1 min-w-0"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-baseline gap-2 flex-wrap"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "display text-lg leading-tight"
+  }, item.name), item.quantity > 1 && /*#__PURE__*/React.createElement("span", {
+    className: "ticker text-[var(--ink-soft)]"
+  }, "\xD7", item.quantity)), /*#__PURE__*/React.createElement("div", {
+    className: "flex flex-wrap items-center gap-1.5 mt-1.5"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "ticker px-2 py-0.5 " + status.bg
+  }, status.label), /*#__PURE__*/React.createElement("span", {
+    className: "ticker text-[var(--ink-soft)]"
+  }, owner ? `${owner.name}'s` : "Band-owned")), item.notes && /*#__PURE__*/React.createElement("p", {
+    className: "text-sm mt-2 italic text-[var(--ink-soft)]"
+  }, item.notes)), /*#__PURE__*/React.createElement("button", {
+    onClick: onEdit,
+    className: "ticker text-[var(--ink-soft)] hover:text-[var(--berry)] shrink-0"
+  }, "Edit \u25B8")), /*#__PURE__*/React.createElement("div", {
+    className: "mt-3 pt-3 border-t border-[var(--line)]/20 flex flex-wrap items-center gap-2"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "ticker text-[var(--ink-soft)]"
+  }, "Currently with"), /*#__PURE__*/React.createElement("div", {
+    className: "flex gap-1 flex-wrap"
+  }, MEMBERS.map(m => {
+    const isCurrent = item.heldBy === m.name;
+    return /*#__PURE__*/React.createElement("button", {
+      key: m.id,
+      onClick: () => onAssign(item.id, isCurrent ? "" : m.name),
+      className: "pill px-2.5 py-1 text-xs font-semibold " + (isCurrent ? "berry-bg text-white" : "bg-white hover:bg-[var(--acid)]"),
+      title: isCurrent ? `Tap to unassign ${m.name}` : `Mark as with ${m.name}`
+    }, m.name, member?.id === m.id && !isCurrent ? " (me)" : "");
+  }), item.heldBy && !MEMBERS.some(m => m.name === item.heldBy) && /*#__PURE__*/React.createElement("span", {
+    className: "pill px-2.5 py-1 text-xs font-semibold berry-bg text-white"
+  }, item.heldBy), !item.heldBy && /*#__PURE__*/React.createElement("span", {
+    className: "ticker text-[var(--ink-soft)] italic px-1"
+  }, "unassigned"))));
+};
+const EquipmentView = _ref37 => {
+  let equipment = _ref37.equipment,
+    wishlist = _ref37.wishlist,
+    member = _ref37.member,
+    mutate = _ref37.mutate;
+  const _useState35 = useState("owned"),
+    view = _useState35[0],
+    setView = _useState35[1];
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "flex gap-2 mb-4"
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setView("owned"),
+    className: "pill px-3 py-1.5 text-sm font-semibold " + (view === "owned" ? "berry-bg text-white" : "bg-white hover:bg-[var(--acid)]")
+  }, "Owned (", Object.keys(equipment || {}).length, ")"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setView("wishlist"),
+    className: "pill px-3 py-1.5 text-sm font-semibold " + (view === "wishlist" ? "berry-bg text-white" : "bg-white hover:bg-[var(--acid)]")
+  }, "Wishlist (", Object.keys(wishlist || {}).length, ")")), view === "owned" ? /*#__PURE__*/React.createElement(OwnedEquipmentView, {
+    equipment: equipment,
+    member: member,
+    mutate: mutate
+  }) : /*#__PURE__*/React.createElement(WishlistView, {
+    wishlist: wishlist,
+    member: member,
+    mutate: mutate
+  }));
+};
+const OwnedEquipmentView = _ref38 => {
+  let equipment = _ref38.equipment,
+    member = _ref38.member,
+    mutate = _ref38.mutate;
+  const _useState36 = useState(null),
+    editingId = _useState36[0],
+    setEditingId = _useState36[1];
+  const _useState37 = useState(false),
+    adding = _useState37[0],
+    setAdding = _useState37[1];
+  const _useState38 = useState("category"),
+    groupBy = _useState38[0],
+    setGroupBy = _useState38[1];
+  const all = equipmentList(equipment);
+  const holders = Array.from(new Set(all.map(e => e.heldBy).filter(Boolean))).sort();
+  const update = (id, data) => {
+    mutate(prev => ({
+      ...prev,
+      equipment: {
+        ...(prev.equipment || {}),
+        [id]: {
+          ...(prev.equipment?.[id] || {}),
+          ...data
+        }
+      }
+    }));
+    setEditingId(null);
+  };
+  const create = data => {
+    mutate(prev => ({
+      ...prev,
+      equipment: {
+        ...(prev.equipment || {}),
+        [newId("eq")]: {
+          ...data,
+          createdAt: Date.now()
+        }
+      }
+    }));
+    setAdding(false);
+  };
+  const remove = id => {
+    mutate(prev => {
+      const eq = {
+        ...(prev.equipment || {})
+      };
+      delete eq[id];
+      return {
+        ...prev,
+        equipment: eq
+      };
+    });
+    setEditingId(null);
+  };
+  const assignHolder = (id, name) => mutate(prev => ({
+    ...prev,
+    equipment: {
+      ...(prev.equipment || {}),
+      [id]: {
+        ...(prev.equipment?.[id] || {}),
+        heldBy: name
+      }
+    }
+  }));
+  let groups = [];
+  if (groupBy === "category") {
+    groups = EQUIPMENT_CATEGORIES.map(c => ({
+      key: c.id,
+      label: c.label,
+      items: all.filter(e => e.category === c.id).sort((a, b) => a.name.localeCompare(b.name))
+    })).filter(g => g.items.length > 0);
+  } else if (groupBy === "holder") {
+    const map = {};
+    all.forEach(e => {
+      const h = e.heldBy || "Unassigned";
+      if (!map[h]) map[h] = [];
+      map[h].push(e);
+    });
+    groups = Object.keys(map).sort().map(h => ({
+      key: h,
+      label: h,
+      items: map[h].sort((a, b) => a.name.localeCompare(b.name))
+    }));
+  } else if (groupBy === "status") {
+    groups = EQUIPMENT_STATUSES.map(s => ({
+      key: s.id,
+      label: s.label,
+      items: all.filter(e => e.status === s.id).sort((a, b) => a.name.localeCompare(b.name))
+    })).filter(g => g.items.length > 0);
+  }
+  const total = all.length;
+  const issues = all.filter(e => e.status === "missing" || e.status === "broken").length;
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "card p-4 mb-4"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ticker text-[var(--berry)]"
+  }, "Kit list"), /*#__PURE__*/React.createElement("p", {
+    className: "display text-2xl leading-tight mt-1"
+  }, "Who has what."), /*#__PURE__*/React.createElement("p", {
+    className: "text-sm text-[var(--ink-soft)] mt-1"
+  }, total, " item", total === 1 ? "" : "s", " tracked", issues > 0 ? ` · ${issues} need attention` : "", member ? "" : " · pick who you are above to mark items as yours")), /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center justify-between mb-3 flex-wrap gap-2"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex gap-1.5 items-center flex-wrap"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "ticker text-[var(--ink-soft)]"
+  }, "Group by"), [{
+    id: "category",
+    label: "Category"
+  }, {
+    id: "holder",
+    label: "Who has it"
+  }, {
+    id: "status",
+    label: "Status"
+  }].map(g => /*#__PURE__*/React.createElement("button", {
+    key: g.id,
+    onClick: () => setGroupBy(g.id),
+    className: "pill px-2.5 py-1 text-xs font-semibold " + (groupBy === g.id ? "berry-bg text-white" : "bg-white")
+  }, g.label))), /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      setAdding(true);
+      setEditingId(null);
+    },
+    className: "btn berry-bg px-4 py-2 text-sm font-semibold"
+  }, "+ Add item")), adding && /*#__PURE__*/React.createElement(EquipmentForm, {
+    onSave: create,
+    onCancel: () => setAdding(false),
+    holderSuggestions: holders
+  }), groups.length === 0 && !adding && /*#__PURE__*/React.createElement("div", {
+    className: "card p-6 text-center"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "display text-xl"
+  }, "No equipment tracked yet.")), /*#__PURE__*/React.createElement("div", {
+    className: "space-y-6"
+  }, groups.map(g => /*#__PURE__*/React.createElement("section", {
+    key: g.key
+  }, /*#__PURE__*/React.createElement("h2", {
+    className: "display text-2xl mb-3"
+  }, g.label, " ", /*#__PURE__*/React.createElement("span", {
+    className: "text-[var(--ink-soft)] text-base"
+  }, "(", g.items.length, ")")), /*#__PURE__*/React.createElement("div", {
+    className: "space-y-2.5"
+  }, g.items.map(item => editingId === item.id ? /*#__PURE__*/React.createElement(EquipmentForm, {
+    key: item.id,
+    initial: item,
+    onSave: f => update(item.id, f),
+    onCancel: () => setEditingId(null),
+    onDelete: () => remove(item.id),
+    holderSuggestions: holders
+  }) : /*#__PURE__*/React.createElement(EquipmentCard, {
+    key: item.id,
+    item: item,
+    member: member,
+    onEdit: () => {
+      setEditingId(item.id);
+      setAdding(false);
+    },
+    onAssign: assignHolder
+  })))))));
+};
+
+// ---- Wishlist
+const blankWishItem = () => ({
+  name: "",
+  description: "",
+  productUrl: "",
+  estimatedCost: "",
+  notes: "",
+  proposer: "",
+  status: "wishlist",
+  votes: {}
+});
+const WISHLIST_STATUSES = [{
+  id: "wishlist",
+  label: "Wishlist",
+  bg: "bg-yellow-100"
+}, {
+  id: "approved",
+  label: "Approved to buy",
+  bg: "bg-green-100"
+}, {
+  id: "ordered",
+  label: "Ordered",
+  bg: "bg-blue-100"
+}, {
+  id: "bought",
+  label: "Bought ✓",
+  bg: "bg-gray-200"
+}, {
+  id: "rejected",
+  label: "Rejected",
+  bg: "bg-red-100"
+}];
+const WishItemForm = _ref39 => {
+  let initial = _ref39.initial,
+    onSave = _ref39.onSave,
+    onCancel = _ref39.onCancel,
+    onDelete = _ref39.onDelete;
+  const _useState39 = useState(initial || blankWishItem()),
+    f = _useState39[0],
+    setF = _useState39[1];
+  const set = (k, v) => setF(prev => ({
+    ...prev,
+    [k]: v
+  }));
+  return /*#__PURE__*/React.createElement("div", {
+    className: "card p-5 mb-4"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-1 md:grid-cols-2 gap-3"
+  }, /*#__PURE__*/React.createElement("label", {
+    className: "text-sm md:col-span-2"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ticker mb-1"
+  }, "Item name"), /*#__PURE__*/React.createElement("input", {
+    className: "input",
+    value: f.name,
+    onChange: e => set("name", e.target.value),
+    placeholder: "e.g. Stage monitor, Guitar tuner"
+  })), /*#__PURE__*/React.createElement("label", {
+    className: "text-sm md:col-span-2"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ticker mb-1"
+  }, "Description"), /*#__PURE__*/React.createElement("textarea", {
+    className: "input",
+    rows: "2",
+    value: f.description,
+    onChange: e => set("description", e.target.value),
+    placeholder: "Make/model, why we need it"
+  })), /*#__PURE__*/React.createElement("label", {
+    className: "text-sm"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ticker mb-1"
+  }, "Product URL"), /*#__PURE__*/React.createElement("input", {
+    className: "input",
+    type: "url",
+    value: f.productUrl,
+    onChange: e => set("productUrl", e.target.value),
+    placeholder: "https://\u2026"
+  })), /*#__PURE__*/React.createElement("label", {
+    className: "text-sm"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ticker mb-1"
+  }, "Estimated cost"), /*#__PURE__*/React.createElement("input", {
+    className: "input",
+    value: f.estimatedCost,
+    onChange: e => set("estimatedCost", e.target.value),
+    placeholder: "e.g. \xA3250"
+  })), /*#__PURE__*/React.createElement("label", {
+    className: "text-sm"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ticker mb-1"
+  }, "Proposed by"), /*#__PURE__*/React.createElement("input", {
+    className: "input",
+    value: f.proposer,
+    onChange: e => set("proposer", e.target.value),
+    placeholder: "e.g. Omar"
+  })), /*#__PURE__*/React.createElement("label", {
+    className: "text-sm"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ticker mb-1"
+  }, "Status"), /*#__PURE__*/React.createElement("select", {
+    className: "input",
+    value: f.status,
+    onChange: e => set("status", e.target.value)
+  }, WISHLIST_STATUSES.map(s => /*#__PURE__*/React.createElement("option", {
+    key: s.id,
+    value: s.id
+  }, s.label)))), /*#__PURE__*/React.createElement("label", {
+    className: "text-sm md:col-span-2"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ticker mb-1"
+  }, "Notes"), /*#__PURE__*/React.createElement("textarea", {
+    className: "input",
+    rows: "2",
+    value: f.notes,
+    onChange: e => set("notes", e.target.value)
+  }))), /*#__PURE__*/React.createElement("div", {
+    className: "flex flex-wrap gap-2 mt-4"
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => onSave(f),
+    disabled: !f.name.trim(),
+    className: "btn berry-bg px-4 py-2 font-semibold"
+  }, "Save"), /*#__PURE__*/React.createElement("button", {
+    onClick: onCancel,
+    className: "btn bg-white px-4 py-2"
+  }, "Cancel"), onDelete && /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      if (confirm("Delete this wishlist item?")) onDelete();
+    },
+    className: "btn bg-white px-4 py-2 ml-auto text-[var(--berry)]"
+  }, "Delete")));
+};
+const WishItemCard = _ref40 => {
+  let item = _ref40.item,
+    member = _ref40.member,
+    onEdit = _ref40.onEdit,
+    onVote = _ref40.onVote,
+    onSetStatus = _ref40.onSetStatus;
+  const status = WISHLIST_STATUSES.find(s => s.id === item.status) || WISHLIST_STATUSES[0];
+  const yesCount = MEMBERS.filter(m => item.votes?.[m.id] === "yes").length;
+  const noCount = MEMBERS.filter(m => item.votes?.[m.id] === "no").length;
+  const myVote = member ? item.votes?.[member.id] : null;
+  return /*#__PURE__*/React.createElement("div", {
+    className: "card-flat p-3 sm:p-4"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-start gap-3 flex-wrap"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex-1 min-w-0"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-baseline gap-2 flex-wrap"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "display text-lg leading-tight"
+  }, item.name), item.estimatedCost && /*#__PURE__*/React.createElement("span", {
+    className: "ticker text-[var(--berry)]"
+  }, item.estimatedCost)), /*#__PURE__*/React.createElement("div", {
+    className: "flex flex-wrap items-center gap-1.5 mt-1.5"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "ticker px-2 py-0.5 " + status.bg
+  }, status.label), item.proposer && /*#__PURE__*/React.createElement("span", {
+    className: "ticker text-[var(--ink-soft)]"
+  }, "prop: ", item.proposer), item.productUrl && /*#__PURE__*/React.createElement("a", {
+    href: item.productUrl,
+    target: "_blank",
+    rel: "noopener",
+    className: "ticker text-[var(--berry)] underline"
+  }, "View \u2197")), item.description && /*#__PURE__*/React.createElement("p", {
+    className: "text-sm mt-2 text-[var(--ink-soft)]"
+  }, item.description), item.notes && /*#__PURE__*/React.createElement("details", {
+    className: "mt-2 text-sm"
+  }, /*#__PURE__*/React.createElement("summary", {
+    className: "ticker text-[var(--ink-soft)] hover:text-[var(--berry)]"
+  }, "Notes \u25BE"), /*#__PURE__*/React.createElement("p", {
+    className: "mt-1.5 italic text-[var(--ink-soft)]"
+  }, item.notes))), /*#__PURE__*/React.createElement("button", {
+    onClick: onEdit,
+    className: "ticker text-[var(--ink-soft)] hover:text-[var(--berry)] shrink-0"
+  }, "Edit \u25B8")), /*#__PURE__*/React.createElement("div", {
+    className: "mt-3 pt-3 border-t border-[var(--line)]/20 flex flex-wrap items-center gap-3"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center gap-1.5"
+  }, MEMBERS.map(m => /*#__PURE__*/React.createElement(VotePill, {
+    key: m.id,
+    initial: m.name[0],
+    vote: item.votes?.[m.id]
+  }))), /*#__PURE__*/React.createElement("span", {
+    className: "text-xs text-[var(--ink-soft)]"
+  }, yesCount, " yes", noCount ? ` · ${noCount} no` : ""), member ? /*#__PURE__*/React.createElement("div", {
+    className: "flex gap-1.5 ml-auto"
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => onVote(item.id, member.id, myVote === "yes" ? null : "yes"),
+    className: "pill px-3 py-1 text-xs font-semibold " + (myVote === "yes" ? "text-white" : "bg-white hover:bg-[var(--acid)]"),
+    style: myVote === "yes" ? {
+      background: "var(--good)"
+    } : {}
+  }, "\u2713 Want it"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => onVote(item.id, member.id, myVote === "no" ? null : "no"),
+    className: "pill px-3 py-1 text-xs font-semibold " + (myVote === "no" ? "text-white" : "bg-white hover:bg-[var(--acid)]"),
+    style: myVote === "no" ? {
+      background: "var(--learn)"
+    } : {}
+  }, "\u2717 No")) : /*#__PURE__*/React.createElement("span", {
+    className: "ml-auto text-xs italic text-[var(--ink-soft)]"
+  }, "Pick who you are to vote")), /*#__PURE__*/React.createElement("div", {
+    className: "mt-3 pt-3 border-t border-[var(--line)]/20 flex flex-wrap items-center gap-2"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "ticker text-[var(--ink-soft)]"
+  }, "Move to"), WISHLIST_STATUSES.map(s => /*#__PURE__*/React.createElement("button", {
+    key: s.id,
+    onClick: () => onSetStatus(item.id, s.id),
+    disabled: s.id === item.status,
+    className: "pill px-2.5 py-1 text-xs font-semibold " + (s.id === item.status ? "berry-bg text-white" : "bg-white hover:bg-[var(--acid)]")
+  }, s.label))));
+};
+const WishlistView = _ref41 => {
+  let wishlist = _ref41.wishlist,
+    member = _ref41.member,
+    mutate = _ref41.mutate;
+  const _useState40 = useState(null),
+    editingId = _useState40[0],
+    setEditingId = _useState40[1];
+  const _useState41 = useState(false),
+    adding = _useState41[0],
+    setAdding = _useState41[1];
+  const _useState42 = useState("active"),
+    statusFilter = _useState42[0],
+    setStatusFilter = _useState42[1]; // active | all | <statusId>
+  const all = Object.entries(wishlist || {}).map(_ref42 => {
+    let id = _ref42[0],
+      x = _ref42[1];
+    return {
+      id,
+      ...x
+    };
+  });
+  let list = all;
+  if (statusFilter === "active") list = all.filter(x => x.status !== "bought" && x.status !== "rejected");else if (statusFilter !== "all") list = all.filter(x => x.status === statusFilter);
+  list.sort((a, b) => {
+    const yA = MEMBERS.filter(m => a.votes?.[m.id] === "yes").length;
+    const yB = MEMBERS.filter(m => b.votes?.[m.id] === "yes").length;
+    if (yA !== yB) return yB - yA;
+    return (a.name || "").localeCompare(b.name || "");
+  });
+  const update = (id, data) => mutate(prev => ({
+    ...prev,
+    wishlist: {
+      ...(prev.wishlist || {}),
+      [id]: {
+        ...(prev.wishlist?.[id] || {}),
+        ...data
+      }
+    }
+  }));
+  const setStatus = (id, status) => update(id, {
+    status
+  });
+  const create = data => {
+    mutate(prev => ({
+      ...prev,
+      wishlist: {
+        ...(prev.wishlist || {}),
+        [newId("w")]: {
+          ...data,
+          votes: {},
+          createdAt: Date.now()
+        }
+      }
+    }));
+    setAdding(false);
+  };
+  const remove = id => {
+    mutate(prev => {
+      const w = {
+        ...(prev.wishlist || {})
+      };
+      delete w[id];
+      return {
+        ...prev,
+        wishlist: w
+      };
+    });
+    setEditingId(null);
+  };
+  const vote = (id, mid, val) => mutate(prev => {
+    const w = {
+      ...(prev.wishlist || {})
+    };
+    const item = {
+      ...(w[id] || {})
+    };
+    const v = {
+      ...(item.votes || {})
+    };
+    if (!val) delete v[mid];else v[mid] = val;
+    item.votes = v;
+    w[id] = item;
+    return {
+      ...prev,
+      wishlist: w
+    };
+  });
+  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "card p-4 mb-4"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ticker text-[var(--berry)]"
+  }, "Wishlist"), /*#__PURE__*/React.createElement("p", {
+    className: "display text-2xl leading-tight mt-1"
+  }, "What we want to buy."), /*#__PURE__*/React.createElement("p", {
+    className: "text-sm text-[var(--ink-soft)] mt-1"
+  }, "Anyone can add an item. Each member votes \u2713 Want it / \u2717 No. Sorted by yes-vote count.")), /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center justify-between mb-3 flex-wrap gap-2"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex gap-1.5 items-center flex-wrap"
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setStatusFilter("active"),
+    className: "pill px-2.5 py-1 text-xs font-semibold " + (statusFilter === "active" ? "berry-bg text-white" : "bg-white")
+  }, "Active (", all.filter(x => x.status !== "bought" && x.status !== "rejected").length, ")"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setStatusFilter("all"),
+    className: "pill px-2.5 py-1 text-xs font-semibold " + (statusFilter === "all" ? "berry-bg text-white" : "bg-white")
+  }, "All (", all.length, ")"), WISHLIST_STATUSES.map(s => /*#__PURE__*/React.createElement("button", {
+    key: s.id,
+    onClick: () => setStatusFilter(s.id),
+    className: "pill px-2.5 py-1 text-xs font-semibold " + (statusFilter === s.id ? "berry-bg text-white" : "bg-white")
+  }, s.label, " (", all.filter(x => x.status === s.id).length, ")"))), /*#__PURE__*/React.createElement("button", {
+    onClick: () => {
+      setAdding(true);
+      setEditingId(null);
+    },
+    className: "btn berry-bg px-4 py-2 text-sm font-semibold"
+  }, "+ Add")), adding && /*#__PURE__*/React.createElement(WishItemForm, {
+    onSave: create,
+    onCancel: () => setAdding(false)
+  }), list.length === 0 && !adding && /*#__PURE__*/React.createElement("div", {
+    className: "card p-6 text-center"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "display text-xl"
+  }, statusFilter === "active" ? "No active wishlist items." : "Nothing here."), /*#__PURE__*/React.createElement("p", {
+    className: "text-sm text-[var(--ink-soft)] mt-2"
+  }, "Tap \"+ Add\" to suggest something.")), /*#__PURE__*/React.createElement("div", {
+    className: "space-y-2.5"
+  }, list.map(item => editingId === item.id ? /*#__PURE__*/React.createElement(WishItemForm, {
+    key: item.id,
+    initial: item,
+    onSave: f => {
+      update(item.id, f);
+      setEditingId(null);
+    },
+    onCancel: () => setEditingId(null),
+    onDelete: () => remove(item.id)
+  }) : /*#__PURE__*/React.createElement(WishItemCard, {
+    key: item.id,
+    item: item,
+    member: member,
+    onEdit: () => {
+      setEditingId(item.id);
+      setAdding(false);
+    },
+    onVote: vote,
+    onSetStatus: setStatus
+  }))));
 };
 
 // =========================================================================
@@ -2815,11 +3812,21 @@ const PollDetail = _ref31 => {
 const App = () => {
   const urlBin = getBinIdFromURL();
   const storedBin = getStoredBinId();
-  const [binId, setBinId] = useState(urlBin || storedBin || null);
-  const [showShare, setShowShare] = useState(false);
-  const [member, setMemberId] = useMemberIdentity();
-  const [tab, setTab] = useState("schedule");
-  const [showSyncPanel, setShowSyncPanel] = useState(false);
+  const _useState43 = useState(urlBin || storedBin || null),
+    binId = _useState43[0],
+    setBinId = _useState43[1];
+  const _useState44 = useState(false),
+    showShare = _useState44[0],
+    setShowShare = _useState44[1];
+  const _useMemberIdentity = useMemberIdentity(),
+    member = _useMemberIdentity[0],
+    setMemberId = _useMemberIdentity[1];
+  const _useState45 = useState("schedule"),
+    tab = _useState45[0],
+    setTab = _useState45[1];
+  const _useState46 = useState(false),
+    showSyncPanel = _useState46[0],
+    setShowSyncPanel = _useState46[1];
   useEffect(() => {
     if (urlBin && urlBin !== storedBin) setStoredBinId(urlBin);
   }, [urlBin, storedBin]);
@@ -2875,6 +3882,8 @@ const App = () => {
   const songs = sync.state.songs || {};
   const setlists = sync.state.setlists || {};
   const polls = sync.state.polls || {};
+  const equipment = sync.state.equipment || {};
+  const wishlist = sync.state.wishlist || {};
   return /*#__PURE__*/React.createElement("div", {
     className: "max-w-5xl mx-auto px-4 sm:px-6 py-6"
   }, showSyncPanel && /*#__PURE__*/React.createElement(SyncPanel, {
@@ -2913,6 +3922,9 @@ const App = () => {
   }, {
     id: "setlists",
     label: "Setlists"
+  }, {
+    id: "equipment",
+    label: "Kit"
   }].map(t => /*#__PURE__*/React.createElement("button", {
     key: t.id,
     onClick: () => setTab(t.id),
@@ -2943,6 +3955,11 @@ const App = () => {
     setlists: setlists,
     songs: songs,
     events: events,
+    member: member,
+    mutate: sync.mutate
+  }), tab === "equipment" && /*#__PURE__*/React.createElement(EquipmentView, {
+    equipment: equipment,
+    wishlist: wishlist,
     member: member,
     mutate: sync.mutate
   }), /*#__PURE__*/React.createElement("footer", {
