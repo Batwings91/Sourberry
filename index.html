@@ -501,13 +501,14 @@ const buildEquipmentSeed = () => {
   return eq;
 };
 const buildSeedState = () => ({
-  schemaVersion: 5,
+  schemaVersion: 6,
   events: buildEventsSeed(),
   songs: buildSongsSeed(),
   setlists: buildSetlistsSeed(),
   polls: {},
   equipment: buildEquipmentSeed(),
-  wishlist: {}
+  wishlist: {},
+  practiceAvail: {}
 });
 
 // ---- Migration
@@ -558,6 +559,12 @@ const migrate = data => {
     if (!data.equipment || Object.keys(data.equipment).length === 0) data.equipment = buildEquipmentSeed();
     data.wishlist = data.wishlist || {};
     data.schemaVersion = 5;
+    migrated = true;
+  }
+  // v5 → v6: add practiceAvail (Plan polls deprecated — kept in data, removed from UI)
+  if (data.schemaVersion < 6) {
+    data.practiceAvail = data.practiceAvail || {};
+    data.schemaVersion = 6;
     migrated = true;
   }
   return migrated;
@@ -782,13 +789,14 @@ const useSyncedState = binId => {
   const mutate = useCallback(updater => {
     setState(prev => {
       const next = updater(prev || {
-        schemaVersion: 5,
+        schemaVersion: 6,
         events: {},
         songs: {},
         setlists: {},
         polls: {},
         equipment: {},
-        wishlist: {}
+        wishlist: {},
+        practiceAvail: {}
       });
       stateRef.current = next;
       return next;
@@ -1650,7 +1658,7 @@ const AvailabilityView = _ref20 => {
     className: "display text-2xl leading-tight mt-1"
   }, "Tell the band when you're free."), /*#__PURE__*/React.createElement("p", {
     className: "text-sm text-[var(--ink-soft)] mt-1"
-  }, "For dates that are already on the schedule. For dates that aren't decided yet, use the ", /*#__PURE__*/React.createElement("strong", null, "Plan"), " tab.")), /*#__PURE__*/React.createElement("div", {
+  }, "For dates that are already on the schedule. To find when everyone's free, use the ", /*#__PURE__*/React.createElement("strong", null, "Practice"), " tab.")), /*#__PURE__*/React.createElement("div", {
     className: "card overflow-x-auto"
   }, /*#__PURE__*/React.createElement("table", {
     className: "w-full text-sm"
@@ -2579,475 +2587,444 @@ const SongPicker = _ref29 => {
 };
 
 // =========================================================================
-// PLAN — Doodle-style date polls (unchanged from v4)
+// PRACTICE PLANNER — calendar of availability
 // =========================================================================
-const blankPoll = () => ({
-  name: "",
-  description: "",
-  eventType: "rehearsal",
-  venueType: "in-person-studio",
-  location: "",
-  duration: "3h",
-  slots: [],
-  votes: {},
-  status: "open",
-  decidedSlotId: null,
-  createdEventId: null,
-  createdAt: Date.now()
-});
-const PlanView = _ref30 => {
-  let polls = _ref30.polls,
+
+const isWeekend = date => {
+  const d = date.getDay();
+  return d === 0 || d === 6;
+};
+const slotLabelForDate = date => isWeekend(date) ? "Day" : "Eve";
+const slotDescForDate = date => isWeekend(date) ? "Daytime" : "Evening (after 6pm)";
+
+// Get default rehearsal time for a date based on day of week
+const defaultTimeForDate = date => {
+  if (isWeekend(date)) return {
+    startTime: "15:00",
+    endTime: "18:00"
+  };
+  return {
+    startTime: "18:00",
+    endTime: "21:00"
+  };
+};
+
+// Convert a Date to YYYY-MM-DD using local time (avoiding timezone shifts)
+const localISO = date => {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
+// Find Monday on or before given date
+const startOfWeek = date => {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day; // shift to Monday
+  d.setDate(d.getDate() + diff);
+  return d;
+};
+const NUM_WEEKS = 8;
+const dayCellColor = (yesCount, totalMembers) => {
+  if (yesCount === totalMembers && totalMembers > 0) return {
+    bg: "rgba(31,143,74,0.35)",
+    border: "var(--good)"
+  };
+  if (yesCount === totalMembers - 1 && totalMembers > 1) return {
+    bg: "rgba(31,143,74,0.15)",
+    border: "rgba(31,143,74,0.5)"
+  };
+  if (yesCount >= 2) return {
+    bg: "rgba(214,240,74,0.35)",
+    border: "rgba(26,10,20,0.2)"
+  };
+  if (yesCount >= 1) return {
+    bg: "transparent",
+    border: "rgba(26,10,20,0.2)"
+  };
+  return {
+    bg: "transparent",
+    border: "rgba(26,10,20,0.15)"
+  };
+};
+const PracticeView = _ref30 => {
+  let practiceAvail = _ref30.practiceAvail,
     events = _ref30.events,
     member = _ref30.member,
-    mutate = _ref30.mutate;
-  const _useState29 = useState(null),
-    openId = _useState29[0],
-    setOpenId = _useState29[1];
-  const _useState30 = useState(false),
-    creating = _useState30[0],
-    setCreating = _useState30[1];
-  const all = pollsList(polls).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-  const open = all.filter(p => p.status === "open");
-  const decided = all.filter(p => p.status !== "open");
-  const createPoll = data => {
-    const id = newId("poll");
-    mutate(prev => ({
-      ...prev,
-      polls: {
-        ...(prev.polls || {}),
-        [id]: {
-          ...blankPoll(),
-          ...data,
-          createdAt: Date.now()
-        }
+    mutate = _ref30.mutate,
+    onGoToSchedule = _ref30.onGoToSchedule;
+  const _useState29 = useState(0),
+    weekOffset = _useState29[0],
+    setWeekOffset = _useState29[1];
+  const _useState30 = useState(null),
+    openDate = _useState30[0],
+    setOpenDate = _useState30[1];
+  const _useState31 = useState(false),
+    showBulk = _useState31[0],
+    setShowBulk = _useState31[1];
+  const startMonday = useMemo(() => {
+    const m = startOfWeek(new Date());
+    m.setDate(m.getDate() + weekOffset * 7);
+    return m;
+  }, [weekOffset]);
+  const weeks = useMemo(() => {
+    const result = [];
+    for (let w = 0; w < NUM_WEEKS; w++) {
+      const week = [];
+      for (let d = 0; d < 7; d++) {
+        const date = new Date(startMonday);
+        date.setDate(startMonday.getDate() + w * 7 + d);
+        week.push({
+          date,
+          iso: localISO(date)
+        });
       }
-    }));
-    setOpenId(id);
-    setCreating(false);
-  };
-  const updatePoll = (id, data) => mutate(prev => ({
-    ...prev,
-    polls: {
-      ...(prev.polls || {}),
-      [id]: {
-        ...(prev.polls?.[id] || {}),
-        ...data
-      }
+      result.push(week);
     }
-  }));
-  const deletePoll = id => {
+    return result;
+  }, [startMonday]);
+  const allDates = useMemo(() => weeks.flat(), [weeks]);
+  const setMyAvail = (iso, val) => {
+    if (!member) return;
     mutate(prev => {
-      const polls = {
-        ...(prev.polls || {})
+      const pa = {
+        ...(prev.practiceAvail || {})
       };
-      delete polls[id];
+      const day = {
+        ...(pa[iso] || {})
+      };
+      if (!val) delete day[member.id];else day[member.id] = val;
+      if (Object.keys(day).length === 0) delete pa[iso];else pa[iso] = day;
       return {
         ...prev,
-        polls
+        practiceAvail: pa
       };
     });
-    setOpenId(null);
   };
-  const scheduleFromSlot = (pollId, slot) => {
+  const bulkApply = (predicate, val) => {
+    if (!member) return;
+    mutate(prev => {
+      const pa = {
+        ...(prev.practiceAvail || {})
+      };
+      allDates.forEach(_ref31 => {
+        let date = _ref31.date,
+          iso = _ref31.iso;
+        if (predicate(date)) {
+          const day = {
+            ...(pa[iso] || {})
+          };
+          if (!val) delete day[member.id];else day[member.id] = val;
+          if (Object.keys(day).length === 0) delete pa[iso];else pa[iso] = day;
+        }
+      });
+      return {
+        ...prev,
+        practiceAvail: pa
+      };
+    });
+  };
+  const clearAllMyMarks = () => {
+    if (!member) return;
+    if (!confirm("Clear all your availability marks across all visible weeks?")) return;
+    bulkApply(() => true, null);
+  };
+  const bookRehearsalOn = iso => {
+    const date = new Date(iso + "T00:00:00");
+    const t = defaultTimeForDate(date);
     const eId = newId("e");
-    const poll = polls[pollId];
+    const sourceAvail = practiceAvail?.[iso] || {};
     mutate(prev => {
       const events = {
         ...(prev.events || {})
       };
       events[eId] = {
-        date: slot.date,
-        startTime: slot.startTime,
-        endTime: slot.endTime,
-        type: poll.eventType || "rehearsal",
-        venueType: poll.venueType || "in-person-studio",
-        location: poll.location || "",
+        date: iso,
+        startTime: t.startTime,
+        endTime: t.endTime,
+        type: "rehearsal",
+        venueType: "in-person-studio",
+        location: "",
         bookingOwner: "",
         confirmed: false,
-        status: "confirmed",
-        title: poll.name || "",
-        comments: poll.description || "",
-        availability: {},
+        status: "proposed",
+        title: "",
+        comments: "",
+        availability: {
+          ...sourceAvail
+        },
+        // copy practice marks as starting point
         createdAt: Date.now()
-      };
-      const polls = {
-        ...(prev.polls || {})
-      };
-      polls[pollId] = {
-        ...polls[pollId],
-        status: "decided",
-        decidedSlotId: slot.id,
-        createdEventId: eId
       };
       return {
         ...prev,
-        events,
-        polls
+        events
       };
     });
+    setOpenDate(null);
+    if (onGoToSchedule) onGoToSchedule();
   };
-  if (openId && polls?.[openId]) {
-    return /*#__PURE__*/React.createElement(PollDetail, {
-      poll: {
-        id: openId,
-        ...polls[openId]
-      },
-      events: events,
-      member: member,
-      onBack: () => setOpenId(null),
-      onUpdate: data => updatePoll(openId, data),
-      onDelete: () => deletePoll(openId),
-      onSchedule: slot => scheduleFromSlot(openId, slot)
+  const dateRangeLabel = useMemo(() => {
+    const first = allDates[0]?.date;
+    const last = allDates[allDates.length - 1]?.date;
+    if (!first || !last) return "";
+    const sameYear = first.getFullYear() === last.getFullYear();
+    const fmt = (d, withYear) => d.toLocaleDateString(undefined, withYear ? {
+      day: "numeric",
+      month: "short",
+      year: "numeric"
+    } : {
+      day: "numeric",
+      month: "short"
     });
-  }
+    return `${fmt(first, !sameYear)} – ${fmt(last, true)}`;
+  }, [allDates]);
+  const todayIsoStr = todayISO();
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     className: "card p-4 mb-4"
   }, /*#__PURE__*/React.createElement("div", {
     className: "ticker text-[var(--berry)]"
-  }, "Plan a date"), /*#__PURE__*/React.createElement("p", {
+  }, "Practice planner"), /*#__PURE__*/React.createElement("p", {
     className: "display text-2xl leading-tight mt-1"
-  }, "When can we all do this?"), /*#__PURE__*/React.createElement("p", {
+  }, "When can we all jam?"), /*#__PURE__*/React.createElement("p", {
     className: "text-sm text-[var(--ink-soft)] mt-1"
-  }, "Propose candidate dates, the band votes \u2713 / ? / \u2717 on each, and you pick the winner.")), /*#__PURE__*/React.createElement("div", {
-    className: "flex items-center justify-between mb-3"
-  }, /*#__PURE__*/React.createElement("h2", {
-    className: "display text-xl"
-  }, "Open polls (", open.length, ")"), /*#__PURE__*/React.createElement("button", {
-    onClick: () => setCreating(true),
-    className: "btn berry-bg px-4 py-2 text-sm font-semibold"
-  }, "+ New poll")), creating && /*#__PURE__*/React.createElement(PollForm, {
-    onSave: createPoll,
-    onCancel: () => setCreating(false)
-  }), open.length === 0 && !creating && /*#__PURE__*/React.createElement("div", {
-    className: "card p-6 text-center mb-4"
-  }, /*#__PURE__*/React.createElement("p", {
-    className: "display text-xl"
-  }, "No active polls."), /*#__PURE__*/React.createElement("p", {
-    className: "text-sm text-[var(--ink-soft)] mt-2"
-  }, "Tap \"+ New poll\" to find a date for the next rehearsal or gig.")), /*#__PURE__*/React.createElement("div", {
-    className: "space-y-3 mb-6"
-  }, open.map(p => /*#__PURE__*/React.createElement(PollListItem, {
-    key: p.id,
-    poll: p,
-    onOpen: () => setOpenId(p.id)
-  }))), decided.length > 0 && /*#__PURE__*/React.createElement("details", null, /*#__PURE__*/React.createElement("summary", {
-    className: "ticker text-[var(--ink-soft)] hover:text-[var(--berry)] mb-3"
-  }, "Decided / archived (", decided.length, ") \u25BE"), /*#__PURE__*/React.createElement("div", {
-    className: "space-y-3"
-  }, decided.map(p => /*#__PURE__*/React.createElement(PollListItem, {
-    key: p.id,
-    poll: p,
-    onOpen: () => setOpenId(p.id)
-  })))));
-};
-const PollForm = _ref31 => {
-  let initial = _ref31.initial,
-    onSave = _ref31.onSave,
-    onCancel = _ref31.onCancel;
-  const _useState31 = useState(initial || blankPoll()),
-    f = _useState31[0],
-    setF = _useState31[1];
-  const set = (k, v) => setF(prev => ({
-    ...prev,
-    [k]: v
-  }));
-  return /*#__PURE__*/React.createElement("div", {
-    className: "card p-5 mb-4"
+  }, "Mark days you're free for practice. ", /*#__PURE__*/React.createElement("strong", null, "Mon\u2013Fri"), " = evenings (after 6pm) \xB7 ", /*#__PURE__*/React.createElement("strong", null, "Sat\u2013Sun"), " = daytime. Days where everyone's free turn green.")), /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center justify-between mb-3 flex-wrap gap-2"
   }, /*#__PURE__*/React.createElement("div", {
-    className: "grid grid-cols-1 md:grid-cols-2 gap-3"
-  }, /*#__PURE__*/React.createElement("label", {
-    className: "text-sm md:col-span-2"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "ticker mb-1"
-  }, "Title"), /*#__PURE__*/React.createElement("input", {
-    autoFocus: true,
-    className: "input",
-    value: f.name,
-    onChange: e => set("name", e.target.value),
-    placeholder: "e.g. Find a December rehearsal"
-  })), /*#__PURE__*/React.createElement("label", {
-    className: "text-sm"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "ticker mb-1"
-  }, "Type"), /*#__PURE__*/React.createElement("select", {
-    className: "input",
-    value: f.eventType,
-    onChange: e => set("eventType", e.target.value)
-  }, /*#__PURE__*/React.createElement("option", {
-    value: "rehearsal"
-  }, "Rehearsal"), /*#__PURE__*/React.createElement("option", {
-    value: "gig"
-  }, "Gig"))), f.eventType === "rehearsal" && /*#__PURE__*/React.createElement("label", {
-    className: "text-sm"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "ticker mb-1"
-  }, "Venue type"), /*#__PURE__*/React.createElement("select", {
-    className: "input",
-    value: f.venueType,
-    onChange: e => set("venueType", e.target.value)
-  }, VENUE_TYPES.map(v => /*#__PURE__*/React.createElement("option", {
-    key: v.id,
-    value: v.id
-  }, v.label)))), /*#__PURE__*/React.createElement("label", {
-    className: "text-sm md:col-span-2"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "ticker mb-1"
-  }, "Location (optional)"), /*#__PURE__*/React.createElement("input", {
-    className: "input",
-    value: f.location,
-    onChange: e => set("location", e.target.value),
-    placeholder: "e.g. Earlsfield, Cambridge"
-  })), /*#__PURE__*/React.createElement("label", {
-    className: "text-sm md:col-span-2"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "ticker mb-1"
-  }, "Description (optional)"), /*#__PURE__*/React.createElement("textarea", {
-    className: "input",
-    rows: "2",
-    value: f.description,
-    onChange: e => set("description", e.target.value)
-  }))), /*#__PURE__*/React.createElement("div", {
-    className: "flex gap-2 mt-4"
+    className: "flex gap-2 items-center"
   }, /*#__PURE__*/React.createElement("button", {
-    onClick: () => onSave(f),
-    disabled: !f.name.trim(),
-    className: "btn berry-bg px-4 py-2 font-semibold"
-  }, "Create poll"), /*#__PURE__*/React.createElement("button", {
-    onClick: onCancel,
-    className: "btn bg-white px-4 py-2"
-  }, "Cancel")));
-};
-const PollListItem = _ref32 => {
-  let poll = _ref32.poll,
-    onOpen = _ref32.onOpen;
-  const slots = poll.slots || [];
-  const allInSlots = slots.filter(s => MEMBERS.every(m => poll.votes?.[s.id]?.[m.id] === "yes")).length;
-  return /*#__PURE__*/React.createElement("button", {
-    onClick: onOpen,
-    className: "card-flat p-4 w-full text-left hover:bg-[var(--acid)]/20 transition"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "flex items-center justify-between gap-3 flex-wrap"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "flex-1 min-w-0"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "display text-xl leading-tight"
-  }, poll.name), /*#__PURE__*/React.createElement("div", {
-    className: "text-sm text-[var(--ink-soft)] mt-1"
-  }, slots.length, " slot", slots.length === 1 ? "" : "s", allInSlots > 0 ? ` · ${allInSlots} where everyone said yes` : "", poll.status === "decided" ? " · DECIDED" : "")), /*#__PURE__*/React.createElement("span", {
-    className: "ticker text-[var(--berry)]"
-  }, "Open \u25B8")));
-};
-const PollDetail = _ref33 => {
-  let poll = _ref33.poll,
-    events = _ref33.events,
-    member = _ref33.member,
-    onBack = _ref33.onBack,
-    onUpdate = _ref33.onUpdate,
-    onDelete = _ref33.onDelete,
-    onSchedule = _ref33.onSchedule;
-  const _useState32 = useState(false),
-    addingSlot = _useState32[0],
-    setAddingSlot = _useState32[1];
-  const _useState33 = useState({
-      date: todayISO(),
-      startTime: "18:00",
-      endTime: "21:00"
-    }),
-    slot = _useState33[0],
-    setSlot = _useState33[1];
-  const slots = poll.slots || [];
-  const sortedSlots = [...slots].sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime));
-  const addSlot = () => {
-    onUpdate({
-      slots: [...slots, {
-        id: newId("slot"),
-        ...slot
-      }]
-    });
-    setAddingSlot(false);
-  };
-  const removeSlot = slotId => onUpdate({
-    slots: slots.filter(s => s.id !== slotId),
-    votes: Object.fromEntries(Object.entries(poll.votes || {}).filter(_ref34 => {
-      let k = _ref34[0];
-      return k !== slotId;
-    }))
-  });
-  const setVote = (slotId, memberId, val) => {
-    const votes = {
-      ...(poll.votes || {})
-    };
-    const slotVotes = {
-      ...(votes[slotId] || {})
-    };
-    if (!val) delete slotVotes[memberId];else slotVotes[memberId] = val;
-    votes[slotId] = slotVotes;
-    onUpdate({
-      votes
-    });
-  };
-  const decidedSlot = poll.decidedSlotId ? sortedSlots.find(s => s.id === poll.decidedSlotId) : null;
-  const decidedEvent = poll.createdEventId && events?.[poll.createdEventId];
-  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("button", {
-    onClick: onBack,
-    className: "ticker text-[var(--berry)] mb-3"
-  }, "\u2190 Back to polls"), /*#__PURE__*/React.createElement("div", {
-    className: "card p-4 mb-4"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "flex items-center gap-2 flex-wrap"
-  }, /*#__PURE__*/React.createElement(TypeBadge, {
-    type: poll.eventType,
-    status: "confirmed"
-  }), poll.eventType === "rehearsal" && /*#__PURE__*/React.createElement(VenueBadge, {
-    venueType: poll.venueType
-  }), poll.status === "decided" && /*#__PURE__*/React.createElement("span", {
-    className: "ticker bg-green-100 px-2 py-0.5"
-  }, "Decided \u2713")), /*#__PURE__*/React.createElement("h2", {
-    className: "display text-3xl leading-tight mt-2"
-  }, poll.name), poll.description && /*#__PURE__*/React.createElement("p", {
-    className: "text-sm text-[var(--ink-soft)] mt-2 italic"
-  }, poll.description), poll.location && /*#__PURE__*/React.createElement("p", {
-    className: "text-sm text-[var(--ink-soft)] mt-1"
-  }, "Location: ", poll.location), decidedSlot && /*#__PURE__*/React.createElement("div", {
-    className: "mt-3 p-3 bg-[var(--acid)]/30 border border-[var(--line)] text-sm"
-  }, /*#__PURE__*/React.createElement("strong", null, "Picked:"), " ", fmtDateLong(decidedSlot.date), ", ", decidedSlot.startTime, "\u2013", decidedSlot.endTime, decidedEvent && /*#__PURE__*/React.createElement(React.Fragment, null, " \xB7 added to your ", /*#__PURE__*/React.createElement("strong", null, "Schedule"))), /*#__PURE__*/React.createElement("div", {
-    className: "mt-3 flex gap-2 flex-wrap"
-  }, poll.status === "open" && /*#__PURE__*/React.createElement("button", {
-    onClick: () => setAddingSlot(true),
-    className: "btn berry-bg px-4 py-2 text-sm font-semibold"
-  }, "+ Add slot"), poll.status === "decided" && /*#__PURE__*/React.createElement("button", {
-    onClick: () => onUpdate({
-      status: "open",
-      decidedSlotId: null
-    }),
-    className: "btn bg-white px-4 py-2 text-sm"
-  }, "Re-open poll"), /*#__PURE__*/React.createElement("button", {
-    onClick: () => {
-      if (confirm(`Delete poll "${poll.name}"?`)) onDelete();
-    },
-    className: "btn bg-white px-4 py-2 text-sm text-[var(--berry)] ml-auto"
-  }, "Delete"))), addingSlot && /*#__PURE__*/React.createElement("div", {
-    className: "card p-4 mb-4"
-  }, /*#__PURE__*/React.createElement("h3", {
-    className: "display text-lg mb-3"
-  }, "Add a candidate slot"), /*#__PURE__*/React.createElement("div", {
-    className: "grid grid-cols-1 md:grid-cols-3 gap-2"
-  }, /*#__PURE__*/React.createElement("label", {
-    className: "text-sm"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "ticker mb-1"
-  }, "Date"), /*#__PURE__*/React.createElement("input", {
-    className: "input",
-    type: "date",
-    value: slot.date,
-    onChange: e => setSlot(s => ({
-      ...s,
-      date: e.target.value
-    }))
-  })), /*#__PURE__*/React.createElement("label", {
-    className: "text-sm"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "ticker mb-1"
-  }, "Start"), /*#__PURE__*/React.createElement("input", {
-    className: "input",
-    type: "time",
-    value: slot.startTime,
-    onChange: e => setSlot(s => ({
-      ...s,
-      startTime: e.target.value
-    }))
-  })), /*#__PURE__*/React.createElement("label", {
-    className: "text-sm"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "ticker mb-1"
-  }, "End"), /*#__PURE__*/React.createElement("input", {
-    className: "input",
-    type: "time",
-    value: slot.endTime,
-    onChange: e => setSlot(s => ({
-      ...s,
-      endTime: e.target.value
-    }))
-  }))), /*#__PURE__*/React.createElement("div", {
-    className: "flex gap-2 mt-3"
-  }, /*#__PURE__*/React.createElement("button", {
-    onClick: addSlot,
-    className: "btn berry-bg px-4 py-2 text-sm font-semibold"
-  }, "Add slot"), /*#__PURE__*/React.createElement("button", {
-    onClick: () => setAddingSlot(false),
-    className: "btn bg-white px-4 py-2 text-sm"
-  }, "Cancel"))), sortedSlots.length === 0 ? /*#__PURE__*/React.createElement("div", {
-    className: "card-flat p-6 text-center"
+    onClick: () => setWeekOffset(o => o - 4),
+    className: "pill px-3 py-1.5 text-sm bg-white"
+  }, "\u2039 Earlier"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setWeekOffset(0),
+    className: "pill px-3 py-1.5 text-sm bg-white"
+  }, "Today"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setWeekOffset(o => o + 4),
+    className: "pill px-3 py-1.5 text-sm bg-white"
+  }, "Later \u203A")), /*#__PURE__*/React.createElement("span", {
+    className: "text-sm text-[var(--ink-soft)]"
+  }, dateRangeLabel)), member && /*#__PURE__*/React.createElement("details", {
+    className: "card-flat p-3 mb-3",
+    open: showBulk,
+    onToggle: e => setShowBulk(e.target.open)
+  }, /*#__PURE__*/React.createElement("summary", {
+    className: "ticker text-[var(--ink-soft)] hover:text-[var(--berry)] flex items-center justify-between"
+  }, /*#__PURE__*/React.createElement("span", null, "Bulk mark my availability \u25BE"), /*#__PURE__*/React.createElement("span", {
+    className: "text-xs italic"
+  }, "(", member.name, ")")), /*#__PURE__*/React.createElement("div", {
+    className: "mt-3"
   }, /*#__PURE__*/React.createElement("p", {
-    className: "display text-xl"
-  }, "No candidate slots yet.")) : /*#__PURE__*/React.createElement("div", {
-    className: "space-y-2.5"
-  }, sortedSlots.map(s => {
-    const slotVotes = poll.votes?.[s.id] || {};
-    const yesCount = MEMBERS.filter(m => slotVotes[m.id] === "yes").length;
-    const noCount = MEMBERS.filter(m => slotVotes[m.id] === "no").length;
-    const allYes = yesCount === MEMBERS.length;
-    const isDecided = poll.decidedSlotId === s.id;
-    const d = new Date(s.date + "T00:00:00");
-    return /*#__PURE__*/React.createElement("div", {
-      key: s.id,
-      className: "card-flat p-3 sm:p-4 " + (isDecided ? "ring-2 ring-[var(--berry)]" : allYes ? "ring-2 ring-[var(--good)]" : "")
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "flex items-start gap-4"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "shrink-0 text-center min-w-[68px]"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "ticker text-[var(--berry)]"
-    }, d.toLocaleDateString(undefined, {
-      weekday: "short"
-    })), /*#__PURE__*/React.createElement("div", {
-      className: "display text-3xl leading-none mt-1"
-    }, d.getDate()), /*#__PURE__*/React.createElement("div", {
-      className: "ticker mt-1"
-    }, d.toLocaleDateString(undefined, {
+    className: "text-xs text-[var(--ink-soft)] mb-2"
+  }, "Apply to all visible weeks (", NUM_WEEKS, " weeks shown). Doesn't affect other people's marks."), /*#__PURE__*/React.createElement("div", {
+    className: "overflow-x-auto"
+  }, /*#__PURE__*/React.createElement("table", {
+    className: "text-xs"
+  }, /*#__PURE__*/React.createElement("thead", null, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
+    className: "text-left pr-3 py-1 ticker"
+  }), /*#__PURE__*/React.createElement("th", {
+    className: "px-1 py-1 ticker"
+  }, "\u2713 Yes"), /*#__PURE__*/React.createElement("th", {
+    className: "px-1 py-1 ticker"
+  }, "? Maybe"), /*#__PURE__*/React.createElement("th", {
+    className: "px-1 py-1 ticker"
+  }, "\u2717 No"), /*#__PURE__*/React.createElement("th", {
+    className: "px-1 py-1 ticker"
+  }, "\u2014 Clear"))), /*#__PURE__*/React.createElement("tbody", null, [{
+    label: "All weekday evenings",
+    pred: d => !isWeekend(d)
+  }, {
+    label: "All Saturdays",
+    pred: d => d.getDay() === 6
+  }, {
+    label: "All Sundays",
+    pred: d => d.getDay() === 0
+  }].map(row => /*#__PURE__*/React.createElement("tr", {
+    key: row.label
+  }, /*#__PURE__*/React.createElement("td", {
+    className: "pr-3 py-1 font-semibold"
+  }, row.label), [{
+    v: "yes",
+    bg: "var(--good)"
+  }, {
+    v: "maybe",
+    bg: "var(--rusty)"
+  }, {
+    v: "no",
+    bg: "var(--learn)"
+  }, {
+    v: null,
+    bg: ""
+  }].map(cell => /*#__PURE__*/React.createElement("td", {
+    key: String(cell.v),
+    className: "px-1 py-1"
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => bulkApply(row.pred, cell.v),
+    className: "pill px-2 py-1 text-xs font-semibold bg-white hover:bg-[var(--acid)]",
+    style: cell.bg && cell.v ? {
+      background: cell.bg,
+      color: "#fff"
+    } : {}
+  }, "Apply")))))))), /*#__PURE__*/React.createElement("button", {
+    onClick: clearAllMyMarks,
+    className: "mt-3 btn bg-white px-3 py-1.5 text-xs text-[var(--berry)]"
+  }, "Clear all my marks"))), !member && /*#__PURE__*/React.createElement("div", {
+    className: "card-flat p-3 mb-3 text-sm italic text-[var(--ink-soft)]"
+  }, "Pick who you are at the top of the page to mark your availability."), /*#__PURE__*/React.createElement("div", {
+    className: "card p-2 sm:p-3 overflow-x-auto"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "grid grid-cols-7 gap-1 mb-1 text-center"
+  }, ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(d => /*#__PURE__*/React.createElement("div", {
+    key: d,
+    className: "ticker text-[var(--ink-soft)] py-1 text-[10px] sm:text-xs"
+  }, d))), /*#__PURE__*/React.createElement("div", {
+    className: "space-y-1"
+  }, weeks.map((week, wi) => /*#__PURE__*/React.createElement("div", {
+    key: wi,
+    className: "grid grid-cols-7 gap-1"
+  }, week.map(_ref32 => {
+    let date = _ref32.date,
+      iso = _ref32.iso;
+    const day = practiceAvail?.[iso] || {};
+    const yesCount = MEMBERS.filter(m => day[m.id] === "yes").length;
+    const myAns = member ? day[member.id] : null;
+    const cellColor = dayCellColor(yesCount, MEMBERS.length);
+    const isToday = iso === todayIsoStr;
+    const isPastDate = iso < todayIsoStr;
+    const month = date.toLocaleDateString(undefined, {
       month: "short"
-    }), " ", d.getFullYear())), /*#__PURE__*/React.createElement("div", {
-      className: "flex-1 min-w-0"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "text-sm font-semibold"
-    }, s.startTime, "\u2013", s.endTime), /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center gap-2 flex-wrap mt-2"
+    });
+    const isFirstOfMonth = date.getDate() === 1 || wi === 0 && week.indexOf(week.find(d => d.iso === iso)) === 0;
+    return /*#__PURE__*/React.createElement("button", {
+      key: iso,
+      onClick: () => setOpenDate(iso),
+      style: {
+        background: cellColor.bg,
+        borderColor: cellColor.border
+      },
+      className: "text-left p-1.5 sm:p-2 border min-h-[68px] sm:min-h-[80px] hover:ring-2 hover:ring-[var(--berry)] transition relative " + (isPastDate ? "opacity-50" : "")
+    }, isToday && /*#__PURE__*/React.createElement("span", {
+      className: "absolute top-0.5 right-0.5 text-[8px] ticker text-[var(--berry)]"
+    }, "TODAY"), /*#__PURE__*/React.createElement("div", {
+      className: "flex items-baseline gap-1"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "display text-base sm:text-lg leading-none"
+    }, date.getDate()), (date.getDate() === 1 || wi === 0 && date === week[0].date) && /*#__PURE__*/React.createElement("span", {
+      className: "ticker text-[9px] text-[var(--ink-soft)]"
+    }, month)), /*#__PURE__*/React.createElement("div", {
+      className: "text-[9px] text-[var(--ink-soft)] mt-0.5"
+    }, slotLabelForDate(date)), /*#__PURE__*/React.createElement("div", {
+      className: "flex gap-0.5 mt-1 flex-wrap"
     }, MEMBERS.map(m => {
-      const v = slotVotes[m.id];
-      const isMe = member?.id === m.id;
-      return /*#__PURE__*/React.createElement("button", {
+      const a = day[m.id];
+      const bg = a === "yes" ? "var(--good)" : a === "no" ? "var(--learn)" : a === "maybe" ? "var(--rusty)" : "transparent";
+      const color = a ? "#fff" : "var(--ink-soft)";
+      return /*#__PURE__*/React.createElement("span", {
         key: m.id,
-        onClick: isMe && poll.status === "open" ? () => {
-          const nextV = v === "yes" ? "maybe" : v === "maybe" ? "no" : v === "no" ? null : "yes";
-          setVote(s.id, m.id, nextV);
-        } : undefined,
-        disabled: !isMe || poll.status !== "open",
-        className: "inline-flex items-center justify-center text-xs font-semibold rounded-full border border-[var(--line)] gap-1 px-2",
+        className: "inline-flex items-center justify-center text-[8px] font-bold rounded-full border border-[var(--line)]",
         style: {
-          height: 28,
-          background: v === "yes" ? "var(--good)" : v === "no" ? "var(--learn)" : v === "maybe" ? "var(--rusty)" : "transparent",
-          color: v ? "#fff" : "var(--ink-soft)",
-          cursor: isMe && poll.status === "open" ? "pointer" : "default"
+          width: 14,
+          height: 14,
+          background: bg,
+          color
         },
-        title: isMe ? "Tap to cycle: Yes → Maybe → No → —" : v || "no vote"
-      }, /*#__PURE__*/React.createElement("span", null, m.name[0]), /*#__PURE__*/React.createElement("span", {
-        className: "text-[10px]"
-      }, v === "yes" ? "✓" : v === "no" ? "✗" : v === "maybe" ? "?" : "·"));
-    }), /*#__PURE__*/React.createElement("span", {
-      className: "text-xs text-[var(--ink-soft)] ml-1"
-    }, yesCount, " yes", noCount ? ` · ${noCount} no` : "")), /*#__PURE__*/React.createElement("div", {
-      className: "mt-3 flex gap-2 flex-wrap"
-    }, poll.status === "open" && /*#__PURE__*/React.createElement(React.Fragment, null, allYes && /*#__PURE__*/React.createElement("button", {
-      onClick: () => onSchedule(s),
-      className: "btn berry-bg px-3 py-1.5 text-xs font-semibold"
-    }, "All in! Schedule this \u2192"), !allYes && yesCount >= 3 && /*#__PURE__*/React.createElement("button", {
-      onClick: () => onSchedule(s),
-      className: "btn bg-white px-3 py-1.5 text-xs font-semibold"
-    }, "Schedule anyway \u2192"), /*#__PURE__*/React.createElement("button", {
-      onClick: () => removeSlot(s.id),
-      className: "ticker text-[var(--ink-soft)] hover:text-[var(--berry)] ml-auto"
-    }, "Remove"))))));
-  })));
+        title: `${m.name}: ${a || "no answer"}`
+      }, m.name[0]);
+    })), yesCount === MEMBERS.length && /*#__PURE__*/React.createElement("div", {
+      className: "absolute bottom-1 right-1 text-[var(--good)] text-xs font-bold"
+    }, "\u2713"));
+  }))))), /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-[var(--ink-soft)] italic mt-3"
+  }, "Tap any day to set your availability or book a rehearsal. Brighter green = more of us free."), openDate && /*#__PURE__*/React.createElement(DayDetailPanel, {
+    iso: openDate,
+    day: practiceAvail?.[openDate] || {},
+    member: member,
+    existingEvent: Object.values(events || {}).find(e => e.date === openDate),
+    onSetAvail: val => setMyAvail(openDate, val),
+    onBook: () => bookRehearsalOn(openDate),
+    onClose: () => setOpenDate(null)
+  }));
+};
+const DayDetailPanel = _ref33 => {
+  let iso = _ref33.iso,
+    day = _ref33.day,
+    member = _ref33.member,
+    existingEvent = _ref33.existingEvent,
+    onSetAvail = _ref33.onSetAvail,
+    onBook = _ref33.onBook,
+    onClose = _ref33.onClose;
+  const date = new Date(iso + "T00:00:00");
+  const slotDesc = slotDescForDate(date);
+  const yesCount = MEMBERS.filter(m => day[m.id] === "yes").length;
+  const cur = member ? day[member.id] : null;
+  return /*#__PURE__*/React.createElement("div", {
+    className: "modal-bg",
+    onClick: onClose
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "card p-5 max-w-md w-full",
+    onClick: e => e.stopPropagation()
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flex items-center justify-between mb-2"
+  }, /*#__PURE__*/React.createElement("h3", {
+    className: "display text-2xl leading-tight"
+  }, fmtDateLong(iso)), /*#__PURE__*/React.createElement("button", {
+    onClick: onClose,
+    className: "ticker text-[var(--ink-soft)]"
+  }, "Close \u2715")), /*#__PURE__*/React.createElement("p", {
+    className: "ticker text-[var(--berry)]"
+  }, slotDesc), existingEvent && /*#__PURE__*/React.createElement("div", {
+    className: "mt-3 p-3 bg-[var(--acid)]/30 border border-[var(--line)] text-sm"
+  }, /*#__PURE__*/React.createElement("strong", null, "Already on the schedule:"), " ", existingEvent.type === "gig" ? "Gig" : "Rehearsal", " ", existingEvent.title ? `· ${existingEvent.title}` : "", " ", existingEvent.startTime, "\u2013", existingEvent.endTime, "."), /*#__PURE__*/React.createElement("div", {
+    className: "mt-4"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "ticker text-[var(--ink-soft)] mb-2"
+  }, "Who can do this ", isWeekend(date) ? "day" : "evening"), /*#__PURE__*/React.createElement("div", {
+    className: "space-y-1.5"
+  }, MEMBERS.map(m => {
+    const a = day[m.id];
+    const isMe = member?.id === m.id;
+    return /*#__PURE__*/React.createElement("div", {
+      key: m.id,
+      className: "flex items-center justify-between gap-2 py-1.5 border-b border-[var(--line)]/10"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "font-semibold"
+    }, m.name, isMe ? " (you)" : ""), isMe ? /*#__PURE__*/React.createElement("div", {
+      className: "flex gap-1"
+    }, [{
+      v: "yes",
+      label: "✓ Yes",
+      bg: "var(--good)"
+    }, {
+      v: "maybe",
+      label: "? Maybe",
+      bg: "var(--rusty)"
+    }, {
+      v: "no",
+      label: "✗ No",
+      bg: "var(--learn)"
+    }].map(opt => /*#__PURE__*/React.createElement("button", {
+      key: opt.v,
+      onClick: () => onSetAvail(cur === opt.v ? null : opt.v),
+      className: "pill px-3 py-1 text-xs font-semibold " + (cur === opt.v ? "text-white" : "bg-white hover:bg-[var(--acid)]"),
+      style: cur === opt.v ? {
+        background: opt.bg
+      } : {}
+    }, opt.label))) : /*#__PURE__*/React.createElement("span", {
+      className: "text-sm text-[var(--ink-soft)]"
+    }, a === "yes" ? "✓ Yes" : a === "maybe" ? "? Maybe" : a === "no" ? "✗ No" : "— no answer"));
+  })), !member && /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-[var(--ink-soft)] italic mt-2"
+  }, "Pick who you are above to mark your availability.")), !existingEvent && /*#__PURE__*/React.createElement("div", {
+    className: "mt-4 pt-3 border-t border-[var(--line)]/20"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-[var(--ink-soft)] mb-2"
+  }, yesCount, "/", MEMBERS.length, " can make it."), /*#__PURE__*/React.createElement("button", {
+    onClick: onBook,
+    className: "btn berry-bg px-4 py-2 text-sm font-semibold w-full"
+  }, "Book a rehearsal on this date \u2192"), /*#__PURE__*/React.createElement("p", {
+    className: "text-xs text-[var(--ink-soft)] italic mt-2"
+  }, "Creates a proposed rehearsal with default times. You'll be taken to the Schedule tab to fill in location and confirm."))));
 };
 
 // =========================================================================
@@ -3089,15 +3066,15 @@ const EQUIPMENT_STATUSES = [{
   bg: "bg-blue-100",
   color: "#1f6fb8"
 }];
-const EquipmentForm = _ref35 => {
-  let initial = _ref35.initial,
-    onSave = _ref35.onSave,
-    onCancel = _ref35.onCancel,
-    onDelete = _ref35.onDelete,
-    holderSuggestions = _ref35.holderSuggestions;
-  const _useState34 = useState(initial || blankEquipment()),
-    f = _useState34[0],
-    setF = _useState34[1];
+const EquipmentForm = _ref34 => {
+  let initial = _ref34.initial,
+    onSave = _ref34.onSave,
+    onCancel = _ref34.onCancel,
+    onDelete = _ref34.onDelete,
+    holderSuggestions = _ref34.holderSuggestions;
+  const _useState32 = useState(initial || blankEquipment()),
+    f = _useState32[0],
+    setF = _useState32[1];
   const set = (k, v) => setF(prev => ({
     ...prev,
     [k]: v
@@ -3208,11 +3185,11 @@ const EquipmentForm = _ref35 => {
     className: "btn bg-white px-4 py-2 ml-auto text-[var(--berry)]"
   }, "Delete")));
 };
-const EquipmentCard = _ref36 => {
-  let item = _ref36.item,
-    member = _ref36.member,
-    onEdit = _ref36.onEdit,
-    onAssign = _ref36.onAssign;
+const EquipmentCard = _ref35 => {
+  let item = _ref35.item,
+    member = _ref35.member,
+    onEdit = _ref35.onEdit,
+    onAssign = _ref35.onAssign;
   const status = EQUIPMENT_STATUSES.find(s => s.id === item.status) || EQUIPMENT_STATUSES[0];
   const owner = item.ownerType === "member" ? MEMBERS.find(m => m.id === item.ownerMember) : null;
   return /*#__PURE__*/React.createElement("div", {
@@ -3258,14 +3235,14 @@ const EquipmentCard = _ref36 => {
     className: "ticker text-[var(--ink-soft)] italic px-1"
   }, "unassigned"))));
 };
-const EquipmentView = _ref37 => {
-  let equipment = _ref37.equipment,
-    wishlist = _ref37.wishlist,
-    member = _ref37.member,
-    mutate = _ref37.mutate;
-  const _useState35 = useState("owned"),
-    view = _useState35[0],
-    setView = _useState35[1];
+const EquipmentView = _ref36 => {
+  let equipment = _ref36.equipment,
+    wishlist = _ref36.wishlist,
+    member = _ref36.member,
+    mutate = _ref36.mutate;
+  const _useState33 = useState("owned"),
+    view = _useState33[0],
+    setView = _useState33[1];
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     className: "flex gap-2 mb-4"
   }, /*#__PURE__*/React.createElement("button", {
@@ -3284,19 +3261,19 @@ const EquipmentView = _ref37 => {
     mutate: mutate
   }));
 };
-const OwnedEquipmentView = _ref38 => {
-  let equipment = _ref38.equipment,
-    member = _ref38.member,
-    mutate = _ref38.mutate;
-  const _useState36 = useState(null),
-    editingId = _useState36[0],
-    setEditingId = _useState36[1];
-  const _useState37 = useState(false),
-    adding = _useState37[0],
-    setAdding = _useState37[1];
-  const _useState38 = useState("category"),
-    groupBy = _useState38[0],
-    setGroupBy = _useState38[1];
+const OwnedEquipmentView = _ref37 => {
+  let equipment = _ref37.equipment,
+    member = _ref37.member,
+    mutate = _ref37.mutate;
+  const _useState34 = useState(null),
+    editingId = _useState34[0],
+    setEditingId = _useState34[1];
+  const _useState35 = useState(false),
+    adding = _useState35[0],
+    setAdding = _useState35[1];
+  const _useState36 = useState("category"),
+    groupBy = _useState36[0],
+    setGroupBy = _useState36[1];
   const all = equipmentList(equipment);
   const holders = Array.from(new Set(all.map(e => e.heldBy).filter(Boolean))).sort();
   const update = (id, data) => {
@@ -3478,14 +3455,14 @@ const WISHLIST_STATUSES = [{
   label: "Rejected",
   bg: "bg-red-100"
 }];
-const WishItemForm = _ref39 => {
-  let initial = _ref39.initial,
-    onSave = _ref39.onSave,
-    onCancel = _ref39.onCancel,
-    onDelete = _ref39.onDelete;
-  const _useState39 = useState(initial || blankWishItem()),
-    f = _useState39[0],
-    setF = _useState39[1];
+const WishItemForm = _ref38 => {
+  let initial = _ref38.initial,
+    onSave = _ref38.onSave,
+    onCancel = _ref38.onCancel,
+    onDelete = _ref38.onDelete;
+  const _useState37 = useState(initial || blankWishItem()),
+    f = _useState37[0],
+    setF = _useState37[1];
   const set = (k, v) => setF(prev => ({
     ...prev,
     [k]: v
@@ -3577,12 +3554,12 @@ const WishItemForm = _ref39 => {
     className: "btn bg-white px-4 py-2 ml-auto text-[var(--berry)]"
   }, "Delete")));
 };
-const WishItemCard = _ref40 => {
-  let item = _ref40.item,
-    member = _ref40.member,
-    onEdit = _ref40.onEdit,
-    onVote = _ref40.onVote,
-    onSetStatus = _ref40.onSetStatus;
+const WishItemCard = _ref39 => {
+  let item = _ref39.item,
+    member = _ref39.member,
+    onEdit = _ref39.onEdit,
+    onVote = _ref39.onVote,
+    onSetStatus = _ref39.onSetStatus;
   const status = WISHLIST_STATUSES.find(s => s.id === item.status) || WISHLIST_STATUSES[0];
   const yesCount = MEMBERS.filter(m => item.votes?.[m.id] === "yes").length;
   const noCount = MEMBERS.filter(m => item.votes?.[m.id] === "no").length;
@@ -3658,22 +3635,22 @@ const WishItemCard = _ref40 => {
     className: "pill px-2.5 py-1 text-xs font-semibold " + (s.id === item.status ? "berry-bg text-white" : "bg-white hover:bg-[var(--acid)]")
   }, s.label))));
 };
-const WishlistView = _ref41 => {
-  let wishlist = _ref41.wishlist,
-    member = _ref41.member,
-    mutate = _ref41.mutate;
-  const _useState40 = useState(null),
-    editingId = _useState40[0],
-    setEditingId = _useState40[1];
-  const _useState41 = useState(false),
-    adding = _useState41[0],
-    setAdding = _useState41[1];
-  const _useState42 = useState("active"),
-    statusFilter = _useState42[0],
-    setStatusFilter = _useState42[1]; // active | all | <statusId>
-  const all = Object.entries(wishlist || {}).map(_ref42 => {
-    let id = _ref42[0],
-      x = _ref42[1];
+const WishlistView = _ref40 => {
+  let wishlist = _ref40.wishlist,
+    member = _ref40.member,
+    mutate = _ref40.mutate;
+  const _useState38 = useState(null),
+    editingId = _useState38[0],
+    setEditingId = _useState38[1];
+  const _useState39 = useState(false),
+    adding = _useState39[0],
+    setAdding = _useState39[1];
+  const _useState40 = useState("active"),
+    statusFilter = _useState40[0],
+    setStatusFilter = _useState40[1]; // active | all | <statusId>
+  const all = Object.entries(wishlist || {}).map(_ref41 => {
+    let id = _ref41[0],
+      x = _ref41[1];
     return {
       id,
       ...x
@@ -3812,21 +3789,21 @@ const WishlistView = _ref41 => {
 const App = () => {
   const urlBin = getBinIdFromURL();
   const storedBin = getStoredBinId();
-  const _useState43 = useState(urlBin || storedBin || null),
-    binId = _useState43[0],
-    setBinId = _useState43[1];
-  const _useState44 = useState(false),
-    showShare = _useState44[0],
-    setShowShare = _useState44[1];
+  const _useState41 = useState(urlBin || storedBin || null),
+    binId = _useState41[0],
+    setBinId = _useState41[1];
+  const _useState42 = useState(false),
+    showShare = _useState42[0],
+    setShowShare = _useState42[1];
   const _useMemberIdentity = useMemberIdentity(),
     member = _useMemberIdentity[0],
     setMemberId = _useMemberIdentity[1];
-  const _useState45 = useState("schedule"),
-    tab = _useState45[0],
-    setTab = _useState45[1];
-  const _useState46 = useState(false),
-    showSyncPanel = _useState46[0],
-    setShowSyncPanel = _useState46[1];
+  const _useState43 = useState("schedule"),
+    tab = _useState43[0],
+    setTab = _useState43[1];
+  const _useState44 = useState(false),
+    showSyncPanel = _useState44[0],
+    setShowSyncPanel = _useState44[1];
   useEffect(() => {
     if (urlBin && urlBin !== storedBin) setStoredBinId(urlBin);
   }, [urlBin, storedBin]);
@@ -3881,9 +3858,9 @@ const App = () => {
   const events = sync.state.events || {};
   const songs = sync.state.songs || {};
   const setlists = sync.state.setlists || {};
-  const polls = sync.state.polls || {};
   const equipment = sync.state.equipment || {};
   const wishlist = sync.state.wishlist || {};
+  const practiceAvail = sync.state.practiceAvail || {};
   return /*#__PURE__*/React.createElement("div", {
     className: "max-w-5xl mx-auto px-4 sm:px-6 py-6"
   }, showSyncPanel && /*#__PURE__*/React.createElement(SyncPanel, {
@@ -3914,8 +3891,8 @@ const App = () => {
     id: "availability",
     label: "Availability"
   }, {
-    id: "plan",
-    label: "Plan"
+    id: "practice",
+    label: "Practice"
   }, {
     id: "songs",
     label: "Songs"
@@ -3942,11 +3919,12 @@ const App = () => {
     events: events,
     member: member,
     mutate: sync.mutate
-  }), tab === "plan" && /*#__PURE__*/React.createElement(PlanView, {
-    polls: polls,
+  }), tab === "practice" && /*#__PURE__*/React.createElement(PracticeView, {
+    practiceAvail: practiceAvail,
     events: events,
     member: member,
-    mutate: sync.mutate
+    mutate: sync.mutate,
+    onGoToSchedule: () => setTab("schedule")
   }), tab === "songs" && /*#__PURE__*/React.createElement(SongsView, {
     songs: songs,
     member: member,
