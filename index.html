@@ -24,11 +24,9 @@
       --good: #1f8f4a; --rusty: #d97a1f; --learn: #c12c2c;
     }
     html, body { background: var(--bg); color: var(--ink); }
-    body {
-      font-family: 'Inter Tight', system-ui, sans-serif;
+    body { font-family: 'Inter Tight', system-ui, sans-serif;
       background-image: radial-gradient(circle at 1px 1px, rgba(26,10,20,0.08) 1px, transparent 0);
-      background-size: 22px 22px;
-    }
+      background-size: 22px 22px; }
     .display { font-family: 'Fraunces', Georgia, serif; font-optical-sizing: auto; }
     .display-italic { font-family: 'Fraunces', Georgia, serif; font-style: italic; }
     .wordmark { font-family: 'Fraunces', Georgia, serif; font-weight: 800;
@@ -51,6 +49,9 @@
     details > summary { cursor: pointer; list-style: none; }
     details > summary::-webkit-details-marker { display: none; }
     @media (max-width: 640px) { .card { box-shadow: 3px 3px 0 var(--line); } }
+    .modal-bg { position: fixed; inset: 0; background: rgba(26,10,20,0.5); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 1rem; }
+    .blink { animation: blink 1.4s ease-in-out infinite; }
+    @keyframes blink { 50% { opacity: 0.5; } }
   </style>
 
 </head>
@@ -75,23 +76,33 @@
     { id: "archive",    label: "Archive",    desc: "Old line-up / shelved" },
   ];
 
+  const VENUE_TYPES = [
+    { id: "in-person-studio", label: "Studio (in-person)", short: "Studio" },
+    { id: "jamkazam",         label: "Jamkazam (online)",  short: "Jamkazam" },
+  ];
+
+  const NEW_BADGE_DAYS = 7;
+
   const PRACTICE_LABEL = { good: "Good", rusty: "Rusty", learn: "Learn" };
   const PRACTICE_COLOR = { good: "var(--good)", rusty: "var(--rusty)", learn: "var(--learn)" };
 
+  // ---- Schedule seed
   const SEED_EVENTS = [
-    { date: "2025-10-09", startTime: "18:00", endTime: "21:00", type: "rehearsal", venueType: "in-person", location: "Earlsfield",  bookingOwner: "",      bookedAndPaid: false, status: "confirmed", title: "", comments: "Could do remote instead from 7pm? JRO could do remote but not live." },
-    { date: "2025-10-21", startTime: "18:00", endTime: "21:00", type: "rehearsal", venueType: "in-person", location: "Earlsfield",  bookingOwner: "mike",  bookedAndPaid: true,  status: "confirmed", title: "", comments: "Booked 6-10pm." },
-    { date: "2025-11-04", startTime: "18:00", endTime: "21:00", type: "rehearsal", venueType: "in-person", location: "Earlsfield",  bookingOwner: "veena", bookedAndPaid: true,  status: "confirmed", title: "", comments: "Booked." },
-    { date: "2025-11-05", startTime: "21:00", endTime: "23:00", type: "rehearsal", venueType: "virtual",   location: "Remote",      bookingOwner: "",      bookedAndPaid: false, status: "proposed",  title: "Backup remote practice", comments: "Backup remote practice if needed." },
-    { date: "2025-11-07", startTime: "18:00", endTime: "21:00", type: "gig",       venueType: "in-person", location: "Jolly Gardeners, Earlsfield", bookingOwner: "veena", bookedAndPaid: true, status: "confirmed", title: "50th Birthday Gig", comments: "90 min rehearsal 6-7:30pm, then 50th Birthday gig at the Jolly Gardeners." },
-    { date: "2025-11-08", startTime: "15:00", endTime: "18:00", type: "rehearsal", venueType: "in-person", location: "Earlsfield",  bookingOwner: "",      bookedAndPaid: false, status: "proposed",  title: "", comments: "4-7pm or 3-6pm please. Out that evening." },
-    { date: "2025-11-13", startTime: "18:00", endTime: "21:00", type: "rehearsal", venueType: "in-person", location: "",            bookingOwner: "",      bookedAndPaid: false, status: "proposed",  title: "", comments: "JRO: have a work thing in diary but can slip out if we need this slot. MG: I can no longer make this date (in Berlin)." },
-    { date: "2025-11-14", startTime: "18:00", endTime: "21:00", type: "rehearsal", venueType: "in-person", location: "",            bookingOwner: "",      bookedAndPaid: false, status: "proposed",  title: "", comments: "" },
-    { date: "2025-11-15", startTime: "15:00", endTime: "21:00", type: "rehearsal", venueType: "in-person", location: "Earlsfield",  bookingOwner: "",      bookedAndPaid: false, status: "proposed",  title: "Long sesh", comments: "Can do the full long sesh if needed (V)." },
-    { date: "2025-11-20", startTime: "18:00", endTime: "21:00", type: "rehearsal", venueType: "in-person", location: "Earlsfield",  bookingOwner: "",      bookedAndPaid: false, status: "proposed",  title: "Dress rehearsal", comments: "Night before dress rehearsal. In the office so will arrive after 6." },
-    { date: "2025-11-21", startTime: "21:00", endTime: "22:30", type: "gig",       venueType: "in-person", location: "",            bookingOwner: "",      bookedAndPaid: false, status: "confirmed", title: "PTA Gig", comments: "" },
+    { date: "2025-10-09", startTime: "18:00", endTime: "21:00", type: "rehearsal", venueType: "in-person-studio", location: "Earlsfield",  bookingOwner: "",      bookedAndPaid: false, status: "confirmed", title: "", comments: "Could do remote instead from 7pm? JRO could do remote but not live." },
+    { date: "2025-10-21", startTime: "18:00", endTime: "21:00", type: "rehearsal", venueType: "in-person-studio", location: "Earlsfield",  bookingOwner: "mike",  bookedAndPaid: true,  status: "confirmed", title: "", comments: "Booked 6-10pm." },
+    { date: "2025-11-04", startTime: "18:00", endTime: "21:00", type: "rehearsal", venueType: "in-person-studio", location: "Earlsfield",  bookingOwner: "veena", bookedAndPaid: true,  status: "confirmed", title: "", comments: "Booked." },
+    { date: "2025-11-05", startTime: "21:00", endTime: "23:00", type: "rehearsal", venueType: "jamkazam",         location: "Jamkazam",    bookingOwner: "",      bookedAndPaid: false, status: "proposed",  title: "Backup remote practice", comments: "Backup remote practice if needed." },
+    { date: "2025-11-07", startTime: "18:00", endTime: "21:00", type: "gig",       venueType: "in-person-studio", location: "Jolly Gardeners, Earlsfield", bookingOwner: "veena", bookedAndPaid: true, status: "confirmed", title: "50th Birthday Gig", comments: "90 min rehearsal 6-7:30pm, then 50th Birthday gig at the Jolly Gardeners." },
+    { date: "2025-11-08", startTime: "15:00", endTime: "18:00", type: "rehearsal", venueType: "in-person-studio", location: "Earlsfield",  bookingOwner: "",      bookedAndPaid: false, status: "proposed",  title: "", comments: "4-7pm or 3-6pm please. Out that evening." },
+    { date: "2025-11-13", startTime: "18:00", endTime: "21:00", type: "rehearsal", venueType: "in-person-studio", location: "",            bookingOwner: "",      bookedAndPaid: false, status: "proposed",  title: "", comments: "JRO: have a work thing in diary but can slip out if we need this slot. MG: I can no longer make this date (in Berlin)." },
+    { date: "2025-11-14", startTime: "18:00", endTime: "21:00", type: "rehearsal", venueType: "in-person-studio", location: "",            bookingOwner: "",      bookedAndPaid: false, status: "proposed",  title: "", comments: "" },
+    { date: "2025-11-15", startTime: "15:00", endTime: "21:00", type: "rehearsal", venueType: "in-person-studio", location: "Earlsfield",  bookingOwner: "",      bookedAndPaid: false, status: "proposed",  title: "Long sesh", comments: "Can do the full long sesh if needed (V)." },
+    { date: "2025-11-20", startTime: "18:00", endTime: "21:00", type: "rehearsal", venueType: "in-person-studio", location: "Earlsfield",  bookingOwner: "",      bookedAndPaid: false, status: "proposed",  title: "Dress rehearsal", comments: "Night before dress rehearsal. In the office so will arrive after 6." },
+    { date: "2025-11-21", startTime: "21:00", endTime: "22:30", type: "gig",       venueType: "in-person-studio", location: "",            bookingOwner: "",      bookedAndPaid: false, status: "confirmed", title: "PTA Gig", comments: "" },
   ];
 
+  // ---- Songs seed: [title, artist, status, jamtrax, proposer, lessonUrl, comments]
+  // (Unchanged from v3 — keeping identical title+artist so songIds stay stable across migrations.)
   const SEED_SONGS = [
     ["Creep", "Kelly Clarkson cover (in D)", "repertoire", true,  "Sourberry", "", ""],
     ["Dog Days Are Over", "Florence & The Machine", "repertoire", true, "", "", ""],
@@ -228,6 +239,76 @@
   const slug = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   const songId = (title, artist) => `s_${slug(title)}__${slug(artist)}`;
 
+  // ---- Setlist seeds — using exact title+artist from SEED_SONGS so songIds match
+  const SEED_SETLISTS = [
+    {
+      name: "Pre-Veena set — Set 1",
+      notes: "Imported from spreadsheet. Rename or delete if no longer relevant.",
+      songRefs: [
+        ["Groove Is In The Heart", "Deee-Lite"],
+        ["Rolling In The Deep", "Adele"],
+        ["Zombie", "Cranberries, The"],
+        ["Titanium", "David Guetta"],
+        ["Nothing Compares 2 U", "Sinead O'Connor"],
+        ["Shut Up And Dance", "Walk The Moon"],
+        ["Livin' On A Prayer", "Bon Jovi"],
+        ["Sweet Child O' Mine", "Guns N Roses"],
+        ["Mr. Brightside", "Killers, The"],
+      ],
+    },
+    {
+      name: "Pre-Veena set — Set 2",
+      notes: "Imported from spreadsheet. Rename or delete if no longer relevant.",
+      songRefs: [
+        ["Son Of A Preacher Man", "Dusty Springfield"],
+        ["Valerie", "Amy Winehouse"],
+        ["Glorybox", "Portishead"],
+        ["Creep", "Kelly Clarkson cover (in D)"],
+        ["Proud Mary", "Tina Turner"],
+        ["Dog Days Are Over", "Florence & The Machine"],
+        ["Teenage Dirtbag", "Wheatus"],
+        ["Sex on Fire", "Kings of Leon"],
+      ],
+    },
+    {
+      name: "Christmas 2025 — Set 1",
+      notes: "Imported from spreadsheet. Played with current line-up.",
+      songRefs: [
+        ["Groove Is In The Heart", "Deee-Lite"],
+        ["Rolling In The Deep", "Adele"],
+        ["Zombie", "Cranberries, The"],
+        ["Titanium", "David Guetta"],
+        ["Rockin' Around The Christmas Tree", "Brenda Lee"],
+        ["Nothing Compares 2 U", "Sinead O'Connor"],
+        ["Livin' On A Prayer", "Bon Jovi"],
+        ["Sweet Child O' Mine", "Guns N Roses"],
+      ],
+    },
+    {
+      name: "Christmas 2025 — Set 2",
+      notes: "Imported from spreadsheet. Played with current line-up.",
+      songRefs: [
+        ["Son Of A Preacher Man", "Dusty Springfield"],
+        ["Valerie", "Amy Winehouse"],
+        ["Glorybox", "Portishead"],
+        ["Creep", "Kelly Clarkson cover (in D)"],
+        ["Snowman", "Sia"],
+        ["Teenage Dirtbag", "Wheatus"],
+        ["Sex on Fire", "Kings of Leon"],
+      ],
+    },
+    {
+      name: "Short set / Encore",
+      notes: "Imported from spreadsheet. Possibly an encore or backup short set.",
+      songRefs: [
+        ["Mr. Brightside", "Killers, The"],
+        ["Proud Mary", "Tina Turner"],
+        ["Shut Up And Dance", "Walk The Moon"],
+        ["Summer of '69", "Bryan Adams"],
+      ],
+    },
+  ];
+
   const buildEventsSeed = () => {
     const events = {};
     SEED_EVENTS.forEach((ev, i) => {
@@ -250,46 +331,78 @@
     });
     return songs;
   };
+  const buildSetlistsSeed = () => {
+    const setlists = {};
+    SEED_SETLISTS.forEach((sl, i) => {
+      const id = `seed_sl_${i}_${Math.random().toString(36).slice(2,7)}`;
+      setlists[id] = {
+        name: sl.name,
+        notes: sl.notes,
+        songIds: sl.songRefs.map(([t, a]) => songId(t, a)),
+        gigEventId: null,
+        createdAt: Date.now() + i,
+      };
+    });
+    return setlists;
+  };
+
   const buildSeedState = () => ({
-    schemaVersion: 3,
+    schemaVersion: 4,
     events: buildEventsSeed(),
     songs: buildSongsSeed(),
-    setlists: {},
+    setlists: buildSetlistsSeed(),
+    polls: {},
   });
 
+  // ---- Migration
   const migrate = (data) => {
     let migrated = false;
     const sv = data.schemaVersion || 1;
+
+    // v1 → v2: add songs
     if (sv < 2 || !data.songs) {
       data.songs = data.songs || buildSongsSeed();
       data.schemaVersion = 2;
       migrated = true;
     }
+    // v2 → v3: re-map song statuses, add practice, add setlists, add venueType
     if (data.schemaVersion < 3) {
       Object.keys(data.songs || {}).forEach(id => {
         const s = data.songs[id];
-        if (s.status === "agreed") {
-          s.status = s.learnt ? "repertoire" : "shortlist";
-        } else if (s.status === "candidate") {
-          s.status = "suggested";
-        }
+        if (s.status === "agreed") s.status = s.learnt ? "repertoire" : "shortlist";
+        else if (s.status === "candidate") s.status = "suggested";
         delete s.learnt;
         s.practice = s.practice || {};
         s.votes = s.votes || {};
       });
       Object.keys(data.events || {}).forEach(id => {
         const e = data.events[id];
-        if (!e.venueType) {
-          e.venueType = (e.location && /remote/i.test(e.location)) ? "virtual" : "in-person";
-        }
+        if (!e.venueType) e.venueType = (e.location && /remote|jam/i.test(e.location)) ? "virtual" : "in-person";
       });
       data.setlists = data.setlists || {};
       data.schemaVersion = 3;
       migrated = true;
     }
+    // v3 → v4: rename venue types, seed setlists if empty, add polls
+    if (data.schemaVersion < 4) {
+      Object.keys(data.events || {}).forEach(id => {
+        const e = data.events[id];
+        if (e.venueType === "in-person") e.venueType = "in-person-studio";
+        else if (e.venueType === "virtual") e.venueType = "jamkazam";
+        if (!e.venueType) e.venueType = "in-person-studio";
+      });
+      // Seed historical setlists ONLY if user hasn't created any yet
+      if (!data.setlists || Object.keys(data.setlists).length === 0) {
+        data.setlists = buildSetlistsSeed();
+      }
+      data.polls = data.polls || {};
+      data.schemaVersion = 4;
+      migrated = true;
+    }
     return migrated;
   };
 
+  // ---- JSONBin
   const JB_BASE = "https://api.jsonbin.io/v3/b";
   const jbCreateBin = async (apiKey, data) => {
     const res = await fetch(JB_BASE, {
@@ -297,26 +410,41 @@
       headers: { "Content-Type": "application/json", "X-Master-Key": apiKey, "X-Bin-Private": "false", "X-Bin-Name": "sourberry-band-ops" },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error(`Couldn't create database (HTTP ${res.status}): ${await res.text()}`);
+    if (!res.ok) {
+      const t = await res.text();
+      const err = new Error(`HTTP ${res.status}: ${t}`); err.status = res.status; throw err;
+    }
     return (await res.json()).metadata?.id;
   };
   const jbReadBin = async (binId) => {
     const res = await fetch(`${JB_BASE}/${binId}/latest`, { headers: { "X-Bin-Meta": "false" } });
-    if (!res.ok) throw new Error(`Couldn't read database (HTTP ${res.status}): ${await res.text()}`);
+    if (!res.ok) {
+      const t = await res.text();
+      const err = new Error(`HTTP ${res.status}: ${t}`); err.status = res.status; throw err;
+    }
     return await res.json();
   };
   const jbUpdateBin = async (binId, data) => {
     const res = await fetch(`${JB_BASE}/${binId}`, {
       method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error(`Couldn't save (HTTP ${res.status}): ${await res.text()}`);
+    if (!res.ok) {
+      const t = await res.text();
+      const err = new Error(`HTTP ${res.status}: ${t}`); err.status = res.status; throw err;
+    }
     return await res.json();
   };
 
+  // ---- Helpers
   const fmtDate = (iso) => {
     if (!iso) return "";
     const d = new Date(iso + "T00:00:00");
     return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+  };
+  const fmtDateLong = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso + "T00:00:00");
+    return d.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
   };
   const todayISO = () => {
     const d = new Date();
@@ -327,8 +455,28 @@
   const eventsList = (events) => Object.entries(events || {}).map(([id, ev]) => ({ id, ...ev })).sort(sortByDateAsc);
   const songsList = (songs) => Object.entries(songs || {}).map(([id, s]) => ({ id, ...s }));
   const setlistsList = (sls) => Object.entries(sls || {}).map(([id, s]) => ({ id, ...s }));
+  const pollsList = (polls) => Object.entries(polls || {}).map(([id, p]) => ({ id, ...p }));
   const newId = (p="x") => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`;
 
+  // ---- Fuzzy search: normalise (strip non-alphanum), split query by whitespace, every token must appear as substring
+  const normalize = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+  const matchesQuery = (text, query) => {
+    if (!query) return true;
+    const t = normalize(text);
+    const tokens = normalize(query).split(" ").filter(Boolean);
+    return tokens.every(tk => t.includes(tk));
+  };
+  const songMatchesQuery = (s, query) => {
+    if (!query) return true;
+    return matchesQuery(`${s.title || ""} ${s.artist || ""} ${s.proposer || ""}`, query);
+  };
+
+  const isNew = (createdAt) => {
+    if (!createdAt) return false;
+    return (Date.now() - createdAt) < NEW_BADGE_DAYS * 24 * 60 * 60 * 1000;
+  };
+
+  // ---- Identity
   const useMemberIdentity = () => {
     const [memberId, setMemberIdState] = useState(() => localStorage.getItem("sourberry.memberId") || null);
     const setMemberId = (id) => {
@@ -343,11 +491,14 @@
     if (id) localStorage.setItem("sourberry.binId", id); else localStorage.removeItem("sourberry.binId");
   };
 
-  const POLL_MS = 8000;
+  // ---- Sync (slowed to 30s; shows error details; manual refresh)
+  const POLL_MS = 30000;
+
   const useSyncedState = (binId) => {
     const [state, setState] = useState(null);
     const [status, setStatus] = useState("loading");
     const [errorMsg, setErrorMsg] = useState("");
+    const [errorStatus, setErrorStatus] = useState(null);
     const [lastSyncedAt, setLastSyncedAt] = useState(null);
     const stateRef = useRef(state); stateRef.current = state;
     const writeTimerRef = useRef(null);
@@ -361,9 +512,9 @@
       setStatus("saving");
       try {
         await jbUpdateBin(binId, stateRef.current);
-        setStatus("ok"); setErrorMsg(""); setLastSyncedAt(Date.now());
+        setStatus("ok"); setErrorMsg(""); setErrorStatus(null); setLastSyncedAt(Date.now());
       } catch (e) {
-        setStatus("error"); setErrorMsg(e.message);
+        setStatus("error"); setErrorMsg(e.message); setErrorStatus(e.status || null);
       } finally {
         writeInFlightRef.current = false;
         if (pendingWriteRef.current) setTimeout(flushWrite, 100);
@@ -378,37 +529,44 @@
 
     const mutate = useCallback((updater) => {
       setState(prev => {
-        const next = updater(prev || { schemaVersion: 3, events: {}, songs: {}, setlists: {} });
+        const next = updater(prev || { schemaVersion: 4, events: {}, songs: {}, setlists: {}, polls: {} });
         stateRef.current = next;
         return next;
       });
       scheduleWrite();
     }, [scheduleWrite]);
 
+    const fetchOnce = useCallback(async () => {
+      if (writeInFlightRef.current) return;
+      try {
+        let data = await jbReadBin(binId);
+        if (pendingWriteRef.current || writeTimerRef.current) return;
+        const didMigrate = migrate(data);
+        setState(data); stateRef.current = data;
+        setStatus("ok"); setErrorMsg(""); setErrorStatus(null); setLastSyncedAt(Date.now());
+        if (didMigrate) scheduleWrite();
+      } catch (e) {
+        setStatus("error"); setErrorMsg(e.message); setErrorStatus(e.status || null);
+      }
+    }, [binId, scheduleWrite]);
+
+    const reloadFromServer = useCallback(async () => {
+      // Discard pending writes and re-fetch authoritatively
+      if (writeTimerRef.current) { clearTimeout(writeTimerRef.current); writeTimerRef.current = null; }
+      pendingWriteRef.current = false;
+      setStatus("loading");
+      await fetchOnce();
+    }, [fetchOnce]);
+
     useEffect(() => {
       if (!binId) return;
       let cancelled = false;
       let pollTimer = null;
-      const fetchOnce = async () => {
-        if (writeInFlightRef.current) return;
-        try {
-          let data = await jbReadBin(binId);
-          if (cancelled) return;
-          if (pendingWriteRef.current || writeTimerRef.current) return;
-          const didMigrate = migrate(data);
-          setState(data); stateRef.current = data;
-          setStatus("ok"); setErrorMsg(""); setLastSyncedAt(Date.now());
-          if (didMigrate) scheduleWrite();
-        } catch (e) {
-          if (cancelled) return;
-          setStatus("error"); setErrorMsg(e.message);
-        }
-      };
-      fetchOnce();
       const tick = () => {
-        if (document.visibilityState === "visible") fetchOnce();
+        if (!cancelled && document.visibilityState === "visible") fetchOnce();
         pollTimer = setTimeout(tick, POLL_MS);
       };
+      fetchOnce();
       pollTimer = setTimeout(tick, POLL_MS);
       const onVis = () => { if (document.visibilityState === "visible") fetchOnce(); };
       document.addEventListener("visibilitychange", onVis);
@@ -417,11 +575,14 @@
         if (pollTimer) clearTimeout(pollTimer);
         document.removeEventListener("visibilitychange", onVis);
       };
-    }, [binId, scheduleWrite]);
+    }, [binId, fetchOnce]);
 
-    return { state, status, errorMsg, lastSyncedAt, mutate };
+    return { state, status, errorMsg, errorStatus, lastSyncedAt, mutate, refresh: fetchOnce, reloadFromServer };
   };
 
+  // =========================================================================
+  // SETUP & SHARE
+  // =========================================================================
   const SetupScreen = ({ onCreated }) => {
     const [apiKey, setApiKey] = useState(""); const [working, setWorking] = useState(false); const [err, setErr] = useState("");
     const create = async () => {
@@ -455,7 +616,6 @@
           {err && <div className="mt-3 p-3 border border-[var(--berry)] bg-[var(--berry)]/10 text-sm"><strong>Couldn't set up:</strong> {err}</div>}
           <div className="mt-4 flex items-center gap-3 flex-wrap">
             <button onClick={create} disabled={working} className="btn berry-bg px-5 py-2.5 font-semibold">{working ? "Creating…" : "Create database"}</button>
-            <span className="text-xs text-[var(--ink-soft)]">Your key stays on this device.</span>
           </div>
         </div>
       </div>
@@ -474,10 +634,8 @@
     };
     return (
       <div className="max-w-2xl mx-auto px-4 py-8">
-        <header className="mb-6">
-          <div className="ticker text-[var(--berry)]">Done!</div>
-          <h1 className="wordmark text-5xl sm:text-6xl leading-none mt-1">Sour<span className="display-italic font-medium" style={{color:"var(--berry)"}}>berry</span></h1>
-        </header>
+        <header className="mb-6"><div className="ticker text-[var(--berry)]">Done!</div>
+          <h1 className="wordmark text-5xl sm:text-6xl leading-none mt-1">Sour<span className="display-italic font-medium" style={{color:"var(--berry)"}}>berry</span></h1></header>
         <div className="card p-5">
           <h2 className="display text-2xl mb-2">Share this URL with the band</h2>
           <div className="flex gap-2 items-stretch mt-3">
@@ -490,13 +648,22 @@
     );
   };
 
+  // =========================================================================
+  // SHARED UI
+  // =========================================================================
   const TypeBadge = ({ type, status }) => {
     const isGig = type === "gig";
     const cancelled = status === "cancelled";
     return <span className={"ticker px-2 py-0.5 " + (cancelled ? "bg-gray-200 text-gray-500" : isGig ? "berry-bg" : "acid-bg")}>{cancelled ? "Cancelled" : isGig ? "Gig" : "Rehearsal"}</span>;
   };
+  const VenueBadge = ({ venueType }) => {
+    const v = VENUE_TYPES.find(x => x.id === venueType);
+    if (!v) return null;
+    if (venueType === "jamkazam") return <span className="ticker bg-blue-100 px-2 py-0.5">Jamkazam</span>;
+    return <span className="ticker bg-orange-100 px-2 py-0.5">Studio</span>;
+  };
   const StatusDot = ({ status }) => {
-    const map = { yes: "#1f8f4a", no: "#c12c2c", maybe: "#d97a1f" };
+    const map = { yes: "var(--good)", no: "var(--learn)", maybe: "var(--rusty)" };
     if (!map[status]) return <span className="inline-block w-3 h-3 rounded-full border border-[var(--line)] bg-white" />;
     return <span className="inline-block w-3 h-3 rounded-full border border-[var(--line)]" style={{ background: map[status] }} />;
   };
@@ -513,821 +680,1308 @@
       </div>
     </div>
   );
-  const SyncBadge = ({ status, errorMsg, lastSyncedAt }) => {
-    const ago = lastSyncedAt ? Math.round((Date.now() - lastSyncedAt) / 1000) : null;
-    if (status === "saving") return <span className="ticker text-[var(--ink-soft)]">Saving…</span>;
-    if (status === "loading") return <span className="ticker text-[var(--ink-soft)]">Loading…</span>;
-    if (status === "error") return <span className="ticker text-[var(--berry)]" title={errorMsg}>Sync error</span>;
-    return <span className="ticker text-[var(--ink-soft)]">{ago !== null ? `synced ${ago}s ago` : "synced"}</span>;
-  };
 
-  const AvailabilityRow = ({ ev }) => (
-    <div className="flex items-center gap-3 text-xs">
-      {MEMBERS.map(m => <div key={m.id} className="flex items-center gap-1"><StatusDot status={ev.availability?.[m.id]} /><span className="font-medium">{m.name[0]}</span></div>)}
+  // ---- Sync indicator + clickable error panel
+  const SyncPanel = ({ sync, onClose }) => {
+    const [retrying, setRetrying] = useState(false);
+    const ago = sync.lastSyncedAt ? Math.round((Date.now() - sync.lastSyncedAt) / 1000) : null;
+    const isRateLimit = sync.errorStatus === 429;
+    const is404 = sync.errorStatus === 404;
+
+    const reset = () => {
+      if (!confirm("This will clear the saved bin ID on this device and you'll have to re-enter your share URL. Continue?")) return;
+      setStoredBinId(null);
+      window.location.href = window.location.origin + window.location.pathname;
+    };
+    const retry = async () => { setRetrying(true); await sync.refresh(); setRetrying(false); };
+    const reload = async () => { setRetrying(true); await sync.reloadFromServer(); setRetrying(false); };
+
+    return (
+      <div className="modal-bg" onClick={onClose}>
+        <div className="card p-5 max-w-lg w-full" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="display text-2xl">Sync status</h3>
+            <button onClick={onClose} className="ticker text-[var(--ink-soft)]">Close ✕</button>
+          </div>
+
+          <div className="space-y-3 text-sm">
+            <div>
+              <div className="ticker text-[var(--ink-soft)] mb-1">Status</div>
+              <div className="font-semibold">
+                {sync.status === "ok" && <span className="text-[var(--good)]">✓ Connected</span>}
+                {sync.status === "loading" && <span>⟳ Loading…</span>}
+                {sync.status === "saving" && <span>⟳ Saving…</span>}
+                {sync.status === "error" && <span className="text-[var(--berry)]">✗ Sync error</span>}
+              </div>
+            </div>
+
+            <div>
+              <div className="ticker text-[var(--ink-soft)] mb-1">Last successful sync</div>
+              <div>{ago !== null ? `${ago} seconds ago` : "Never this session"}</div>
+            </div>
+
+            {sync.status === "error" && (
+              <>
+                <div>
+                  <div className="ticker text-[var(--ink-soft)] mb-1">What happened</div>
+                  {isRateLimit ? (
+                    <p>You've hit JSONBin's rate limit. The free tier allows a limited number of requests per month, and the band has used them up. The simplest fix: <strong>upgrade JSONBin to the paid tier</strong> (it's cheap, ~£3/month for far more requests), or wait until next month for the limit to reset.</p>
+                  ) : is404 ? (
+                    <p>The database (bin) wasn't found. It may have been deleted, or your URL has the wrong bin ID. Check the share URL is correct, or contact whoever set up the app.</p>
+                  ) : (
+                    <p>The app couldn't reach JSONBin or the request failed. This could be a temporary network blip, or something more persistent.</p>
+                  )}
+                </div>
+                <details>
+                  <summary className="ticker text-[var(--ink-soft)]">Technical details ▾</summary>
+                  <pre className="mt-2 p-2 bg-black/5 text-xs overflow-x-auto whitespace-pre-wrap break-all">{sync.errorMsg}</pre>
+
+```
+            </details>
+          </>
+        )}
+
+        <div className="pt-3 border-t border-[var(--line)]/20 flex flex-wrap gap-2">
+          <button onClick={retry} disabled={retrying} className="btn berry-bg px-3 py-1.5 text-sm font-semibold">{retrying ? "Trying…" : "Retry now"}</button>
+          <button onClick={reload} disabled={retrying} className="btn bg-white px-3 py-1.5 text-sm">Force reload from server</button>
+          <button onClick={reset} className="btn bg-white px-3 py-1.5 text-sm text-[var(--berry)] ml-auto">Reset connection</button>
+        </div>
+        <p className="text-xs text-[var(--ink-soft)] italic">"Force reload" discards any unsaved local changes and pulls the latest data from JSONBin. "Reset" clears the saved bin URL on this device only — useful if you need to re-enter the share URL.</p>
+      </div>
     </div>
-  );
-  const AvailabilityButtons = ({ ev, member, onSet }) => {
-    if (!member) return <p className="text-xs text-[var(--ink-soft)] italic">Pick who you are above to mark availability.</p>;
-    const cur = ev.availability?.[member.id];
-    const opt = (val, label, bg) => (
-      <button key={val} onClick={() => onSet(ev.id, member.id, cur === val ? null : val)}
-        className={"pill px-3 py-1.5 text-xs font-semibold transition-colors " + (cur === val ? "text-white" : "bg-white hover:bg-[var(--acid)]")}
-        style={cur === val ? { background: bg } : {}}>{label}</button>
-    );
-    return <div className="flex gap-1.5">{opt("yes", "✓ Yes", "#1f8f4a")}{opt("maybe", "? Maybe", "#d97a1f")}{opt("no", "✗ No", "#c12c2c")}</div>;
-  };
+  </div>
+);
+```
 
-  const blankEvent = (type = "rehearsal") => ({
-    date: todayISO(), startTime: "18:00", endTime: "21:00",
-    type, venueType: "in-person", location: "", bookingOwner: "",
-    bookedAndPaid: false, status: "proposed", title: "", comments: "",
-  });
+};
 
-  const EventForm = ({ initial, onSave, onCancel, onDelete }) => {
-    const [f, setF] = useState(initial || blankEvent());
-    const set = (k, v) => setF(prev => ({ ...prev, [k]: v }));
-    const isRehearsal = f.type === "rehearsal";
-    return (
-      <div className="card p-5 mb-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <label className="text-sm"><div className="ticker mb-1">Type</div>
-            <select className="input" value={f.type} onChange={e => set("type", e.target.value)}>
-              <option value="rehearsal">Rehearsal</option><option value="gig">Gig</option>
-            </select></label>
-          <label className="text-sm"><div className="ticker mb-1">Status</div>
-            <select className="input" value={f.status} onChange={e => set("status", e.target.value)}>
-              <option value="proposed">Proposed</option><option value="confirmed">Confirmed</option><option value="cancelled">Cancelled</option>
-            </select></label>
-          {isRehearsal && (
-            <label className="text-sm md:col-span-2"><div className="ticker mb-1">Venue type</div>
-              <div className="flex gap-2">
-                {[["in-person","In person"],["virtual","Virtual"]].map(([v,l]) => (
-                  <button key={v} type="button" onClick={() => set("venueType", v)}
-                    className={"pill px-3 py-1.5 text-sm font-semibold " + (f.venueType === v ? "berry-bg text-white" : "bg-white hover:bg-[var(--acid)]")}>{l}</button>
-                ))}
-              </div></label>
+const SyncBadge = ({ sync, onOpen }) => {
+const ago = sync.lastSyncedAt ? Math.round((Date.now() - sync.lastSyncedAt) / 1000) : null;
+let label, cls = “text-[var(–ink-soft)]”;
+if (sync.status === “saving”) label = “Saving…”;
+else if (sync.status === “loading”) label = “Loading…”;
+else if (sync.status === “error”) { label = “⚠ Sync error · tap”; cls = “text-[var(–berry)] font-semibold”; }
+else label = ago !== null ? `synced ${ago}s ago` : “synced”;
+return (
+<button onClick={onOpen} className={“ticker hover:underline “ + cls + (sync.status === “error” ? “ blink” : “”)}>
+{label}
+</button>
+);
+};
+
+// =========================================================================
+// SCHEDULE & AVAILABILITY
+// =========================================================================
+const AvailabilityRow = ({ ev }) => (
+<div className="flex items-center gap-3 text-xs">
+{MEMBERS.map(m => <div key={m.id} className="flex items-center gap-1"><StatusDot status={ev.availability?.[m.id]} /><span className="font-medium">{m.name[0]}</span></div>)}
+</div>
+);
+const AvailabilityButtons = ({ ev, member, onSet }) => {
+if (!member) return <p className="text-xs text-[var(--ink-soft)] italic">Pick who you are above to mark availability.</p>;
+const cur = ev.availability?.[member.id];
+const opt = (val, label, bg) => (
+<button key={val} onClick={() => onSet(ev.id, member.id, cur === val ? null : val)}
+className={“pill px-3 py-1.5 text-xs font-semibold transition-colors “ + (cur === val ? “text-white” : “bg-white hover:bg-[var(–acid)]”)}
+style={cur === val ? { background: bg } : {}}>{label}</button>
+);
+return <div className="flex gap-1.5">{opt(“yes”, “✓ Yes”, “var(–good)”)}{opt(“maybe”, “? Maybe”, “var(–rusty)”)}{opt(“no”, “✗ No”, “var(–learn)”)}</div>;
+};
+
+const blankEvent = (type = “rehearsal”) => ({
+date: todayISO(), startTime: “18:00”, endTime: “21:00”,
+type, venueType: “in-person-studio”, location: “”, bookingOwner: “”,
+bookedAndPaid: false, status: “proposed”, title: “”, comments: “”,
+});
+
+const EventForm = ({ initial, onSave, onCancel, onDelete }) => {
+const [f, setF] = useState(initial || blankEvent());
+const set = (k, v) => setF(prev => ({ …prev, [k]: v }));
+const isRehearsal = f.type === “rehearsal”;
+return (
+<div className="card p-5 mb-4">
+<div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+<label className="text-sm"><div className="ticker mb-1">Type</div>
+<select className=“input” value={f.type} onChange={e => set(“type”, e.target.value)}>
+<option value="rehearsal">Rehearsal</option><option value="gig">Gig</option>
+</select></label>
+<label className="text-sm"><div className="ticker mb-1">Status</div>
+<select className=“input” value={f.status} onChange={e => set(“status”, e.target.value)}>
+<option value="proposed">Proposed</option><option value="confirmed">Confirmed</option><option value="cancelled">Cancelled</option>
+</select></label>
+{isRehearsal && (
+<label className="text-sm md:col-span-2"><div className="ticker mb-1">Venue type</div>
+<div className="flex gap-2 flex-wrap">
+{VENUE_TYPES.map(v => (
+<button key={v.id} type=“button” onClick={() => set(“venueType”, v.id)}
+className={“pill px-3 py-1.5 text-sm font-semibold “ + (f.venueType === v.id ? “berry-bg text-white” : “bg-white hover:bg-[var(–acid)]”)}>{v.label}</button>
+))}
+</div></label>
+)}
+<label className="text-sm md:col-span-2"><div className="ticker mb-1">Title (optional)</div>
+<input className=“input” value={f.title} onChange={e => set(“title”, e.target.value)} placeholder=“e.g. PTA Gig” /></label>
+<label className="text-sm"><div className="ticker mb-1">Date</div>
+<input className=“input” type=“date” value={f.date} onChange={e => set(“date”, e.target.value)} /></label>
+<label className="text-sm"><div className="ticker mb-1">{isRehearsal && f.venueType === “jamkazam” ? “Session / link” : “Location”}</div>
+<input className=“input” value={f.location} onChange={e => set(“location”, e.target.value)} placeholder={isRehearsal && f.venueType === “jamkazam” ? “Jamkazam session name or link” : “e.g. Earlsfield”} /></label>
+<label className="text-sm"><div className="ticker mb-1">Start time</div>
+<input className=“input” type=“time” value={f.startTime} onChange={e => set(“startTime”, e.target.value)} /></label>
+<label className="text-sm"><div className="ticker mb-1">End time</div>
+<input className=“input” type=“time” value={f.endTime} onChange={e => set(“endTime”, e.target.value)} /></label>
+<label className="text-sm"><div className="ticker mb-1">Booking owner</div>
+<select className=“input” value={f.bookingOwner} onChange={e => set(“bookingOwner”, e.target.value)}>
+<option value="">— none —</option>
+{MEMBERS.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+</select></label>
+<label className="text-sm flex items-center gap-2 md:mt-6">
+<input type=“checkbox” checked={!!f.bookedAndPaid} onChange={e => set(“bookedAndPaid”, e.target.checked)} className=“w-4 h-4” />
+<span>Booked & paid</span></label>
+<label className="text-sm md:col-span-2"><div className="ticker mb-1">Comments</div>
+<textarea className=“input” rows=“2” value={f.comments} onChange={e => set(“comments”, e.target.value)} /></label>
+</div>
+<div className="flex flex-wrap gap-2 mt-4">
+<button onClick={() => onSave(f)} className=“btn berry-bg px-4 py-2 font-semibold”>Save</button>
+<button onClick={onCancel} className="btn bg-white px-4 py-2">Cancel</button>
+{onDelete && <button onClick={() => { if (confirm(“Delete this event?”)) onDelete(); }} className=“btn bg-white px-4 py-2 ml-auto text-[var(–berry)]”>Delete</button>}
+</div>
+</div>
+);
+};
+
+const EventCard = ({ ev, member, onEdit, onSetAvailability }) => {
+const owner = MEMBERS.find(m => m.id === ev.bookingOwner);
+const yesCount = MEMBERS.filter(m => ev.availability?.[m.id] === “yes”).length;
+const isRehearsal = ev.type === “rehearsal”;
+return (
+<div className="card p-4 sm:p-5">
+<div className="flex items-start gap-4">
+<div className="shrink-0 text-center min-w-[68px]">
+<div className="ticker text-[var(--berry)]">{fmtDate(ev.date).split(”,”)[0]}</div>
+<div className="display text-3xl leading-none mt-1">{new Date(ev.date+“T00:00:00”).getDate()}</div>
+<div className="ticker mt-1">{new Date(ev.date+“T00:00:00”).toLocaleDateString(undefined, { month: “short” })}</div>
+</div>
+<div className="flex-1 min-w-0">
+<div className="flex items-center gap-2 flex-wrap">
+<TypeBadge type={ev.type} status={ev.status} />
+{isRehearsal && <VenueBadge venueType={ev.venueType} />}
+{ev.status === “proposed” && <span className="ticker bg-yellow-100 px-2 py-0.5">Proposed</span>}
+{ev.bookedAndPaid && <span className="ticker bg-green-100 px-2 py-0.5">Booked & paid</span>}
+</div>
+{ev.title && <div className="display text-xl mt-1.5 leading-tight">{ev.title}</div>}
+<div className="text-sm mt-1 text-[var(--ink-soft)]">
+{ev.startTime}–{ev.endTime}{ev.location ? ` · ${ev.location}` : “”}{owner ? ` · booking: ${owner.name}` : “”}
+</div>
+{ev.comments && (
+<details className="mt-2 text-sm">
+<summary className="ticker text-[var(--ink-soft)] hover:text-[var(--berry)]">Notes ▾</summary>
+<p className="mt-1.5 italic text-[var(--ink-soft)]">{ev.comments}</p>
+</details>
+)}
+<div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+<AvailabilityRow ev={ev} />
+<span className="text-xs text-[var(--ink-soft)]">{yesCount}/{MEMBERS.length} can make it</span>
+</div>
+<div className="mt-3 flex flex-wrap items-center gap-2">
+<AvailabilityButtons ev={ev} member={member} onSet={onSetAvailability} />
+<button onClick={onEdit} className="ticker ml-auto text-[var(--ink-soft)] hover:text-[var(--berry)]">Edit ▸</button>
+</div>
+</div>
+</div>
+</div>
+);
+};
+
+const ScheduleSection = ({ title, items, member, editingId, onEdit, onCancelEdit, onUpdate, onDelete, onSetAvailability, emptyMsg }) => (
+<section className="mb-6">
+<h2 className="display text-2xl mb-3">{title} <span className="text-[var(--ink-soft)] text-base">({items.length})</span></h2>
+{items.length === 0 ? (
+<div className="card-flat p-4 text-sm italic text-[var(--ink-soft)]">{emptyMsg}</div>
+) : (
+<div className="space-y-3">
+{items.map(ev => editingId === ev.id
+? <EventForm key={ev.id} initial={ev} onSave={f => onUpdate(ev.id, f)} onCancel={onCancelEdit} onDelete={() => onDelete(ev.id)} />
+: <EventCard key={ev.id} ev={ev} member={member} onEdit={() => onEdit(ev.id)} onSetAvailability={onSetAvailability} />
+)}
+</div>
+)}
+</section>
+);
+
+const ScheduleView = ({ events, member, mutate }) => {
+const [editingId, setEditingId] = useState(null);
+const [adding, setAdding] = useState(null);
+const [showPast, setShowPast] = useState(false);
+const all = eventsList(events);
+const upcoming = all.filter(e => !isPast(e.date));
+const past = all.filter(e => isPast(e.date)).reverse();
+const list = showPast ? past : upcoming;
+const gigs = list.filter(e => e.type === “gig”);
+const rehearsals = list.filter(e => e.type === “rehearsal”);
+
+```
+const setAvailability = (eid, mid, val) => mutate(prev => {
+  const events = { ...(prev.events || {}) };
+  const ev = { ...(events[eid] || {}) };
+  const av = { ...(ev.availability || {}) };
+  if (val === null) delete av[mid]; else av[mid] = val;
+  ev.availability = av; events[eid] = ev;
+  return { ...prev, events };
+});
+const updateEvent = (eid, data) => { mutate(prev => ({ ...prev, events: { ...(prev.events||{}), [eid]: { ...(prev.events?.[eid]||{}), ...data } } })); setEditingId(null); };
+const createEvent = (data) => { mutate(prev => ({ ...prev, events: { ...(prev.events||{}), [newId("e")]: { ...data, availability: {}, createdAt: Date.now() } } })); setAdding(null); };
+const deleteEvent = (eid) => { mutate(prev => { const events = { ...(prev.events||{}) }; delete events[eid]; return { ...prev, events }; }); setEditingId(null); };
+
+return (
+  <div>
+    <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+      <div className="flex gap-2">
+        <button onClick={() => setShowPast(false)} className={"pill px-3 py-1 text-sm " + (!showPast ? "berry-bg text-white" : "bg-white")}>Upcoming</button>
+        <button onClick={() => setShowPast(true)} className={"pill px-3 py-1 text-sm " + (showPast ? "berry-bg text-white" : "bg-white")}>Past</button>
+      </div>
+      <div className="flex gap-2">
+        <button onClick={() => { setAdding("gig"); setEditingId(null); }} className="btn berry-bg px-3 py-2 text-sm font-semibold">+ Gig</button>
+        <button onClick={() => { setAdding("rehearsal"); setEditingId(null); }} className="btn bg-white px-3 py-2 text-sm font-semibold">+ Rehearsal</button>
+      </div>
+    </div>
+
+    {adding && <EventForm initial={blankEvent(adding)} onSave={createEvent} onCancel={() => setAdding(null)} />}
+
+    <ScheduleSection title="Gigs" items={gigs} member={member} editingId={editingId}
+      onEdit={(id) => { setEditingId(id); setAdding(null); }} onCancelEdit={() => setEditingId(null)}
+      onUpdate={updateEvent} onDelete={deleteEvent} onSetAvailability={setAvailability}
+      emptyMsg={showPast ? "No past gigs." : "No gigs in the diary yet."} />
+    <ScheduleSection title="Rehearsals" items={rehearsals} member={member} editingId={editingId}
+      onEdit={(id) => { setEditingId(id); setAdding(null); }} onCancelEdit={() => setEditingId(null)}
+      onUpdate={updateEvent} onDelete={deleteEvent} onSetAvailability={setAvailability}
+      emptyMsg={showPast ? "No past rehearsals." : "No rehearsals booked."} />
+  </div>
+);
+```
+
+};
+
+const AvailabilityView = ({ events, member, mutate }) => {
+const upcoming = eventsList(events).filter(e => !isPast(e.date));
+const setAvailability = (eid, mid, val) => mutate(prev => {
+const events = { …(prev.events || {}) };
+const ev = { …(events[eid] || {}) };
+const av = { …(ev.availability || {}) };
+if (!val) delete av[mid]; else av[mid] = val;
+ev.availability = av; events[eid] = ev;
+return { …prev, events };
+});
+if (upcoming.length === 0) return <div className="card p-6 text-center"><p className="display text-xl">No upcoming dates yet.</p></div>;
+return (
+<div>
+<div className="card p-4 mb-4">
+<div className="ticker text-[var(--berry)]">Quick mark</div>
+<p className="display text-2xl leading-tight mt-1">Tell the band when you’re free.</p>
+<p className="text-sm text-[var(--ink-soft)] mt-1">For dates that are already on the schedule. For dates that aren’t decided yet, use the <strong>Plan</strong> tab.</p>
+</div>
+<div className="card overflow-x-auto">
+<table className="w-full text-sm">
+<thead className="bg-[var(--ink)] text-[var(--bg)]"><tr>
+<th className="text-left px-3 py-2 ticker">Date</th>
+<th className="text-left px-3 py-2 ticker">When</th>
+{MEMBERS.map(m => <th key={m.id} className="px-3 py-2 ticker text-center">{m.name}</th>)}
+</tr></thead>
+<tbody>
+{upcoming.map(ev => (
+<tr key={ev.id} className="border-t border-[var(--line)]/20">
+<td className="px-3 py-2.5 align-top">
+<div className="font-semibold">{fmtDate(ev.date)}</div>
+<div className="text-xs text-[var(--ink-soft)] mt-0.5"><TypeBadge type={ev.type} status={ev.status} /> {ev.title}</div>
+</td>
+<td className="px-3 py-2.5 text-xs text-[var(--ink-soft)] align-top">
+<div>{ev.startTime}–{ev.endTime}</div>{ev.location && <div>{ev.location}</div>}
+</td>
+{MEMBERS.map(m => {
+const isMe = member?.id === m.id;
+const cur = ev.availability?.[m.id];
+return (
+<td key={m.id} className="px-2 py-2.5 text-center align-top">
+{isMe ? (
+<select value={cur || “”} onChange={e => setAvailability(ev.id, m.id, e.target.value || null)}
+className=“input text-xs py-1 px-1 text-center” style={{ minWidth: 70 }}>
+<option value="">—</option><option value="yes">Yes</option><option value="maybe">Maybe</option><option value="no">No</option>
+</select>
+) : (
+<div className="flex items-center justify-center gap-1"><StatusDot status={cur} /><span className="text-xs">{cur ? cur[0].toUpperCase() : “—”}</span></div>
+)}
+</td>
+);
+})}
+</tr>
+))}
+</tbody>
+</table>
+</div>
+</div>
+);
+};
+
+// =========================================================================
+// SONGS
+// =========================================================================
+const blankSong = () => ({
+title: “”, artist: “”, status: “suggested”,
+jamtrax: false, proposer: “”, lessonUrl: “”, comments: “”,
+votes: {}, practice: {},
+});
+
+const SongForm = ({ initial, onSave, onCancel, onDelete }) => {
+const [f, setF] = useState(initial || blankSong());
+const set = (k, v) => setF(prev => ({ …prev, [k]: v }));
+return (
+<div className="card p-5 mb-4">
+<div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+<label className="text-sm md:col-span-2"><div className="ticker mb-1">Title</div>
+<input className=“input” value={f.title} onChange={e => set(“title”, e.target.value)} placeholder=“Song title” /></label>
+<label className="text-sm md:col-span-2"><div className="ticker mb-1">Artist</div>
+<input className=“input” value={f.artist} onChange={e => set(“artist”, e.target.value)} placeholder=“Artist” /></label>
+<label className="text-sm"><div className="ticker mb-1">Status</div>
+<select className=“input” value={f.status} onChange={e => set(“status”, e.target.value)}>
+{SONG_STATUSES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+</select></label>
+<label className="text-sm"><div className="ticker mb-1">Proposed by</div>
+<input className=“input” value={f.proposer} onChange={e => set(“proposer”, e.target.value)} placeholder=“e.g. Veena, Sourberry” /></label>
+<label className="text-sm md:col-span-2 flex items-start gap-2 mt-1">
+<input type=“checkbox” checked={!!f.jamtrax} onChange={e => set(“jamtrax”, e.target.checked)} className=“w-4 h-4 mt-0.5” />
+<span><span className="font-semibold">Jamtrax available</span><br/><span className="text-xs text-[var(--ink-soft)]">Jamtrax is a Jamkazam feature — guided backing tracks for online jamming, useful when not all band members can make it.</span></span>
+</label>
+<label className="text-sm md:col-span-2"><div className="ticker mb-1">Lesson / tab URL</div>
+<input className=“input” type=“url” value={f.lessonUrl} onChange={e => set(“lessonUrl”, e.target.value)} placeholder=“https://…” /></label>
+<label className="text-sm md:col-span-2"><div className="ticker mb-1">Comments</div>
+<textarea className=“input” rows=“2” value={f.comments} onChange={e => set(“comments”, e.target.value)} /></label>
+</div>
+<div className="flex flex-wrap gap-2 mt-4">
+<button onClick={() => onSave(f)} className=“btn berry-bg px-4 py-2 font-semibold”>Save</button>
+<button onClick={onCancel} className="btn bg-white px-4 py-2">Cancel</button>
+{onDelete && <button onClick={() => { if (confirm(“Delete this song?”)) onDelete(); }} className=“btn bg-white px-4 py-2 ml-auto text-[var(–berry)]”>Delete</button>}
+</div>
+</div>
+);
+};
+
+const VotePill = ({ initial, vote }) => {
+const bg = vote === “yes” ? “var(–good)” : vote === “no” ? “var(–learn)” : “transparent”;
+const color = vote ? “#fff” : “var(–ink-soft)”;
+return (
+<span className=“inline-flex items-center justify-center text-xs font-semibold rounded-full border border-[var(–line)]”
+style={{ width: 22, height: 22, background: bg, color }} title={vote || “no vote”}>{initial}</span>
+);
+};
+const PracticeChip = ({ initial, state, isMe, onClick }) => {
+const bg = state ? PRACTICE_COLOR[state] : “transparent”;
+const color = state ? “#fff” : “var(–ink-soft)”;
+return (
+<button onClick={isMe ? onClick : undefined} disabled={!isMe}
+title={state ? `${initial}: ${PRACTICE_LABEL[state]}` : `${initial}: not set`}
+className=“inline-flex items-center justify-center text-xs font-semibold rounded-full border border-[var(–line)]”
+style={{ width: 26, height: 26, background: bg, color, cursor: isMe ? “pointer” : “default” }}>{initial}</button>
+);
+};
+const cyclePractice = (current) => {
+if (current === “good”) return “rusty”;
+if (current === “rusty”) return “learn”;
+if (current === “learn”) return null;
+return “good”;
+};
+
+const SongCard = ({ song, member, onEdit, onVote, onSetStatus, onSetPractice, onPromote }) => {
+const showVotes = song.status === “suggested”;
+const showPractice = [“shortlist”, “learning”, “repertoire”].includes(song.status);
+const yesCount = MEMBERS.filter(m => song.votes?.[m.id] === “yes”).length;
+const noCount  = MEMBERS.filter(m => song.votes?.[m.id] === “no”).length;
+const allYes = yesCount === MEMBERS.length;
+const myVote = member ? song.votes?.[member.id] : null;
+const fresh = isNew(song.createdAt);
+
+```
+return (
+  <div className="card-flat p-3 sm:p-4">
+    <div className="flex items-start gap-3 flex-wrap">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-baseline gap-2 flex-wrap">
+          {fresh && <span className="ticker berry-bg px-1.5 py-0.5 text-[10px]">NEW</span>}
+          <span className="display text-lg leading-tight">{song.title || "(untitled)"}</span>
+          {song.artist && <span className="text-sm text-[var(--ink-soft)] italic">— {song.artist}</span>}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+          {song.jamtrax && <span className="ticker acid-bg px-2 py-0.5" title="Jamkazam Jamtrax: guided backing track for online jamming, useful when not all members can make it">Jamtrax (Jamkazam)</span>}
+          {song.proposer && <span className="ticker text-[var(--ink-soft)]">prop: {song.proposer}</span>}
+          {song.lessonUrl && <a href={song.lessonUrl} target="_blank" rel="noopener" className="ticker text-[var(--berry)] underline">Lesson ↗</a>}
+        </div>
+        {song.comments && (
+          <details className="mt-2 text-sm">
+            <summary className="ticker text-[var(--ink-soft)] hover:text-[var(--berry)]">Notes ▾</summary>
+            <p className="mt-1.5 italic text-[var(--ink-soft)]">{song.comments}</p>
+          </details>
+        )}
+      </div>
+      <button onClick={onEdit} className="ticker text-[var(--ink-soft)] hover:text-[var(--berry)] shrink-0">Edit ▸</button>
+    </div>
+
+    {showPractice && (
+      <div className="mt-3 pt-3 border-t border-[var(--line)]/20 flex flex-wrap items-center gap-3">
+        <span className="ticker text-[var(--ink-soft)]">Practice</span>
+        <div className="flex items-center gap-1.5">
+          {MEMBERS.map(m => (
+            <PracticeChip key={m.id} initial={m.name[0]} state={song.practice?.[m.id]} isMe={member?.id === m.id}
+              onClick={() => onSetPractice(song.id, m.id, cyclePractice(song.practice?.[m.id]))} />
+          ))}
+        </div>
+        {member ? (
+          <span className="text-xs text-[var(--ink-soft)] italic">Tap your circle: Good → Rusty → Learn → —</span>
+        ) : (
+          <span className="text-xs text-[var(--ink-soft)] italic">Pick who you are above to mark your practice.</span>
+        )}
+      </div>
+    )}
+
+    {showVotes && (
+      <div className="mt-3 pt-3 border-t border-[var(--line)]/20 flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1.5">
+          {MEMBERS.map(m => <VotePill key={m.id} initial={m.name[0]} vote={song.votes?.[m.id]} />)}
+        </div>
+        <span className="text-xs text-[var(--ink-soft)]">{yesCount} yes{noCount ? ` · ${noCount} no` : ""}</span>
+        {member ? (
+          <div className="flex gap-1.5 ml-auto">
+            <button onClick={() => onVote(song.id, member.id, myVote === "yes" ? null : "yes")}
+              className={"pill px-3 py-1 text-xs font-semibold " + (myVote === "yes" ? "text-white" : "bg-white hover:bg-[var(--acid)]")}
+              style={myVote === "yes" ? { background: "var(--good)" } : {}}>✓ Yes</button>
+            <button onClick={() => onVote(song.id, member.id, myVote === "no" ? null : "no")}
+              className={"pill px-3 py-1 text-xs font-semibold " + (myVote === "no" ? "text-white" : "bg-white hover:bg-[var(--acid)]")}
+              style={myVote === "no" ? { background: "var(--learn)" } : {}}>✗ No</button>
+          </div>
+        ) : <span className="ml-auto text-xs italic text-[var(--ink-soft)]">Pick who you are to vote</span>}
+        {allYes && (
+          <button onClick={() => onPromote(song.id)} className="btn berry-bg px-3 py-1.5 text-xs font-semibold w-full sm:w-auto">All in! → Shortlist</button>
+        )}
+      </div>
+    )}
+
+    <div className="mt-3 pt-3 border-t border-[var(--line)]/20 flex flex-wrap items-center gap-2">
+      <span className="ticker text-[var(--ink-soft)]">Move to</span>
+      {SONG_STATUSES.map(s => (
+        <button key={s.id} onClick={() => onSetStatus(song.id, s.id)}
+          disabled={s.id === song.status}
+          className={"pill px-2.5 py-1 text-xs font-semibold " + (s.id === song.status ? "berry-bg text-white" : "bg-white hover:bg-[var(--acid)]")}>
+          {s.label}
+        </button>
+      ))}
+    </div>
+  </div>
+);
+```
+
+};
+
+const SongsView = ({ songs, member, mutate }) => {
+const [editingId, setEditingId] = useState(null);
+const [adding, setAdding] = useState(false);
+const [view, setView] = useState(“repertoire”);
+const [query, setQuery] = useState(””);
+const [sortMode, setSortMode] = useState(“smart”); // smart | newest | title
+
+```
+const all = songsList(songs);
+const counts = {};
+SONG_STATUSES.forEach(s => { counts[s.id] = all.filter(x => x.status === s.id).length; });
+
+const list = all.filter(s => s.status === view);
+list.sort((a, b) => {
+  if (sortMode === "newest") return (b.createdAt || 0) - (a.createdAt || 0);
+  if (sortMode === "title") return (a.title || "").localeCompare(b.title || "");
+  // smart: suggested → newest first then by votes; others → title
+  if (view === "suggested") {
+    // brand-new (NEW badge) sorted to top by createdAt desc
+    const aNew = isNew(a.createdAt), bNew = isNew(b.createdAt);
+    if (aNew && !bNew) return -1;
+    if (!aNew && bNew) return 1;
+    if (aNew && bNew) return (b.createdAt || 0) - (a.createdAt || 0);
+    const yA = MEMBERS.filter(m => a.votes?.[m.id] === "yes").length;
+    const yB = MEMBERS.filter(m => b.votes?.[m.id] === "yes").length;
+    if (yA !== yB) return yB - yA;
+  }
+  return (a.title || "").localeCompare(b.title || "");
+});
+const filtered = list.filter(s => songMatchesQuery(s, query));
+
+const updateSong = (id, data) => mutate(prev => ({ ...prev, songs: { ...(prev.songs||{}), [id]: { ...(prev.songs?.[id]||{}), ...data } } }));
+const setStatus = (id, status) => updateSong(id, { status });
+const createSong = (data) => { mutate(prev => ({ ...prev, songs: { ...(prev.songs||{}), [newId("s")]: { ...data, votes: {}, practice: {}, createdAt: Date.now() } } })); setAdding(false); };
+const deleteSong = (id) => { mutate(prev => { const songs = { ...(prev.songs||{}) }; delete songs[id]; return { ...prev, songs }; }); setEditingId(null); };
+const voteSong = (id, mid, val) => mutate(prev => {
+  const songs = { ...(prev.songs||{}) };
+  const s = { ...(songs[id] || {}) };
+  const v = { ...(s.votes || {}) };
+  if (!val) delete v[mid]; else v[mid] = val;
+  s.votes = v; songs[id] = s;
+  return { ...prev, songs };
+});
+const setPractice = (id, mid, val) => mutate(prev => {
+  const songs = { ...(prev.songs||{}) };
+  const s = { ...(songs[id] || {}) };
+  const p = { ...(s.practice || {}) };
+  if (!val) delete p[mid]; else p[mid] = val;
+  s.practice = p; songs[id] = s;
+  return { ...prev, songs };
+});
+const promoteSong = (id) => mutate(prev => {
+  const songs = { ...(prev.songs||{}) };
+  songs[id] = { ...(songs[id]||{}), status: "shortlist", votes: {} };
+  return { ...prev, songs };
+});
+const allInSuggested = all.filter(c => c.status === "suggested" && MEMBERS.every(m => c.votes?.[m.id] === "yes")).length;
+const newSuggested = all.filter(c => c.status === "suggested" && isNew(c.createdAt)).length;
+
+return (
+  <div>
+    <div className="flex gap-2 flex-wrap mb-3">
+      {SONG_STATUSES.map(s => (
+        <button key={s.id} onClick={() => setView(s.id)}
+          className={"pill px-3 py-1.5 text-sm font-semibold " + (view === s.id ? "berry-bg text-white" : "bg-white hover:bg-[var(--acid)]")}>
+          {s.label} <span className="opacity-70 ml-1">{counts[s.id]}</span>
+          {s.id === "suggested" && (allInSuggested + newSuggested) > 0 && view !== "suggested" && (
+            <span className="ml-1 text-[10px] berry-bg text-white px-1 rounded-full">
+              {newSuggested > 0 ? `${newSuggested} new` : `${allInSuggested}!`}
+            </span>
           )}
-          <label className="text-sm md:col-span-2"><div className="ticker mb-1">Title (optional)</div>
-            <input className="input" value={f.title} onChange={e => set("title", e.target.value)} placeholder="e.g. PTA Gig" /></label>
-          <label className="text-sm"><div className="ticker mb-1">Date</div>
-            <input className="input" type="date" value={f.date} onChange={e => set("date", e.target.value)} /></label>
-          <label className="text-sm"><div className="ticker mb-1">{isRehearsal && f.venueType === "virtual" ? "Platform / link" : "Location"}</div>
-            <input className="input" value={f.location} onChange={e => set("location", e.target.value)} placeholder={isRehearsal && f.venueType === "virtual" ? "Zoom, Jamulus, etc." : "e.g. Earlsfield"} /></label>
-          <label className="text-sm"><div className="ticker mb-1">Start time</div>
-            <input className="input" type="time" value={f.startTime} onChange={e => set("startTime", e.target.value)} /></label>
-          <label className="text-sm"><div className="ticker mb-1">End time</div>
-            <input className="input" type="time" value={f.endTime} onChange={e => set("endTime", e.target.value)} /></label>
-          <label className="text-sm"><div className="ticker mb-1">Booking owner</div>
-            <select className="input" value={f.bookingOwner} onChange={e => set("bookingOwner", e.target.value)}>
-              <option value="">— none —</option>
-              {MEMBERS.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-            </select></label>
-          <label className="text-sm flex items-center gap-2 md:mt-6">
-            <input type="checkbox" checked={!!f.bookedAndPaid} onChange={e => set("bookedAndPaid", e.target.checked)} className="w-4 h-4" />
-            <span>Booked & paid</span></label>
-          <label className="text-sm md:col-span-2"><div className="ticker mb-1">Comments</div>
-            <textarea className="input" rows="2" value={f.comments} onChange={e => set("comments", e.target.value)} /></label>
-        </div>
-        <div className="flex flex-wrap gap-2 mt-4">
-          <button onClick={() => onSave(f)} className="btn berry-bg px-4 py-2 font-semibold">Save</button>
-          <button onClick={onCancel} className="btn bg-white px-4 py-2">Cancel</button>
-          {onDelete && <button onClick={() => { if (confirm("Delete this event?")) onDelete(); }} className="btn bg-white px-4 py-2 ml-auto text-[var(--berry)]">Delete</button>}
+        </button>
+      ))}
+    </div>
+
+    <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+      <input className="input flex-1" value={query} onChange={e => setQuery(e.target.value)}
+        placeholder={`Search ${SONG_STATUSES.find(s => s.id === view)?.label.toLowerCase()}…`} />
+      <button onClick={() => { setAdding(true); setEditingId(null); }} className="btn berry-bg px-4 py-2 text-sm font-semibold whitespace-nowrap">+ Add song</button>
+    </div>
+
+    <div className="card p-3 mb-4 text-sm flex flex-wrap items-center gap-3">
+      <span className="ticker text-[var(--berry)]">{SONG_STATUSES.find(s => s.id === view)?.label}</span>
+      <span className="text-[var(--ink-soft)] flex-1 min-w-0">{SONG_STATUSES.find(s => s.id === view)?.desc}</span>
+      <div className="flex gap-1.5 items-center">
+        <span className="ticker text-[var(--ink-soft)]">Sort</span>
+        {[
+          { id: "smart", label: view === "suggested" ? "New & popular" : "By title" },
+          { id: "newest", label: "Newest" },
+          { id: "title", label: "A–Z" },
+        ].map(opt => (
+          <button key={opt.id} onClick={() => setSortMode(opt.id)}
+            className={"pill px-2 py-0.5 text-xs " + (sortMode === opt.id ? "berry-bg text-white" : "bg-white")}>{opt.label}</button>
+        ))}
+      </div>
+    </div>
+
+    {adding && <SongForm onSave={createSong} onCancel={() => setAdding(false)} />}
+
+    {filtered.length === 0 && !adding && (
+      <div className="card p-6 text-center"><p className="display text-xl">{query ? "No matches." : "Nothing here yet."}</p></div>
+    )}
+
+    <div className="space-y-2.5">
+      {filtered.map(s => editingId === s.id
+        ? <SongForm key={s.id} initial={s} onSave={f => { updateSong(s.id, f); setEditingId(null); }} onCancel={() => setEditingId(null)} onDelete={() => deleteSong(s.id)} />
+        : <SongCard key={s.id} song={s} member={member}
+            onEdit={() => { setEditingId(s.id); setAdding(false); }}
+            onVote={voteSong} onSetStatus={setStatus} onSetPractice={setPractice} onPromote={promoteSong} />
+      )}
+    </div>
+  </div>
+);
+```
+
+};
+
+// =========================================================================
+// SETLISTS
+// =========================================================================
+const SetlistsView = ({ setlists, songs, events, member, mutate }) => {
+const [openId, setOpenId] = useState(null);
+const [creating, setCreating] = useState(false);
+const [newName, setNewName] = useState(””);
+
+```
+const all = setlistsList(setlists).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+const createSetlist = (name) => {
+  const id = newId("sl");
+  mutate(prev => ({ ...prev, setlists: { ...(prev.setlists||{}), [id]: { name, songIds: [], gigEventId: null, notes: "", createdAt: Date.now() } } }));
+  setOpenId(id); setCreating(false); setNewName("");
+};
+const updateSetlist = (id, data) => mutate(prev => ({ ...prev, setlists: { ...(prev.setlists||{}), [id]: { ...(prev.setlists?.[id]||{}), ...data } } }));
+const deleteSetlist = (id) => { mutate(prev => { const sl = { ...(prev.setlists||{}) }; delete sl[id]; return { ...prev, setlists: sl }; }); setOpenId(null); };
+
+if (openId && setlists?.[openId]) {
+  return <SetlistDetail
+    setlist={{ id: openId, ...setlists[openId] }}
+    songs={songs} events={events} member={member}
+    onBack={() => setOpenId(null)}
+    onUpdate={(data) => updateSetlist(openId, data)}
+    onDelete={() => deleteSetlist(openId)}
+  />;
+}
+
+return (
+  <div>
+    <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+      <p className="text-sm text-[var(--ink-soft)]">Build a named setlist from your library, optionally pinned to a gig.</p>
+      <button onClick={() => setCreating(true)} className="btn berry-bg px-4 py-2 text-sm font-semibold">+ New setlist</button>
+    </div>
+
+    {creating && (
+      <div className="card p-4 mb-4">
+        <label className="text-sm block">
+          <div className="ticker mb-1">Name</div>
+          <input autoFocus className="input" value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Dec 2026 — provisional" />
+        </label>
+        <div className="flex gap-2 mt-3">
+          <button onClick={() => newName.trim() && createSetlist(newName.trim())} className="btn berry-bg px-4 py-2 font-semibold" disabled={!newName.trim()}>Create</button>
+          <button onClick={() => { setCreating(false); setNewName(""); }} className="btn bg-white px-4 py-2">Cancel</button>
         </div>
       </div>
-    );
-  };
+    )}
 
-  const EventCard = ({ ev, member, onEdit, onSetAvailability }) => {
-    const owner = MEMBERS.find(m => m.id === ev.bookingOwner);
-    const yesCount = MEMBERS.filter(m => ev.availability?.[m.id] === "yes").length;
-    const isVirtual = ev.type === "rehearsal" && ev.venueType === "virtual";
-    return (
-      <div className="card p-4 sm:p-5">
-        <div className="flex items-start gap-4">
-          <div className="shrink-0 text-center min-w-[68px]">
-            <div className="ticker text-[var(--berry)]">{fmtDate(ev.date).split(",")[0]}</div>
-            <div className="display text-3xl leading-none mt-1">{new Date(ev.date+"T00:00:00").getDate()}</div>
-            <div className="ticker mt-1">{new Date(ev.date+"T00:00:00").toLocaleDateString(undefined, { month: "short" })}</div>
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <TypeBadge type={ev.type} status={ev.status} />
-              {isVirtual && <span className="ticker bg-blue-100 px-2 py-0.5">Virtual</span>}
-              {ev.status === "proposed" && <span className="ticker bg-yellow-100 px-2 py-0.5">Proposed</span>}
-              {ev.bookedAndPaid && <span className="ticker bg-green-100 px-2 py-0.5">Booked & paid</span>}
-            </div>
-            {ev.title && <div className="display text-xl mt-1.5 leading-tight">{ev.title}</div>}
-            <div className="text-sm mt-1 text-[var(--ink-soft)]">
-              {ev.startTime}–{ev.endTime}{ev.location ? ` · ${ev.location}` : ""}{owner ? ` · booking: ${owner.name}` : ""}
-            </div>
-            {ev.comments && (
-              <details className="mt-2 text-sm">
-                <summary className="ticker text-[var(--ink-soft)] hover:text-[var(--berry)]">Notes ▾</summary>
-                <p className="mt-1.5 italic text-[var(--ink-soft)]">{ev.comments}</p>
-              </details>
-            )}
-            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-              <AvailabilityRow ev={ev} />
-              <span className="text-xs text-[var(--ink-soft)]">{yesCount}/{MEMBERS.length} can make it</span>
-            </div>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <AvailabilityButtons ev={ev} member={member} onSet={onSetAvailability} />
-              <button onClick={onEdit} className="ticker ml-auto text-[var(--ink-soft)] hover:text-[var(--berry)]">Edit ▸</button>
-            </div>
-          </div>
-        </div>
+    {all.length === 0 && !creating && (
+      <div className="card p-6 text-center">
+        <p className="display text-xl">No setlists yet.</p>
+        <p className="text-sm text-[var(--ink-soft)] mt-2">Tap "+ New setlist" to start one for your next gig.</p>
       </div>
-    );
-  };
+    )}
 
-  const ScheduleSection = ({ title, items, member, editingId, onEdit, onCancelEdit, onUpdate, onDelete, onSetAvailability, emptyMsg }) => (
-    <section className="mb-6">
-      <h2 className="display text-2xl mb-3">{title} <span className="text-[var(--ink-soft)] text-base">({items.length})</span></h2>
-      {items.length === 0 ? (
-        <div className="card-flat p-4 text-sm italic text-[var(--ink-soft)]">{emptyMsg}</div>
+    <div className="space-y-3">
+      {all.map(sl => {
+        const songCount = (sl.songIds || []).length;
+        const gig = sl.gigEventId && events?.[sl.gigEventId];
+        return (
+          <button key={sl.id} onClick={() => setOpenId(sl.id)} className="card-flat p-4 w-full text-left hover:bg-[var(--acid)]/20 transition">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex-1 min-w-0">
+                <div className="display text-xl leading-tight">{sl.name}</div>
+                <div className="text-sm text-[var(--ink-soft)] mt-1">
+                  {songCount} song{songCount === 1 ? "" : "s"}
+                  {gig ? ` · pinned to ${gig.title || "gig"} on ${fmtDate(gig.date)}` : ""}
+                </div>
+              </div>
+              <span className="ticker text-[var(--berry)]">Open ▸</span>
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  </div>
+);
+```
+
+};
+
+const SetlistDetail = ({ setlist, songs, events, member, onBack, onUpdate, onDelete }) => {
+const [editingName, setEditingName] = useState(false);
+const [name, setName] = useState(setlist.name);
+const [picker, setPicker] = useState(false);
+const [viewMode, setViewMode] = useState(“detailed”); // detailed | summary
+const songIds = setlist.songIds || [];
+const gigOptions = eventsList(events).filter(e => e.type === “gig”);
+
+```
+const moveSong = (idx, dir) => {
+  const arr = [...songIds];
+  const ni = idx + dir;
+  if (ni < 0 || ni >= arr.length) return;
+  [arr[idx], arr[ni]] = [arr[ni], arr[idx]];
+  onUpdate({ songIds: arr });
+};
+const removeSong = (idx) => {
+  const arr = [...songIds]; arr.splice(idx, 1);
+  onUpdate({ songIds: arr });
+};
+const addSong = (id) => {
+  if (songIds.includes(id)) return;
+  onUpdate({ songIds: [...songIds, id] });
+};
+
+return (
+  <div>
+    <button onClick={onBack} className="ticker text-[var(--berry)] mb-3">← Back to setlists</button>
+
+    <div className="card p-4 mb-4">
+      {editingName ? (
+        <div className="flex gap-2">
+          <input className="input flex-1" value={name} onChange={e => setName(e.target.value)} autoFocus />
+          <button onClick={() => { onUpdate({ name: name.trim() || setlist.name }); setEditingName(false); }} className="btn berry-bg px-3 py-1.5 text-sm font-semibold">Save</button>
+        </div>
       ) : (
-        <div className="space-y-3">
-          {items.map(ev => editingId === ev.id
-            ? <EventForm key={ev.id} initial={ev} onSave={f => onUpdate(ev.id, f)} onCancel={onCancelEdit} onDelete={() => onDelete(ev.id)} />
-            : <EventCard key={ev.id} ev={ev} member={member} onEdit={() => onEdit(ev.id)} onSetAvailability={onSetAvailability} />
-          )}
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <h2 className="display text-3xl leading-tight">{setlist.name}</h2>
+          <button onClick={() => setEditingName(true)} className="ticker text-[var(--ink-soft)] hover:text-[var(--berry)]">Rename ▸</button>
         </div>
       )}
-    </section>
-  );
 
-  const ScheduleView = ({ events, member, mutate }) => {
-    const [editingId, setEditingId] = useState(null);
-    const [adding, setAdding] = useState(null);
-    const [showPast, setShowPast] = useState(false);
-    const all = eventsList(events);
-    const upcoming = all.filter(e => !isPast(e.date));
-    const past = all.filter(e => isPast(e.date)).reverse();
-    const list = showPast ? past : upcoming;
-    const gigs = list.filter(e => e.type === "gig");
-    const rehearsals = list.filter(e => e.type === "rehearsal");
-
-    const setAvailability = (eid, mid, val) => mutate(prev => {
-      const events = { ...(prev.events || {}) };
-      const ev = { ...(events[eid] || {}) };
-      const av = { ...(ev.availability || {}) };
-      if (val === null) delete av[mid]; else av[mid] = val;
-      ev.availability = av; events[eid] = ev;
-      return { ...prev, events };
-    });
-    const updateEvent = (eid, data) => { mutate(prev => ({ ...prev, events: { ...(prev.events||{}), [eid]: { ...(prev.events?.[eid]||{}), ...data } } })); setEditingId(null); };
-    const createEvent = (data) => { mutate(prev => ({ ...prev, events: { ...(prev.events||{}), [newId("e")]: { ...data, availability: {}, createdAt: Date.now() } } })); setAdding(null); };
-    const deleteEvent = (eid) => { mutate(prev => { const events = { ...(prev.events||{}) }; delete events[eid]; return { ...prev, events }; }); setEditingId(null); };
-
-    return (
-      <div>
-        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-          <div className="flex gap-2">
-            <button onClick={() => setShowPast(false)} className={"pill px-3 py-1 text-sm " + (!showPast ? "berry-bg text-white" : "bg-white")}>Upcoming</button>
-            <button onClick={() => setShowPast(true)} className={"pill px-3 py-1 text-sm " + (showPast ? "berry-bg text-white" : "bg-white")}>Past</button>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => { setAdding("gig"); setEditingId(null); }} className="btn berry-bg px-3 py-2 text-sm font-semibold">+ Gig</button>
-            <button onClick={() => { setAdding("rehearsal"); setEditingId(null); }} className="btn bg-white px-3 py-2 text-sm font-semibold">+ Rehearsal</button>
-          </div>
-        </div>
-
-        {adding && <EventForm initial={blankEvent(adding)} onSave={createEvent} onCancel={() => setAdding(null)} />}
-
-        <ScheduleSection title="Gigs" items={gigs} member={member} editingId={editingId}
-          onEdit={(id) => { setEditingId(id); setAdding(null); }} onCancelEdit={() => setEditingId(null)}
-          onUpdate={updateEvent} onDelete={deleteEvent} onSetAvailability={setAvailability}
-          emptyMsg={showPast ? "No past gigs." : "No gigs in the diary yet."} />
-        <ScheduleSection title="Rehearsals" items={rehearsals} member={member} editingId={editingId}
-          onEdit={(id) => { setEditingId(id); setAdding(null); }} onCancelEdit={() => setEditingId(null)}
-          onUpdate={updateEvent} onDelete={deleteEvent} onSetAvailability={setAvailability}
-          emptyMsg={showPast ? "No past rehearsals." : "No rehearsals booked."} />
+      <div className="mt-3 flex items-center gap-2 flex-wrap">
+        <span className="ticker text-[var(--ink-soft)]">Pin to gig</span>
+        <select className="input text-sm" style={{ width: "auto", maxWidth: "100%" }} value={setlist.gigEventId || ""} onChange={e => onUpdate({ gigEventId: e.target.value || null })}>
+          <option value="">— none —</option>
+          {gigOptions.map(g => <option key={g.id} value={g.id}>{fmtDate(g.date)} · {g.title || "Gig"}</option>)}
+        </select>
       </div>
-    );
-  };
 
-  const AvailabilityView = ({ events, member, mutate }) => {
-    const upcoming = eventsList(events).filter(e => !isPast(e.date));
-    const setAvailability = (eid, mid, val) => mutate(prev => {
-      const events = { ...(prev.events || {}) };
-      const ev = { ...(events[eid] || {}) };
-      const av = { ...(ev.availability || {}) };
-      if (!val) delete av[mid]; else av[mid] = val;
-      ev.availability = av; events[eid] = ev;
-      return { ...prev, events };
-    });
-    if (upcoming.length === 0) return <div className="card p-6 text-center"><p className="display text-xl">No upcoming dates yet.</p></div>;
-    return (
-      <div>
-        <div className="card p-4 mb-4">
-          <div className="ticker text-[var(--berry)]">Quick mark</div>
-          <p className="display text-2xl leading-tight mt-1">Tell the band when you're free.</p>
+      <label className="block mt-3">
+        <div className="ticker mb-1 text-[var(--ink-soft)]">Notes</div>
+        <textarea className="input text-sm" rows="2" value={setlist.notes || ""} onChange={e => onUpdate({ notes: e.target.value })} placeholder="e.g. running order tweaks, key changes…" />
+      </label>
+
+      <div className="mt-4 flex gap-2 flex-wrap items-center">
+        <button onClick={() => setPicker(true)} className="btn berry-bg px-4 py-2 text-sm font-semibold">+ Add songs</button>
+        <div className="flex gap-1 ml-2">
+          <button onClick={() => setViewMode("detailed")} className={"pill px-2.5 py-1 text-xs font-semibold " + (viewMode === "detailed" ? "berry-bg text-white" : "bg-white")}>Detailed</button>
+          <button onClick={() => setViewMode("summary")} className={"pill px-2.5 py-1 text-xs font-semibold " + (viewMode === "summary" ? "berry-bg text-white" : "bg-white")}>Summary</button>
         </div>
-        <div className="card overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-[var(--ink)] text-[var(--bg)]"><tr>
-              <th className="text-left px-3 py-2 ticker">Date</th>
-              <th className="text-left px-3 py-2 ticker">When</th>
-              {MEMBERS.map(m => <th key={m.id} className="px-3 py-2 ticker text-center">{m.name}</th>)}
-            </tr></thead>
-            <tbody>
-              {upcoming.map(ev => (
-                <tr key={ev.id} className="border-t border-[var(--line)]/20">
-                  <td className="px-3 py-2.5 align-top">
-                    <div className="font-semibold">{fmtDate(ev.date)}</div>
-                    <div className="text-xs text-[var(--ink-soft)] mt-0.5"><TypeBadge type={ev.type} status={ev.status} /> {ev.venueType === "virtual" ? "(virtual) " : ""}{ev.title}</div>
-                  </td>
-                  <td className="px-3 py-2.5 text-xs text-[var(--ink-soft)] align-top">
-                    <div>{ev.startTime}–{ev.endTime}</div>{ev.location && <div>{ev.location}</div>}
-                  </td>
-                  {MEMBERS.map(m => {
-                    const isMe = member?.id === m.id;
-                    const cur = ev.availability?.[m.id];
-                    return (
-                      <td key={m.id} className="px-2 py-2.5 text-center align-top">
-                        {isMe ? (
-                          <select value={cur || ""} onChange={e => setAvailability(ev.id, m.id, e.target.value || null)}
-                            className="input text-xs py-1 px-1 text-center" style={{ minWidth: 70 }}>
-                            <option value="">—</option><option value="yes">Yes</option><option value="maybe">Maybe</option><option value="no">No</option>
-                          </select>
-                        ) : (
-                          <div className="flex items-center justify-center gap-1"><StatusDot status={cur} /><span className="text-xs">{cur ? cur[0].toUpperCase() : "—"}</span></div>
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <button onClick={() => { if (confirm(`Delete setlist "${setlist.name}"?`)) onDelete(); }} className="btn bg-white px-4 py-2 text-sm text-[var(--berry)] ml-auto">Delete</button>
       </div>
-    );
-  };
+    </div>
 
-  const blankSong = () => ({
-    title: "", artist: "", status: "suggested",
-    jamtrax: false, proposer: "", lessonUrl: "", comments: "",
-    votes: {}, practice: {},
-  });
+    {picker && <SongPicker songs={songs} excludeIds={songIds} onPick={addSong} onClose={() => setPicker(false)} />}
 
-  const SongForm = ({ initial, onSave, onCancel, onDelete }) => {
-    const [f, setF] = useState(initial || blankSong());
-    const set = (k, v) => setF(prev => ({ ...prev, [k]: v }));
-    return (
-      <div className="card p-5 mb-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <label className="text-sm md:col-span-2"><div className="ticker mb-1">Title</div>
-            <input className="input" value={f.title} onChange={e => set("title", e.target.value)} placeholder="Song title" /></label>
-          <label className="text-sm md:col-span-2"><div className="ticker mb-1">Artist</div>
-            <input className="input" value={f.artist} onChange={e => set("artist", e.target.value)} placeholder="Artist" /></label>
-          <label className="text-sm"><div className="ticker mb-1">Status</div>
-            <select className="input" value={f.status} onChange={e => set("status", e.target.value)}>
-              {SONG_STATUSES.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-            </select></label>
-          <label className="text-sm"><div className="ticker mb-1">Proposed by</div>
-            <input className="input" value={f.proposer} onChange={e => set("proposer", e.target.value)} placeholder="e.g. Veena, Sourberry" /></label>
-          <label className="text-sm flex items-center gap-2 mt-2 md:mt-7">
-            <input type="checkbox" checked={!!f.jamtrax} onChange={e => set("jamtrax", e.target.checked)} className="w-4 h-4" />
-            <span>Jamtrax available</span></label>
-          <div></div>
-          <label className="text-sm md:col-span-2"><div className="ticker mb-1">Lesson / tab URL</div>
-            <input className="input" type="url" value={f.lessonUrl} onChange={e => set("lessonUrl", e.target.value)} placeholder="https://…" /></label>
-          <label className="text-sm md:col-span-2"><div className="ticker mb-1">Comments</div>
-            <textarea className="input" rows="2" value={f.comments} onChange={e => set("comments", e.target.value)} /></label>
-        </div>
-        <div className="flex flex-wrap gap-2 mt-4">
-          <button onClick={() => onSave(f)} className="btn berry-bg px-4 py-2 font-semibold">Save</button>
-          <button onClick={onCancel} className="btn bg-white px-4 py-2">Cancel</button>
-          {onDelete && <button onClick={() => { if (confirm("Delete this song?")) onDelete(); }} className="btn bg-white px-4 py-2 ml-auto text-[var(--berry)]">Delete</button>}
-        </div>
+    {songIds.length === 0 ? (
+      <div className="card-flat p-6 text-center">
+        <p className="display text-xl">No songs yet.</p>
+        <p className="text-sm text-[var(--ink-soft)] mt-2">Tap "+ Add songs" above.</p>
       </div>
-    );
-  };
-
-  const VotePill = ({ initial, vote }) => {
-    const bg = vote === "yes" ? "var(--good)" : vote === "no" ? "var(--learn)" : "transparent";
-    const color = vote ? "#fff" : "var(--ink-soft)";
-    return (
-      <span className="inline-flex items-center justify-center text-xs font-semibold rounded-full border border-[var(--line)]"
-            style={{ width: 22, height: 22, background: bg, color }} title={vote || "no vote"}>{initial}</span>
-    );
-  };
-
-  const PracticeChip = ({ initial, state, isMe, onClick }) => {
-    const bg = state ? PRACTICE_COLOR[state] : "transparent";
-    const color = state ? "#fff" : "var(--ink-soft)";
-    return (
-      <button onClick={isMe ? onClick : undefined} disabled={!isMe}
-        title={state ? `${initial}: ${PRACTICE_LABEL[state]}` : `${initial}: not set`}
-        className="inline-flex items-center justify-center text-xs font-semibold rounded-full border border-[var(--line)]"
-        style={{ width: 26, height: 26, background: bg, color, cursor: isMe ? "pointer" : "default" }}>
-        {initial}
-      </button>
-    );
-  };
-
-  const cyclePractice = (current) => {
-    if (current === "good") return "rusty";
-    if (current === "rusty") return "learn";
-    if (current === "learn") return null;
-    return "good";
-  };
-
-  const SongCard = ({ song, member, onEdit, onVote, onSetStatus, onSetPractice, onPromote }) => {
-    const showVotes = song.status === "suggested";
-    const showPractice = ["shortlist", "learning", "repertoire"].includes(song.status);
-    const yesCount = MEMBERS.filter(m => song.votes?.[m.id] === "yes").length;
-    const noCount  = MEMBERS.filter(m => song.votes?.[m.id] === "no").length;
-    const allYes = yesCount === MEMBERS.length;
-    const myVote = member ? song.votes?.[member.id] : null;
-
-    return (
-      <div className="card-flat p-3 sm:p-4">
-        <div className="flex items-start gap-3 flex-wrap">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-baseline gap-2 flex-wrap">
-              <span className="display text-lg leading-tight">{song.title || "(untitled)"}</span>
-              {song.artist && <span className="text-sm text-[var(--ink-soft)] italic">— {song.artist}</span>}
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-              {song.jamtrax && <span className="ticker acid-bg px-2 py-0.5">Jamtrax</span>}
-              {song.proposer && <span className="ticker text-[var(--ink-soft)]">prop: {song.proposer}</span>}
-              {song.lessonUrl && <a href={song.lessonUrl} target="_blank" rel="noopener" className="ticker text-[var(--berry)] underline">Lesson ↗</a>}
-            </div>
-            {song.comments && (
-              <details className="mt-2 text-sm">
-                <summary className="ticker text-[var(--ink-soft)] hover:text-[var(--berry)]">Notes ▾</summary>
-                <p className="mt-1.5 italic text-[var(--ink-soft)]">{song.comments}</p>
-              </details>
-            )}
-          </div>
-          <button onClick={onEdit} className="ticker text-[var(--ink-soft)] hover:text-[var(--berry)] shrink-0">Edit ▸</button>
-        </div>
-
-        {showPractice && (
-          <div className="mt-3 pt-3 border-t border-[var(--line)]/20 flex flex-wrap items-center gap-3">
-            <span className="ticker text-[var(--ink-soft)]">Practice</span>
-            <div className="flex items-center gap-1.5">
-              {MEMBERS.map(m => (
-                <PracticeChip key={m.id} initial={m.name[0]} state={song.practice?.[m.id]}
-                  isMe={member?.id === m.id}
-                  onClick={() => onSetPractice(song.id, m.id, cyclePractice(song.practice?.[m.id]))} />
-              ))}
-            </div>
-            {member ? (
-              <span className="text-xs text-[var(--ink-soft)] italic">Tap your circle to cycle: Good → Rusty → Learn → —</span>
-            ) : (
-              <span className="text-xs text-[var(--ink-soft)] italic">Pick who you are above to mark your practice.</span>
-            )}
-          </div>
-        )}
-
-        {showVotes && (
-          <div className="mt-3 pt-3 border-t border-[var(--line)]/20 flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-1.5">
-              {MEMBERS.map(m => <VotePill key={m.id} initial={m.name[0]} vote={song.votes?.[m.id]} />)}
-            </div>
-            <span className="text-xs text-[var(--ink-soft)]">{yesCount} yes{noCount ? ` · ${noCount} no` : ""}</span>
-            {member ? (
-              <div className="flex gap-1.5 ml-auto">
-                <button onClick={() => onVote(song.id, member.id, myVote === "yes" ? null : "yes")}
-                  className={"pill px-3 py-1 text-xs font-semibold " + (myVote === "yes" ? "text-white" : "bg-white hover:bg-[var(--acid)]")}
-                  style={myVote === "yes" ? { background: "var(--good)" } : {}}>✓ Yes</button>
-                <button onClick={() => onVote(song.id, member.id, myVote === "no" ? null : "no")}
-                  className={"pill px-3 py-1 text-xs font-semibold " + (myVote === "no" ? "text-white" : "bg-white hover:bg-[var(--acid)]")}
-                  style={myVote === "no" ? { background: "var(--learn)" } : {}}>✗ No</button>
-              </div>
-            ) : <span className="ml-auto text-xs italic text-[var(--ink-soft)]">Pick who you are to vote</span>}
-            {allYes && (
-              <button onClick={() => onPromote(song.id)} className="btn berry-bg px-3 py-1.5 text-xs font-semibold w-full sm:w-auto">All in! → Shortlist</button>
-            )}
-          </div>
-        )}
-
-        <div className="mt-3 pt-3 border-t border-[var(--line)]/20 flex flex-wrap items-center gap-2">
-          <span className="ticker text-[var(--ink-soft)]">Move to</span>
-          {SONG_STATUSES.map(s => (
-            <button key={s.id} onClick={() => onSetStatus(song.id, s.id)}
-              disabled={s.id === song.status}
-              className={"pill px-2.5 py-1 text-xs font-semibold " + (s.id === song.status ? "berry-bg text-white" : "bg-white hover:bg-[var(--acid)]")}>
-              {s.label}
-            </button>
-          ))}
-        </div>
-      </div>
-    );
-  };
-
-  const SongsView = ({ songs, member, mutate }) => {
-    const [editingId, setEditingId] = useState(null);
-    const [adding, setAdding] = useState(false);
-    const [view, setView] = useState("repertoire");
-    const [query, setQuery] = useState("");
-
-    const all = songsList(songs);
-    const counts = {};
-    SONG_STATUSES.forEach(s => { counts[s.id] = all.filter(x => x.status === s.id).length; });
-
-    const list = all.filter(s => s.status === view);
-    list.sort((a, b) => {
-      if (view === "suggested") {
-        const yA = MEMBERS.filter(m => a.votes?.[m.id] === "yes").length;
-        const yB = MEMBERS.filter(m => b.votes?.[m.id] === "yes").length;
-        if (yA !== yB) return yB - yA;
-      }
-      return (a.title || "").localeCompare(b.title || "");
-    });
-    const q = query.trim().toLowerCase();
-    const filtered = !q ? list : list.filter(s =>
-      (s.title || "").toLowerCase().includes(q) ||
-      (s.artist || "").toLowerCase().includes(q) ||
-      (s.proposer || "").toLowerCase().includes(q));
-
-    const updateSong = (id, data) => { mutate(prev => ({ ...prev, songs: { ...(prev.songs||{}), [id]: { ...(prev.songs?.[id]||{}), ...data } } })); };
-    const setStatus = (id, status) => updateSong(id, { status });
-    const createSong = (data) => { mutate(prev => ({ ...prev, songs: { ...(prev.songs||{}), [newId("s")]: { ...data, votes: {}, practice: {}, createdAt: Date.now() } } })); setAdding(false); };
-    const deleteSong = (id) => { mutate(prev => { const songs = { ...(prev.songs||{}) }; delete songs[id]; return { ...prev, songs }; }); setEditingId(null); };
-    const voteSong = (id, mid, val) => mutate(prev => {
-      const songs = { ...(prev.songs||{}) };
-      const s = { ...(songs[id] || {}) };
-      const v = { ...(s.votes || {}) };
-      if (!val) delete v[mid]; else v[mid] = val;
-      s.votes = v; songs[id] = s;
-      return { ...prev, songs };
-    });
-    const setPractice = (id, mid, val) => mutate(prev => {
-      const songs = { ...(prev.songs||{}) };
-      const s = { ...(songs[id] || {}) };
-      const p = { ...(s.practice || {}) };
-      if (!val) delete p[mid]; else p[mid] = val;
-      s.practice = p; songs[id] = s;
-      return { ...prev, songs };
-    });
-    const promoteSong = (id) => mutate(prev => {
-      const songs = { ...(prev.songs||{}) };
-      songs[id] = { ...(songs[id]||{}), status: "shortlist", votes: {} };
-      return { ...prev, songs };
-    });
-
-    const allInSuggested = all.filter(c => c.status === "suggested" && MEMBERS.every(m => c.votes?.[m.id] === "yes")).length;
-
-    return (
-      <div>
-        <div className="flex gap-2 flex-wrap mb-3">
-          {SONG_STATUSES.map(s => (
-            <button key={s.id} onClick={() => setView(s.id)}
-              className={"pill px-3 py-1.5 text-sm font-semibold " + (view === s.id ? "berry-bg text-white" : "bg-white hover:bg-[var(--acid)]")}>
-              {s.label} <span className="opacity-70 ml-1">{counts[s.id]}</span>
-              {s.id === "suggested" && allInSuggested > 0 && view !== "suggested" && (
-                <span className="ml-1 text-[10px] berry-bg text-white px-1 rounded-full" title={`${allInSuggested} ready to promote`}>{allInSuggested}!</span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
-          <input className="input flex-1" value={query} onChange={e => setQuery(e.target.value)}
-            placeholder={`Search ${SONG_STATUSES.find(s => s.id === view)?.label.toLowerCase()} songs…`} />
-          <button onClick={() => { setAdding(true); setEditingId(null); }} className="btn berry-bg px-4 py-2 text-sm font-semibold whitespace-nowrap">+ Add song</button>
-        </div>
-
-        <div className="card p-3 mb-4 text-sm">
-          <span className="ticker text-[var(--berry)] mr-2">{SONG_STATUSES.find(s => s.id === view)?.label}</span>
-          <span className="text-[var(--ink-soft)]">{SONG_STATUSES.find(s => s.id === view)?.desc}</span>
-        </div>
-
-        {adding && <SongForm onSave={createSong} onCancel={() => setAdding(false)} />}
-
-        {filtered.length === 0 && !adding && (
-          <div className="card p-6 text-center"><p className="display text-xl">{query ? "No matches." : "Nothing here yet."}</p></div>
-        )}
-
-        <div className="space-y-2.5">
-          {filtered.map(s => editingId === s.id
-            ? <SongForm key={s.id} initial={s} onSave={f => { updateSong(s.id, f); setEditingId(null); }} onCancel={() => setEditingId(null)} onDelete={() => deleteSong(s.id)} />
-            : <SongCard key={s.id} song={s} member={member}
-                onEdit={() => { setEditingId(s.id); setAdding(false); }}
-                onVote={voteSong} onSetStatus={setStatus} onSetPractice={setPractice} onPromote={promoteSong} />
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const SetlistsView = ({ setlists, songs, events, member, mutate }) => {
-    const [openId, setOpenId] = useState(null);
-    const [creating, setCreating] = useState(false);
-    const [newName, setNewName] = useState("");
-
-    const all = setlistsList(setlists).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-
-    const createSetlist = (name) => {
-      const id = newId("sl");
-      mutate(prev => ({ ...prev, setlists: { ...(prev.setlists||{}), [id]: { name, songIds: [], gigEventId: null, notes: "", createdAt: Date.now() } } }));
-      setOpenId(id); setCreating(false); setNewName("");
-    };
-    const updateSetlist = (id, data) => mutate(prev => ({ ...prev, setlists: { ...(prev.setlists||{}), [id]: { ...(prev.setlists?.[id]||{}), ...data } } }));
-    const deleteSetlist = (id) => { mutate(prev => { const sl = { ...(prev.setlists||{}) }; delete sl[id]; return { ...prev, setlists: sl }; }); setOpenId(null); };
-
-    if (openId && setlists?.[openId]) {
-      return <SetlistDetail
-        setlist={{ id: openId, ...setlists[openId] }}
-        songs={songs} events={events} member={member}
-        onBack={() => setOpenId(null)}
-        onUpdate={(data) => updateSetlist(openId, data)}
-        onDelete={() => deleteSetlist(openId)} />;
-    }
-
-    return (
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <p className="text-sm text-[var(--ink-soft)]">Build a named setlist from your library, optionally pinned to a gig.</p>
-          <button onClick={() => setCreating(true)} className="btn berry-bg px-4 py-2 text-sm font-semibold">+ New setlist</button>
-        </div>
-
-        {creating && (
-          <div className="card p-4 mb-4">
-            <label className="text-sm block">
-              <div className="ticker mb-1">Name</div>
-              <input autoFocus className="input" value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Dec 2026 — provisional" />
-            </label>
-            <div className="flex gap-2 mt-3">
-              <button onClick={() => newName.trim() && createSetlist(newName.trim())} className="btn berry-bg px-4 py-2 font-semibold" disabled={!newName.trim()}>Create</button>
-              <button onClick={() => { setCreating(false); setNewName(""); }} className="btn bg-white px-4 py-2">Cancel</button>
-            </div>
-          </div>
-        )}
-
-        {all.length === 0 && !creating && (
-          <div className="card p-6 text-center">
-            <p className="display text-xl">No setlists yet.</p>
-            <p className="text-sm text-[var(--ink-soft)] mt-2">Tap "+ New setlist" to start one for your next gig.</p>
-          </div>
-        )}
-
-        <div className="space-y-3">
-          {all.map(sl => {
-            const songCount = (sl.songIds || []).length;
-            const gig = sl.gigEventId && events?.[sl.gigEventId];
+    ) : viewMode === "summary" ? (
+      <div className="card p-5">
+        <h3 className="display text-2xl mb-3">{setlist.name}</h3>
+        <ol className="space-y-1 text-sm">
+          {songIds.map((sid, i) => {
+            const s = songs?.[sid];
+            if (!s) return <li key={sid} className="text-[var(--ink-soft)] italic">{i+1}. (deleted song)</li>;
             return (
-              <button key={sl.id} onClick={() => setOpenId(sl.id)} className="card-flat p-4 w-full text-left hover:bg-[var(--acid)]/20 transition">
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <div className="flex-1 min-w-0">
-                    <div className="display text-xl leading-tight">{sl.name}</div>
-                    <div className="text-sm text-[var(--ink-soft)] mt-1">
-                      {songCount} song{songCount === 1 ? "" : "s"}
-                      {gig ? ` · pinned to ${gig.title || "gig"} on ${fmtDate(gig.date)}` : ""}
-                    </div>
-                  </div>
-                  <span className="ticker text-[var(--berry)]">Open ▸</span>
-                </div>
-              </button>
+              <li key={sid} className="flex gap-2">
+                <span className="text-[var(--berry)] font-semibold w-6 shrink-0">{i+1}.</span>
+                <span className="font-semibold">{s.title}</span>
+                {s.artist && <span className="text-[var(--ink-soft)] italic">— {s.artist}</span>}
+              </li>
             );
           })}
-        </div>
+        </ol>
+        <p className="text-xs text-[var(--ink-soft)] italic mt-4">{songIds.length} song{songIds.length === 1 ? "" : "s"}. Switch to "Detailed" to edit.</p>
       </div>
-    );
-  };
-
-  const SetlistDetail = ({ setlist, songs, events, member, onBack, onUpdate, onDelete }) => {
-    const [editingName, setEditingName] = useState(false);
-    const [name, setName] = useState(setlist.name);
-    const [picker, setPicker] = useState(false);
-    const songIds = setlist.songIds || [];
-    const gigOptions = eventsList(events).filter(e => e.type === "gig");
-
-    const moveSong = (idx, dir) => {
-      const arr = [...songIds];
-      const ni = idx + dir;
-      if (ni < 0 || ni >= arr.length) return;
-      [arr[idx], arr[ni]] = [arr[ni], arr[idx]];
-      onUpdate({ songIds: arr });
-    };
-    const removeSong = (idx) => {
-      const arr = [...songIds];
-      arr.splice(idx, 1);
-      onUpdate({ songIds: arr });
-    };
-    const addSong = (id) => {
-      if (songIds.includes(id)) return;
-      onUpdate({ songIds: [...songIds, id] });
-    };
-
-    return (
-      <div>
-        <button onClick={onBack} className="ticker text-[var(--berry)] mb-3">← Back to setlists</button>
-
-        <div className="card p-4 mb-4">
-          {editingName ? (
-            <div className="flex gap-2">
-              <input className="input flex-1" value={name} onChange={e => setName(e.target.value)} autoFocus />
-              <button onClick={() => { onUpdate({ name: name.trim() || setlist.name }); setEditingName(false); }} className="btn berry-bg px-3 py-1.5 text-sm font-semibold">Save</button>
-            </div>
-          ) : (
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <h2 className="display text-3xl leading-tight">{setlist.name}</h2>
-              <button onClick={() => setEditingName(true)} className="ticker text-[var(--ink-soft)] hover:text-[var(--berry)]">Rename ▸</button>
-            </div>
-          )}
-
-          <div className="mt-3 flex items-center gap-2 flex-wrap">
-            <span className="ticker text-[var(--ink-soft)]">Pin to gig</span>
-            <select className="input text-sm" style={{ width: "auto", maxWidth: "100%" }} value={setlist.gigEventId || ""} onChange={e => onUpdate({ gigEventId: e.target.value || null })}>
-              <option value="">— none —</option>
-              {gigOptions.map(g => <option key={g.id} value={g.id}>{fmtDate(g.date)} · {g.title || "Gig"}</option>)}
-            </select>
-          </div>
-
-          <label className="block mt-3">
-            <div className="ticker mb-1 text-[var(--ink-soft)]">Notes</div>
-            <textarea className="input text-sm" rows="2" value={setlist.notes || ""} onChange={e => onUpdate({ notes: e.target.value })} placeholder="e.g. running order tweaks, key changes…" />
-          </label>
-
-          <div className="mt-4 flex gap-2 flex-wrap">
-            <button onClick={() => setPicker(true)} className="btn berry-bg px-4 py-2 text-sm font-semibold">+ Add songs</button>
-            <button onClick={() => { if (confirm(`Delete setlist "${setlist.name}"?`)) onDelete(); }} className="btn bg-white px-4 py-2 text-sm text-[var(--berry)] ml-auto">Delete</button>
-          </div>
-        </div>
-
-        {picker && <SongPicker songs={songs} excludeIds={songIds} onPick={addSong} onClose={() => setPicker(false)} />}
-
-        {songIds.length === 0 ? (
-          <div className="card-flat p-6 text-center">
-            <p className="display text-xl">No songs yet.</p>
-            <p className="text-sm text-[var(--ink-soft)] mt-2">Tap "+ Add songs" above.</p>
-          </div>
-        ) : (
-          <ol className="space-y-2">
-            {songIds.map((sid, i) => {
-              const s = songs?.[sid];
-              if (!s) return (
-                <li key={sid} className="card-flat p-3 text-sm italic text-[var(--ink-soft)]">
-                  (deleted song) <button onClick={() => removeSong(i)} className="text-[var(--berry)] underline ml-2">remove</button>
-                </li>
-              );
-              return (
-                <li key={sid} className="card-flat p-3">
-                  <div className="flex items-start gap-3">
-                    <div className="display text-xl text-[var(--berry)] shrink-0 w-8">{i + 1}.</div>
-                    <div className="flex-1 min-w-0">
-                      <div className="display text-base leading-tight">{s.title}</div>
-                      {s.artist && <div className="text-xs text-[var(--ink-soft)] italic">{s.artist}</div>}
-                      <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
-                        <span className="ticker text-[var(--ink-soft)]">{SONG_STATUSES.find(x => x.id === s.status)?.label}</span>
-                        <span className="ticker text-[var(--ink-soft)]">·</span>
-                        {MEMBERS.map(m => (
-                          <PracticeChip key={m.id} initial={m.name[0]} state={s.practice?.[m.id]} isMe={false} />
-                        ))}
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-1 shrink-0">
-                      <button onClick={() => moveSong(i, -1)} disabled={i === 0} className="pill px-2 py-0.5 text-xs bg-white disabled:opacity-30">↑</button>
-                      <button onClick={() => moveSong(i, 1)} disabled={i === songIds.length - 1} className="pill px-2 py-0.5 text-xs bg-white disabled:opacity-30">↓</button>
-                      <button onClick={() => removeSong(i)} className="pill px-2 py-0.5 text-xs bg-white text-[var(--berry)]">×</button>
-                    </div>
+    ) : (
+      <ol className="space-y-2">
+        {songIds.map((sid, i) => {
+          const s = songs?.[sid];
+          if (!s) return (
+            <li key={sid} className="card-flat p-3 text-sm italic text-[var(--ink-soft)]">
+              (deleted song) <button onClick={() => removeSong(i)} className="text-[var(--berry)] underline ml-2">remove</button>
+            </li>
+          );
+          return (
+            <li key={sid} className="card-flat p-3">
+              <div className="flex items-start gap-3">
+                <div className="display text-xl text-[var(--berry)] shrink-0 w-8">{i + 1}.</div>
+                <div className="flex-1 min-w-0">
+                  <div className="display text-base leading-tight">{s.title}</div>
+                  {s.artist && <div className="text-xs text-[var(--ink-soft)] italic">{s.artist}</div>}
+                  <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                    <span className="ticker text-[var(--ink-soft)]">{SONG_STATUSES.find(x => x.id === s.status)?.label}</span>
+                    <span className="ticker text-[var(--ink-soft)]">·</span>
+                    {MEMBERS.map(m => <PracticeChip key={m.id} initial={m.name[0]} state={s.practice?.[m.id]} isMe={false} />)}
                   </div>
-                </li>
-              );
-            })}
-          </ol>
-        )}
-      </div>
-    );
-  };
-
-  const SongPicker = ({ songs, excludeIds, onPick, onClose }) => {
-    const [query, setQuery] = useState("");
-    const [statusFilter, setStatusFilter] = useState("all");
-    const all = songsList(songs).filter(s => !excludeIds.includes(s.id));
-    const list = all.filter(s => {
-      if (statusFilter !== "all" && s.status !== statusFilter) return false;
-      const q = query.trim().toLowerCase();
-      if (!q) return true;
-      return (s.title || "").toLowerCase().includes(q) || (s.artist || "").toLowerCase().includes(q);
-    }).sort((a, b) => (a.title || "").localeCompare(b.title || ""));
-
-    return (
-      <div className="card p-4 mb-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="display text-xl">Pick songs to add</h3>
-          <button onClick={onClose} className="ticker text-[var(--ink-soft)]">Done ▸</button>
-        </div>
-        <input className="input mb-2" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search by title or artist…" />
-        <div className="flex gap-1.5 flex-wrap mb-3">
-          <button onClick={() => setStatusFilter("all")} className={"pill px-2.5 py-1 text-xs font-semibold " + (statusFilter === "all" ? "berry-bg text-white" : "bg-white")}>All</button>
-          {SONG_STATUSES.map(s => (
-            <button key={s.id} onClick={() => setStatusFilter(s.id)} className={"pill px-2.5 py-1 text-xs font-semibold " + (statusFilter === s.id ? "berry-bg text-white" : "bg-white")}>{s.label}</button>
-          ))}
-        </div>
-        {list.length === 0 ? (
-          <p className="text-sm italic text-[var(--ink-soft)]">No songs match.</p>
-        ) : (
-          <div className="max-h-80 overflow-y-auto space-y-1.5">
-            {list.map(s => (
-              <button key={s.id} onClick={() => onPick(s.id)} className="card-flat p-2.5 w-full text-left hover:bg-[var(--acid)]/30 transition">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="font-semibold truncate">{s.title}</div>
-                    {s.artist && <div className="text-xs text-[var(--ink-soft)] italic truncate">{s.artist}</div>}
-                  </div>
-                  <span className="ticker text-[var(--ink-soft)] shrink-0">{SONG_STATUSES.find(x => x.id === s.status)?.label}</span>
                 </div>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    );
-  };
+                <div className="flex flex-col gap-1 shrink-0">
+                  <button onClick={() => moveSong(i, -1)} disabled={i === 0} className="pill px-2 py-0.5 text-xs bg-white disabled:opacity-30">↑</button>
+                  <button onClick={() => moveSong(i, 1)} disabled={i === songIds.length - 1} className="pill px-2 py-0.5 text-xs bg-white disabled:opacity-30">↓</button>
+                  <button onClick={() => removeSong(i)} className="pill px-2 py-0.5 text-xs bg-white text-[var(--berry)]">×</button>
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    )}
+  </div>
+);
+```
 
-  const App = () => {
-    const urlBin = getBinIdFromURL();
-    const storedBin = getStoredBinId();
-    const [binId, setBinId] = useState(urlBin || storedBin || null);
-    const [showShare, setShowShare] = useState(false);
-    const [member, setMemberId] = useMemberIdentity();
-    const [tab, setTab] = useState("schedule");
+};
 
-    useEffect(() => { if (urlBin && urlBin !== storedBin) setStoredBinId(urlBin); }, [urlBin, storedBin]);
+const SongPicker = ({ songs, excludeIds, onPick, onClose }) => {
+const [query, setQuery] = useState(””);
+const [statusFilter, setStatusFilter] = useState(“all”);
+const all = songsList(songs).filter(s => !excludeIds.includes(s.id));
+const list = all.filter(s => {
+if (statusFilter !== “all” && s.status !== statusFilter) return false;
+return songMatchesQuery(s, query);
+}).sort((a, b) => (a.title || “”).localeCompare(b.title || “”));
 
-    const sync = useSyncedState(binId);
-
-    if (!binId) return <SetupScreen onCreated={(id) => {
-      setStoredBinId(id);
-      const url = new URL(window.location.href);
-      url.searchParams.set("bin", id);
-      window.history.replaceState({}, "", url.toString());
-      setBinId(id); setShowShare(true);
-    }} />;
-    if (showShare) return <ShareScreen binId={binId} onContinue={() => setShowShare(false)} />;
-
-    if (!sync.state) {
-      return (
-        <div className="max-w-3xl mx-auto px-4 py-12 text-center">
-          <h1 className="wordmark text-5xl mb-3">Sour<span className="display-italic font-medium" style={{color:"var(--berry)"}}>berry</span></h1>
-          {sync.status === "error" ? (
-            <div className="card p-5 text-left">
-              <div className="ticker text-[var(--berry)]">Couldn't load</div>
-              <p className="display text-xl mt-1">Something's wrong with the database.</p>
-              <p className="text-sm mt-2 text-[var(--ink-soft)]">{sync.errorMsg}</p>
-              <button onClick={() => { setStoredBinId(null); setBinId(null); }} className="btn bg-white px-4 py-2 mt-4">Reset and start over</button>
+```
+return (
+  <div className="card p-4 mb-4">
+    <div className="flex items-center justify-between mb-3">
+      <h3 className="display text-xl">Pick songs to add</h3>
+      <button onClick={onClose} className="ticker text-[var(--ink-soft)]">Done ▸</button>
+    </div>
+    <input className="input mb-2" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search by title or artist (fuzzy match)…" />
+    <div className="flex gap-1.5 flex-wrap mb-3">
+      <button onClick={() => setStatusFilter("all")} className={"pill px-2.5 py-1 text-xs font-semibold " + (statusFilter === "all" ? "berry-bg text-white" : "bg-white")}>All</button>
+      {SONG_STATUSES.map(s => (
+        <button key={s.id} onClick={() => setStatusFilter(s.id)} className={"pill px-2.5 py-1 text-xs font-semibold " + (statusFilter === s.id ? "berry-bg text-white" : "bg-white")}>{s.label}</button>
+      ))}
+    </div>
+    {list.length === 0 ? (
+      <p className="text-sm italic text-[var(--ink-soft)]">No songs match.</p>
+    ) : (
+      <div className="max-h-80 overflow-y-auto space-y-1.5">
+        {list.map(s => (
+          <button key={s.id} onClick={() => onPick(s.id)} className="card-flat p-2.5 w-full text-left hover:bg-[var(--acid)]/30 transition">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="font-semibold truncate">{s.title}</div>
+                {s.artist && <div className="text-xs text-[var(--ink-soft)] italic truncate">{s.artist}</div>}
+              </div>
+              <span className="ticker text-[var(--ink-soft)] shrink-0">{SONG_STATUSES.find(x => x.id === s.status)?.label}</span>
             </div>
-          ) : (
-            <p className="display-italic text-lg text-[var(--ink-soft)]">Loading the band's data…</p>
-          )}
+          </button>
+        ))}
+      </div>
+    )}
+  </div>
+);
+```
+
+};
+
+// =========================================================================
+// PLAN — Doodle-style date polls
+// =========================================================================
+
+const blankPoll = () => ({
+name: “”,
+description: “”,
+eventType: “rehearsal”,
+venueType: “in-person-studio”,
+location: “”,
+duration: “3h”,
+slots: [],
+votes: {},
+status: “open”, // open | decided | archived
+decidedSlotId: null,
+createdEventId: null,
+createdAt: Date.now(),
+});
+
+const PlanView = ({ polls, events, member, mutate }) => {
+const [openId, setOpenId] = useState(null);
+const [creating, setCreating] = useState(false);
+
+```
+const all = pollsList(polls).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+const open = all.filter(p => p.status === "open");
+const decided = all.filter(p => p.status !== "open");
+
+const createPoll = (data) => {
+  const id = newId("poll");
+  mutate(prev => ({ ...prev, polls: { ...(prev.polls||{}), [id]: { ...blankPoll(), ...data, createdAt: Date.now() } } }));
+  setOpenId(id); setCreating(false);
+};
+const updatePoll = (id, data) => mutate(prev => ({ ...prev, polls: { ...(prev.polls||{}), [id]: { ...(prev.polls?.[id]||{}), ...data } } }));
+const deletePoll = (id) => { mutate(prev => { const polls = { ...(prev.polls||{}) }; delete polls[id]; return { ...prev, polls }; }); setOpenId(null); };
+const scheduleFromSlot = (pollId, slot) => {
+  // Create event from slot, mark poll decided
+  const eId = newId("e");
+  const poll = polls[pollId];
+  mutate(prev => {
+    const events = { ...(prev.events || {}) };
+    events[eId] = {
+      date: slot.date,
+      startTime: slot.startTime,
+      endTime: slot.endTime,
+      type: poll.eventType || "rehearsal",
+      venueType: poll.venueType || "in-person-studio",
+      location: poll.location || "",
+      bookingOwner: "",
+      bookedAndPaid: false,
+      status: "confirmed",
+      title: poll.name || "",
+      comments: poll.description || "",
+      availability: {},
+      createdAt: Date.now(),
+    };
+    const polls = { ...(prev.polls || {}) };
+    polls[pollId] = { ...polls[pollId], status: "decided", decidedSlotId: slot.id, createdEventId: eId };
+    return { ...prev, events, polls };
+  });
+};
+
+if (openId && polls?.[openId]) {
+  return <PollDetail
+    poll={{ id: openId, ...polls[openId] }}
+    events={events} member={member}
+    onBack={() => setOpenId(null)}
+    onUpdate={(data) => updatePoll(openId, data)}
+    onDelete={() => deletePoll(openId)}
+    onSchedule={(slot) => scheduleFromSlot(openId, slot)}
+  />;
+}
+
+return (
+  <div>
+    <div className="card p-4 mb-4">
+      <div className="ticker text-[var(--berry)]">Plan a date</div>
+      <p className="display text-2xl leading-tight mt-1">When can we all do this?</p>
+      <p className="text-sm text-[var(--ink-soft)] mt-1">Propose candidate dates, the band votes ✓ / ? / ✗ on each, and you pick the winner.</p>
+    </div>
+
+    <div className="flex items-center justify-between mb-3">
+      <h2 className="display text-xl">Open polls ({open.length})</h2>
+      <button onClick={() => setCreating(true)} className="btn berry-bg px-4 py-2 text-sm font-semibold">+ New poll</button>
+    </div>
+
+    {creating && <PollForm onSave={createPoll} onCancel={() => setCreating(false)} />}
+
+    {open.length === 0 && !creating && (
+      <div className="card p-6 text-center mb-4">
+        <p className="display text-xl">No active polls.</p>
+        <p className="text-sm text-[var(--ink-soft)] mt-2">Tap "+ New poll" to find a date for the next rehearsal or gig.</p>
+      </div>
+    )}
+
+    <div className="space-y-3 mb-6">
+      {open.map(p => <PollListItem key={p.id} poll={p} onOpen={() => setOpenId(p.id)} />)}
+    </div>
+
+    {decided.length > 0 && (
+      <details>
+        <summary className="ticker text-[var(--ink-soft)] hover:text-[var(--berry)] mb-3">Decided / archived ({decided.length}) ▾</summary>
+        <div className="space-y-3">
+          {decided.map(p => <PollListItem key={p.id} poll={p} onOpen={() => setOpenId(p.id)} />)}
         </div>
-      );
-    }
+      </details>
+    )}
+  </div>
+);
+```
 
-    const events = sync.state.events || {};
-    const songs = sync.state.songs || {};
-    const setlists = sync.state.setlists || {};
+};
 
-    return (
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
-        <header className="mb-6">
-          <div className="flex items-end justify-between gap-4 flex-wrap">
-            <div>
-              <div className="ticker text-[var(--berry)]">Band ops · est. for fun</div>
-              <h1 className="wordmark text-6xl sm:text-7xl leading-none mt-1">Sour<span className="display-italic font-medium" style={{color:"var(--berry)"}}>berry</span></h1>
-            </div>
-            <MemberPicker value={member} onChange={setMemberId} />
-          </div>
+const PollForm = ({ initial, onSave, onCancel }) => {
+const [f, setF] = useState(initial || blankPoll());
+const set = (k, v) => setF(prev => ({ …prev, [k]: v }));
+return (
+<div className="card p-5 mb-4">
+<div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+<label className="text-sm md:col-span-2"><div className="ticker mb-1">Title</div>
+<input autoFocus className=“input” value={f.name} onChange={e => set(“name”, e.target.value)} placeholder=“e.g. Find a December rehearsal” /></label>
+<label className="text-sm"><div className="ticker mb-1">Type</div>
+<select className=“input” value={f.eventType} onChange={e => set(“eventType”, e.target.value)}>
+<option value="rehearsal">Rehearsal</option><option value="gig">Gig</option>
+</select></label>
+{f.eventType === “rehearsal” && (
+<label className="text-sm"><div className="ticker mb-1">Venue type</div>
+<select className=“input” value={f.venueType} onChange={e => set(“venueType”, e.target.value)}>
+{VENUE_TYPES.map(v => <option key={v.id} value={v.id}>{v.label}</option>)}
+</select></label>
+)}
+<label className="text-sm md:col-span-2"><div className="ticker mb-1">Location (optional)</div>
+<input className=“input” value={f.location} onChange={e => set(“location”, e.target.value)} placeholder=“e.g. Earlsfield” /></label>
+<label className="text-sm md:col-span-2"><div className="ticker mb-1">Description (optional)</div>
+<textarea className=“input” rows=“2” value={f.description} onChange={e => set(“description”, e.target.value)} placeholder=“Anything to note about why we’re meeting” /></label>
+</div>
+<div className="flex gap-2 mt-4">
+<button onClick={() => onSave(f)} disabled={!f.name.trim()} className=“btn berry-bg px-4 py-2 font-semibold”>Create poll</button>
+<button onClick={onCancel} className="btn bg-white px-4 py-2">Cancel</button>
+</div>
+<p className="text-xs text-[var(--ink-soft)] mt-3 italic">After creating, you’ll add candidate date/time slots and the band can vote.</p>
+</div>
+);
+};
 
-          <nav className="mt-6 flex items-center border-y-2 border-[var(--line)] overflow-x-auto">
-            {[
-              { id: "schedule",     label: "Schedule" },
-              { id: "availability", label: "Availability" },
-              { id: "songs",        label: "Songs" },
-              { id: "setlists",     label: "Setlists" },
-            ].map(t => (
-              <button key={t.id} onClick={() => setTab(t.id)}
-                className={"px-5 py-2.5 ticker whitespace-nowrap " + (tab === t.id ? "tab-active" : "hover:bg-[var(--acid)]")}>
-                {t.label}
-              </button>
-            ))}
-            <div className="ml-auto pr-2 shrink-0">
-              <SyncBadge status={sync.status} errorMsg={sync.errorMsg} lastSyncedAt={sync.lastSyncedAt} />
-            </div>
-          </nav>
-        </header>
+const PollListItem = ({ poll, onOpen }) => {
+const slots = poll.slots || [];
+const allInSlots = slots.filter(s => MEMBERS.every(m => poll.votes?.[s.id]?.[m.id] === “yes”)).length;
+return (
+<button onClick={onOpen} className="card-flat p-4 w-full text-left hover:bg-[var(--acid)]/20 transition">
+<div className="flex items-center justify-between gap-3 flex-wrap">
+<div className="flex-1 min-w-0">
+<div className="display text-xl leading-tight">{poll.name}</div>
+<div className="text-sm text-[var(--ink-soft)] mt-1">
+{slots.length} slot{slots.length === 1 ? “” : “s”}
+{allInSlots > 0 ? ` · ${allInSlots} where everyone said yes` : “”}
+{poll.status === “decided” ? “ · DECIDED” : “”}
+</div>
+</div>
+<span className="ticker text-[var(--berry)]">Open ▸</span>
+</div>
+</button>
+);
+};
 
-        {tab === "schedule"     && <ScheduleView     events={events} member={member} mutate={sync.mutate} />}
-        {tab === "availability" && <AvailabilityView events={events} member={member} mutate={sync.mutate} />}
-        {tab === "songs"        && <SongsView        songs={songs}   member={member} mutate={sync.mutate} />}
-        {tab === "setlists"     && <SetlistsView     setlists={setlists} songs={songs} events={events} member={member} mutate={sync.mutate} />}
+const PollDetail = ({ poll, events, member, onBack, onUpdate, onDelete, onSchedule }) => {
+const [addingSlot, setAddingSlot] = useState(false);
+const [slot, setSlot] = useState({ date: todayISO(), startTime: “18:00”, endTime: “21:00” });
 
-        <footer className="mt-12 pt-6 border-t border-[var(--line)]/30 text-xs text-[var(--ink-soft)] flex justify-between flex-wrap gap-2">
-          <span>Sourberry · keep the cover band tight</span>
-          <span className="display-italic">made with bitter love</span>
-        </footer>
+```
+const slots = poll.slots || [];
+const sortedSlots = [...slots].sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime));
+
+const addSlot = () => {
+  const newSlot = { id: newId("slot"), ...slot };
+  onUpdate({ slots: [...slots, newSlot] });
+  setAddingSlot(false);
+};
+const removeSlot = (slotId) => {
+  onUpdate({
+    slots: slots.filter(s => s.id !== slotId),
+    votes: Object.fromEntries(Object.entries(poll.votes || {}).filter(([k]) => k !== slotId)),
+  });
+};
+const setVote = (slotId, memberId, val) => {
+  const votes = { ...(poll.votes || {}) };
+  const slotVotes = { ...(votes[slotId] || {}) };
+  if (!val) delete slotVotes[memberId]; else slotVotes[memberId] = val;
+  votes[slotId] = slotVotes;
+  onUpdate({ votes });
+};
+
+const decidedSlot = poll.decidedSlotId ? sortedSlots.find(s => s.id === poll.decidedSlotId) : null;
+const decidedEvent = poll.createdEventId && events?.[poll.createdEventId];
+
+return (
+  <div>
+    <button onClick={onBack} className="ticker text-[var(--berry)] mb-3">← Back to polls</button>
+
+    <div className="card p-4 mb-4">
+      <div className="flex items-center gap-2 flex-wrap">
+        <TypeBadge type={poll.eventType} status="confirmed" />
+        {poll.eventType === "rehearsal" && <VenueBadge venueType={poll.venueType} />}
+        {poll.status === "decided" && <span className="ticker bg-green-100 px-2 py-0.5">Decided ✓</span>}
       </div>
-    );
-  };
+      <h2 className="display text-3xl leading-tight mt-2">{poll.name}</h2>
+      {poll.description && <p className="text-sm text-[var(--ink-soft)] mt-2 italic">{poll.description}</p>}
+      {poll.location && <p className="text-sm text-[var(--ink-soft)] mt-1">Location: {poll.location}</p>}
 
-  ReactDOM.createRoot(document.getElementById("root")).render(<App />);
-  </script>
+      {decidedSlot && (
+        <div className="mt-3 p-3 bg-[var(--acid)]/30 border border-[var(--line)] text-sm">
+          <strong>Picked:</strong> {fmtDateLong(decidedSlot.date)}, {decidedSlot.startTime}–{decidedSlot.endTime}
+          {decidedEvent && <> · added to your <strong>Schedule</strong></>}
+        </div>
+      )}
+
+      <div className="mt-3 flex gap-2 flex-wrap">
+        {poll.status === "open" && (
+          <button onClick={() => setAddingSlot(true)} className="btn berry-bg px-4 py-2 text-sm font-semibold">+ Add slot</button>
+        )}
+        {poll.status === "decided" && (
+          <button onClick={() => onUpdate({ status: "open", decidedSlotId: null })} className="btn bg-white px-4 py-2 text-sm">Re-open poll</button>
+        )}
+        <button onClick={() => { if (confirm(`Delete poll "${poll.name}"? This won't delete any scheduled event.`)) onDelete(); }} className="btn bg-white px-4 py-2 text-sm text-[var(--berry)] ml-auto">Delete</button>
+      </div>
+    </div>
+
+    {addingSlot && (
+      <div className="card p-4 mb-4">
+        <h3 className="display text-lg mb-3">Add a candidate slot</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+          <label className="text-sm"><div className="ticker mb-1">Date</div>
+            <input className="input" type="date" value={slot.date} onChange={e => setSlot(s => ({ ...s, date: e.target.value }))} /></label>
+          <label className="text-sm"><div className="ticker mb-1">Start</div>
+            <input className="input" type="time" value={slot.startTime} onChange={e => setSlot(s => ({ ...s, startTime: e.target.value }))} /></label>
+          <label className="text-sm"><div className="ticker mb-1">End</div>
+            <input className="input" type="time" value={slot.endTime} onChange={e => setSlot(s => ({ ...s, endTime: e.target.value }))} /></label>
+        </div>
+        <div className="flex gap-2 mt-3">
+          <button onClick={addSlot} className="btn berry-bg px-4 py-2 text-sm font-semibold">Add slot</button>
+          <button onClick={() => setAddingSlot(false)} className="btn bg-white px-4 py-2 text-sm">Cancel</button>
+        </div>
+      </div>
+    )}
+
+    {sortedSlots.length === 0 ? (
+      <div className="card-flat p-6 text-center">
+        <p className="display text-xl">No candidate slots yet.</p>
+        <p className="text-sm text-[var(--ink-soft)] mt-2">Add 3–5 dates to give the band options.</p>
+      </div>
+    ) : (
+      <div className="space-y-2.5">
+        {sortedSlots.map(s => {
+          const slotVotes = poll.votes?.[s.id] || {};
+          const yesCount = MEMBERS.filter(m => slotVotes[m.id] === "yes").length;
+          const noCount  = MEMBERS.filter(m => slotVotes[m.id] === "no").length;
+          const allYes = yesCount === MEMBERS.length;
+          const myVote = member ? slotVotes[member.id] : null;
+          const isDecided = poll.decidedSlotId === s.id;
+          return (
+            <div key={s.id} className={"card-flat p-3 sm:p-4 " + (isDecided ? "ring-2 ring-[var(--berry)]" : allYes ? "ring-2 ring-[var(--good)]" : "")}>
+              <div className="flex items-start gap-4">
+                <div className="shrink-0 text-center min-w-[68px]">
+                  <div className="ticker text-[var(--berry)]">{fmtDate(s.date).split(",")[0]}</div>
+                  <div className="display text-3xl leading-none mt-1">{new Date(s.date+"T00:00:00").getDate()}</div>
+                  <div className="ticker mt-1">{new Date(s.date+"T00:00:00").toLocaleDateString(undefined, { month: "short" })}</div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold">{s.startTime}–{s.endTime}</div>
+                  <div className="flex items-center gap-2 flex-wrap mt-2">
+                    {MEMBERS.map(m => {
+                      const v = slotVotes[m.id];
+                      const isMe = member?.id === m.id;
+                      return (
+                        <button
+                          key={m.id}
+                          onClick={isMe && poll.status === "open" ? () => {
+                            const nextV = v === "yes" ? "maybe" : v === "maybe" ? "no" : v === "no" ? null : "yes";
+                            setVote(s.id, m.id, nextV);
+                          } : undefined}
+                          disabled={!isMe || poll.status !== "open"}
+                          className="inline-flex items-center justify-center text-xs font-semibold rounded-full border border-[var(--line)] gap-1 px-2"
+                          style={{
+                            height: 28,
+                            background: v === "yes" ? "var(--good)" : v === "no" ? "var(--learn)" : v === "maybe" ? "var(--rusty)" : "transparent",
+                            color: v ? "#fff" : "var(--ink-soft)",
+                            cursor: isMe && poll.status === "open" ? "pointer" : "default",
+                          }}
+                          title={isMe ? "Tap to cycle: Yes → Maybe → No → —" : (v || "no vote")}
+                        >
+                          <span>{m.name[0]}</span>
+                          <span className="text-[10px]">{v === "yes" ? "✓" : v === "no" ? "✗" : v === "maybe" ? "?" : "·"}</span>
+                        </button>
+                      );
+                    })}
+                    <span className="text-xs text-[var(--ink-soft)] ml-1">
+                      {yesCount} yes{noCount ? ` · ${noCount} no` : ""}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex gap-2 flex-wrap">
+                    {poll.status === "open" && (
+                      <>
+                        {allYes && (
+                          <button onClick={() => onSchedule(s)} className="btn berry-bg px-3 py-1.5 text-xs font-semibold">All in! Schedule this →</button>
+                        )}
+                        {!allYes && yesCount >= 3 && (
+                          <button onClick={() => onSchedule(s)} className="btn bg-white px-3 py-1.5 text-xs font-semibold">Schedule anyway →</button>
+                        )}
+                        <button onClick={() => removeSlot(s.id)} className="ticker text-[var(--ink-soft)] hover:text-[var(--berry)] ml-auto">Remove</button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    )}
+
+    {poll.status === "open" && member && sortedSlots.length > 0 && (
+      <p className="text-xs text-[var(--ink-soft)] italic mt-3">Tap your initial on each slot to cycle: Yes → Maybe → No → —</p>
+    )}
+  </div>
+);
+```
+
+};
+
+// =========================================================================
+// ROOT
+// =========================================================================
+const App = () => {
+const urlBin = getBinIdFromURL();
+const storedBin = getStoredBinId();
+const [binId, setBinId] = useState(urlBin || storedBin || null);
+const [showShare, setShowShare] = useState(false);
+const [member, setMemberId] = useMemberIdentity();
+const [tab, setTab] = useState(“schedule”);
+const [showSyncPanel, setShowSyncPanel] = useState(false);
+
+```
+useEffect(() => { if (urlBin && urlBin !== storedBin) setStoredBinId(urlBin); }, [urlBin, storedBin]);
+
+const sync = useSyncedState(binId);
+
+if (!binId) return <SetupScreen onCreated={(id) => {
+  setStoredBinId(id);
+  const url = new URL(window.location.href);
+  url.searchParams.set("bin", id);
+  window.history.replaceState({}, "", url.toString());
+  setBinId(id); setShowShare(true);
+}} />;
+if (showShare) return <ShareScreen binId={binId} onContinue={() => setShowShare(false)} />;
+
+if (!sync.state) {
+  return (
+    <div className="max-w-3xl mx-auto px-4 py-12 text-center">
+      <h1 className="wordmark text-5xl mb-3">Sour<span className="display-italic font-medium" style={{color:"var(--berry)"}}>berry</span></h1>
+      {sync.status === "error" ? (
+        <div className="card p-5 text-left">
+          <div className="ticker text-[var(--berry)]">Couldn't load</div>
+          <p className="display text-xl mt-1">Something's wrong with the database.</p>
+          <p className="text-sm mt-2 text-[var(--ink-soft)]">{sync.errorMsg}</p>
+          <div className="mt-4 flex gap-2 flex-wrap">
+            <button onClick={() => sync.refresh()} className="btn berry-bg px-4 py-2 font-semibold">Retry</button>
+            <button onClick={() => { setStoredBinId(null); setBinId(null); }} className="btn bg-white px-4 py-2">Reset and start over</button>
+          </div>
+        </div>
+      ) : (
+        <p className="display-italic text-lg text-[var(--ink-soft)]">Loading the band's data…</p>
+      )}
+    </div>
+  );
+}
+
+const events = sync.state.events || {};
+const songs = sync.state.songs || {};
+const setlists = sync.state.setlists || {};
+const polls = sync.state.polls || {};
+
+return (
+  <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
+    {showSyncPanel && <SyncPanel sync={sync} onClose={() => setShowSyncPanel(false)} />}
+
+    <header className="mb-6">
+      <div className="flex items-end justify-between gap-4 flex-wrap">
+        <div>
+          <div className="ticker text-[var(--berry)]">Band ops · est. for fun</div>
+          <h1 className="wordmark text-6xl sm:text-7xl leading-none mt-1">Sour<span className="display-italic font-medium" style={{color:"var(--berry)"}}>berry</span></h1>
+        </div>
+        <MemberPicker value={member} onChange={setMemberId} />
+      </div>
+
+      <nav className="mt-6 flex items-center border-y-2 border-[var(--line)] overflow-x-auto">
+        {[
+          { id: "schedule",     label: "Schedule" },
+          { id: "availability", label: "Availability" },
+          { id: "plan",         label: "Plan" },
+          { id: "songs",        label: "Songs" },
+          { id: "setlists",     label: "Setlists" },
+        ].map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={"px-4 py-2.5 ticker whitespace-nowrap " + (tab === t.id ? "tab-active" : "hover:bg-[var(--acid)]")}>
+            {t.label}
+          </button>
+        ))}
+        <div className="ml-auto pr-2 shrink-0">
+          <SyncBadge sync={sync} onOpen={() => setShowSyncPanel(true)} />
+        </div>
+      </nav>
+    </header>
+
+    {tab === "schedule"     && <ScheduleView     events={events} member={member} mutate={sync.mutate} />}
+    {tab === "availability" && <AvailabilityView events={events} member={member} mutate={sync.mutate} />}
+    {tab === "plan"         && <PlanView         polls={polls}   events={events} member={member} mutate={sync.mutate} />}
+    {tab === "songs"        && <SongsView        songs={songs}   member={member} mutate={sync.mutate} />}
+    {tab === "setlists"     && <SetlistsView     setlists={setlists} songs={songs} events={events} member={member} mutate={sync.mutate} />}
+
+    <footer className="mt-12 pt-6 border-t border-[var(--line)]/30 text-xs text-[var(--ink-soft)] flex justify-between flex-wrap gap-2">
+      <span>Sourberry · keep the cover band tight</span>
+      <span className="display-italic">made with bitter love</span>
+    </footer>
+  </div>
+);
+```
+
+};
+
+ReactDOM.createRoot(document.getElementById(“root”)).render(<App />);
+</script>
 
 </body>
 </html>
