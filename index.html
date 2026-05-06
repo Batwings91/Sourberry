@@ -1062,15 +1062,18 @@ const MemberPicker = _ref11 => {
     className: "ticker text-[var(--ink-soft)] hidden sm:inline"
   }, "I am"), /*#__PURE__*/React.createElement("div", {
     className: "flex gap-1 sm:gap-1.5 flex-wrap"
-  }, MEMBERS.map(m => /*#__PURE__*/React.createElement("button", {
-    key: m.id,
-    onClick: () => onChange(m.id),
-    className: "pill px-2 sm:px-3 py-1 text-xs sm:text-sm font-semibold " + (value?.id === m.id ? "berry-bg" : "bg-white hover:bg-[var(--acid)]")
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "sm:hidden"
-  }, m.name[0]), /*#__PURE__*/React.createElement("span", {
-    className: "hidden sm:inline"
-  }, m.name)))));
+  }, MEMBERS.map(m => {
+    const active = value?.id === m.id;
+    return /*#__PURE__*/React.createElement("button", {
+      key: m.id,
+      onClick: () => onChange(m.id),
+      className: "pill px-2 sm:px-3 py-1 text-xs sm:text-sm font-semibold transition-all " + (active ? "berry-bg" : "bg-white hover:bg-[var(--acid)]")
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "sm:hidden"
+    }, active ? m.name : m.name[0]), /*#__PURE__*/React.createElement("span", {
+      className: "hidden sm:inline"
+    }, m.name));
+  })));
 };
 const SyncPanel = _ref12 => {
   let sync = _ref12.sync,
@@ -1148,13 +1151,13 @@ const SyncBadge = _ref13 => {
   const ago = sync.lastSyncedAt ? Math.round((Date.now() - sync.lastSyncedAt) / 1000) : null;
   let label,
     cls = "text-[var(--ink-soft)]";
-  if (sync.status === "saving") label = "Saving…";else if (sync.status === "loading") label = "Loading…";else if (sync.status === "error") {
-    label = "⚠ Sync error · tap";
+  if (sync.status === "saving") label = "saving…";else if (sync.status === "loading") label = "loading…";else if (sync.status === "error") {
+    label = "⚠ sync error · tap";
     cls = "text-[var(--berry)] font-semibold";
   } else label = ago !== null ? `synced ${ago}s ago` : "synced";
   return /*#__PURE__*/React.createElement("button", {
     onClick: onOpen,
-    className: "ticker hover:underline " + cls + (sync.status === "error" ? " blink" : "")
+    className: "display-italic text-[10px] sm:text-xs hover:underline text-right " + cls + (sync.status === "error" ? " blink" : "")
   }, label);
 };
 
@@ -1442,65 +1445,24 @@ const EventCard = _ref17 => {
     className: "ticker text-[var(--ink-soft)] hover:text-[var(--berry)] ml-auto"
   }, "Delete \u2715")))));
 };
-const ScheduleSection = _ref18 => {
-  let title = _ref18.title,
-    items = _ref18.items,
+const TypedScheduleView = _ref18 => {
+  let events = _ref18.events,
     member = _ref18.member,
-    editingId = _ref18.editingId,
-    onEdit = _ref18.onEdit,
-    onCancelEdit = _ref18.onCancelEdit,
-    onUpdate = _ref18.onUpdate,
-    onDelete = _ref18.onDelete,
-    onSetAvailability = _ref18.onSetAvailability,
-    emptyMsg = _ref18.emptyMsg,
-    locationSuggestions = _ref18.locationSuggestions;
-  return /*#__PURE__*/React.createElement("section", {
-    className: "mb-6"
-  }, /*#__PURE__*/React.createElement("h2", {
-    className: "display text-2xl mb-3"
-  }, title, " ", /*#__PURE__*/React.createElement("span", {
-    className: "text-[var(--ink-soft)] text-base"
-  }, "(", items.length, ")")), items.length === 0 ? /*#__PURE__*/React.createElement("div", {
-    className: "card-flat p-4 text-sm italic text-[var(--ink-soft)]"
-  }, emptyMsg) : /*#__PURE__*/React.createElement("div", {
-    className: "space-y-3"
-  }, items.map(ev => editingId === ev.id ? /*#__PURE__*/React.createElement(EventForm, {
-    key: ev.id,
-    initial: ev,
-    onSave: f => onUpdate(ev.id, f),
-    onCancel: onCancelEdit,
-    onDelete: () => onDelete(ev.id),
-    locationSuggestions: locationSuggestions
-  }) : /*#__PURE__*/React.createElement(EventCard, {
-    key: ev.id,
-    ev: ev,
-    member: member,
-    onEdit: () => onEdit(ev.id),
-    onSetAvailability: onSetAvailability,
-    onDelete: () => {
-      if (confirm("Delete this past event?")) onDelete(ev.id);
-    }
-  }))));
-};
-const ScheduleView = _ref19 => {
-  let events = _ref19.events,
-    member = _ref19.member,
-    mutate = _ref19.mutate;
+    mutate = _ref18.mutate,
+    eventType = _ref18.eventType;
   const _useState11 = useState(null),
     editingId = _useState11[0],
     setEditingId = _useState11[1];
-  const _useState12 = useState(null),
+  const _useState12 = useState(false),
     adding = _useState12[0],
     setAdding = _useState12[1];
   const _useState13 = useState(false),
     showPast = _useState13[0],
     setShowPast = _useState13[1];
-  const all = eventsList(events);
+  const all = eventsList(events).filter(e => e.type === eventType);
   const upcoming = all.filter(e => !isPast(e.date));
   const past = all.filter(e => isPast(e.date)).reverse();
   const list = showPast ? past : upcoming;
-  const gigs = list.filter(e => e.type === "gig");
-  const rehearsals = list.filter(e => e.type === "rehearsal");
   const locationSuggestions = uniqueLocations(events);
   const setAvailability = (eid, mid, val) => mutate(prev => {
     const events = {
@@ -1545,7 +1507,7 @@ const ScheduleView = _ref19 => {
         }
       }
     }));
-    setAdding(null);
+    setAdding(false);
   };
   const deleteEvent = eid => {
     mutate(prev => {
@@ -1560,21 +1522,21 @@ const ScheduleView = _ref19 => {
     });
     setEditingId(null);
   };
-  const clearAllPastRehearsals = () => {
-    const pastRehearsalIds = past.filter(e => e.type === "rehearsal").map(e => e.id);
-    if (pastRehearsalIds.length === 0) return;
-    if (!confirm(`Delete ${pastRehearsalIds.length} past rehearsal${pastRehearsalIds.length === 1 ? "" : "s"}? Past gigs will be kept.`)) return;
+  const clearAllPast = () => {
+    if (past.length === 0) return;
+    if (!confirm(`Delete ${past.length} past ${eventType}${past.length === 1 ? "" : "s"}?`)) return;
     mutate(prev => {
       const events = {
         ...(prev.events || {})
       };
-      pastRehearsalIds.forEach(id => delete events[id]);
+      past.forEach(e => delete events[e.id]);
       return {
         ...prev,
         events
       };
     });
   };
+  const addLabel = eventType === "gig" ? "+ Gig" : "+ Rehearsal";
   return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     className: "flex items-center justify-between mb-4 flex-wrap gap-2"
   }, /*#__PURE__*/React.createElement("div", {
@@ -1582,159 +1544,55 @@ const ScheduleView = _ref19 => {
   }, /*#__PURE__*/React.createElement("button", {
     onClick: () => setShowPast(false),
     className: "pill px-3 py-1 text-sm " + (!showPast ? "berry-bg text-white" : "bg-white")
-  }, "Upcoming"), /*#__PURE__*/React.createElement("button", {
+  }, "Upcoming (", upcoming.length, ")"), /*#__PURE__*/React.createElement("button", {
     onClick: () => setShowPast(true),
     className: "pill px-3 py-1 text-sm " + (showPast ? "berry-bg text-white" : "bg-white")
-  }, "Past")), /*#__PURE__*/React.createElement("div", {
-    className: "flex gap-2"
-  }, /*#__PURE__*/React.createElement("button", {
+  }, "Past (", past.length, ")")), /*#__PURE__*/React.createElement("button", {
     onClick: () => {
-      setAdding("gig");
+      setAdding(true);
       setEditingId(null);
     },
     className: "btn berry-bg px-3 py-2 text-sm font-semibold"
-  }, "+ Gig"), /*#__PURE__*/React.createElement("button", {
-    onClick: () => {
-      setAdding("rehearsal");
-      setEditingId(null);
-    },
-    className: "btn bg-white px-3 py-2 text-sm font-semibold"
-  }, "+ Rehearsal"))), showPast && past.filter(e => e.type === "rehearsal").length > 0 && /*#__PURE__*/React.createElement("div", {
+  }, addLabel)), showPast && past.length > 0 && /*#__PURE__*/React.createElement("div", {
     className: "card-flat p-3 mb-4 flex items-center justify-between gap-2 flex-wrap"
   }, /*#__PURE__*/React.createElement("span", {
     className: "text-sm text-[var(--ink-soft)]"
-  }, "Tidy up: ", past.filter(e => e.type === "rehearsal").length, " past rehearsal", past.filter(e => e.type === "rehearsal").length === 1 ? "" : "s", " on file."), /*#__PURE__*/React.createElement("button", {
-    onClick: clearAllPastRehearsals,
+  }, "Tidy up: ", past.length, " past ", eventType, past.length === 1 ? "" : "s", "."), /*#__PURE__*/React.createElement("button", {
+    onClick: clearAllPast,
     className: "btn bg-white px-3 py-1.5 text-sm text-[var(--berry)]"
-  }, "Delete all past rehearsals")), adding && /*#__PURE__*/React.createElement(EventForm, {
-    initial: blankEvent(adding),
+  }, "Delete all past")), adding && /*#__PURE__*/React.createElement(EventForm, {
+    initial: blankEvent(eventType),
     onSave: createEvent,
-    onCancel: () => setAdding(null),
+    onCancel: () => setAdding(false),
     locationSuggestions: locationSuggestions
-  }), /*#__PURE__*/React.createElement(ScheduleSection, {
-    title: "Gigs",
-    items: gigs,
-    member: member,
-    editingId: editingId,
-    onEdit: id => {
-      setEditingId(id);
-      setAdding(null);
-    },
-    onCancelEdit: () => setEditingId(null),
-    onUpdate: updateEvent,
-    onDelete: deleteEvent,
-    onSetAvailability: setAvailability,
-    emptyMsg: showPast ? "No past gigs." : "No gigs in the diary yet.",
-    locationSuggestions: locationSuggestions
-  }), /*#__PURE__*/React.createElement(ScheduleSection, {
-    title: "Rehearsals",
-    items: rehearsals,
-    member: member,
-    editingId: editingId,
-    onEdit: id => {
-      setEditingId(id);
-      setAdding(null);
-    },
-    onCancelEdit: () => setEditingId(null),
-    onUpdate: updateEvent,
-    onDelete: deleteEvent,
-    onSetAvailability: setAvailability,
-    emptyMsg: showPast ? "No past rehearsals." : "No rehearsals booked.",
-    locationSuggestions: locationSuggestions
-  }));
-};
-const AvailabilityView = _ref20 => {
-  let events = _ref20.events,
-    member = _ref20.member,
-    mutate = _ref20.mutate;
-  const upcoming = eventsList(events).filter(e => !isPast(e.date));
-  const setAvailability = (eid, mid, val) => mutate(prev => {
-    const events = {
-      ...(prev.events || {})
-    };
-    const ev = {
-      ...(events[eid] || {})
-    };
-    const av = {
-      ...(ev.availability || {})
-    };
-    if (!val) delete av[mid];else av[mid] = val;
-    ev.availability = av;
-    events[eid] = ev;
-    return {
-      ...prev,
-      events
-    };
-  });
-  if (upcoming.length === 0) return /*#__PURE__*/React.createElement("div", {
+  }), list.length === 0 && !adding && /*#__PURE__*/React.createElement("div", {
     className: "card p-6 text-center"
   }, /*#__PURE__*/React.createElement("p", {
     className: "display text-xl"
-  }, "No upcoming dates yet."));
-  return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    className: "card p-4 mb-4"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "ticker text-[var(--berry)]"
-  }, "Quick mark"), /*#__PURE__*/React.createElement("p", {
-    className: "display text-2xl leading-tight mt-1"
-  }, "Tell the band when you're free."), /*#__PURE__*/React.createElement("p", {
-    className: "text-sm text-[var(--ink-soft)] mt-1"
-  }, "For dates that are already on the schedule. To find when everyone's free, use the ", /*#__PURE__*/React.createElement("strong", null, "Practice"), " tab.")), /*#__PURE__*/React.createElement("div", {
-    className: "card overflow-x-auto"
-  }, /*#__PURE__*/React.createElement("table", {
-    className: "w-full text-sm"
-  }, /*#__PURE__*/React.createElement("thead", {
-    className: "bg-[var(--ink)] text-[var(--bg)]"
-  }, /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("th", {
-    className: "text-left px-3 py-2 ticker"
-  }, "Date"), /*#__PURE__*/React.createElement("th", {
-    className: "text-left px-3 py-2 ticker"
-  }, "When"), MEMBERS.map(m => /*#__PURE__*/React.createElement("th", {
-    key: m.id,
-    className: "px-3 py-2 ticker text-center"
-  }, m.name)))), /*#__PURE__*/React.createElement("tbody", null, upcoming.map(ev => /*#__PURE__*/React.createElement("tr", {
+  }, showPast ? `No past ${eventType}s.` : `No ${eventType}s in the diary yet.`), !showPast && /*#__PURE__*/React.createElement("p", {
+    className: "text-sm mt-2 text-[var(--ink-soft)]"
+  }, "Tap \"", addLabel, "\" to add one.")), /*#__PURE__*/React.createElement("div", {
+    className: "space-y-3"
+  }, list.map(ev => editingId === ev.id ? /*#__PURE__*/React.createElement(EventForm, {
     key: ev.id,
-    className: "border-t border-[var(--line)]/20"
-  }, /*#__PURE__*/React.createElement("td", {
-    className: "px-3 py-2.5 align-top"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "font-semibold"
-  }, fmtDate(ev.date)), /*#__PURE__*/React.createElement("div", {
-    className: "text-xs text-[var(--ink-soft)] mt-0.5"
-  }, /*#__PURE__*/React.createElement(TypeBadge, {
-    type: ev.type,
-    status: ev.status
-  }), " ", ev.title)), /*#__PURE__*/React.createElement("td", {
-    className: "px-3 py-2.5 text-xs text-[var(--ink-soft)] align-top"
-  }, /*#__PURE__*/React.createElement("div", null, ev.startTime, "\u2013", ev.endTime), ev.location && /*#__PURE__*/React.createElement("div", null, ev.location)), MEMBERS.map(m => {
-    const isMe = member?.id === m.id;
-    const cur = ev.availability?.[m.id];
-    return /*#__PURE__*/React.createElement("td", {
-      key: m.id,
-      className: "px-2 py-2.5 text-center align-top"
-    }, isMe ? /*#__PURE__*/React.createElement("select", {
-      value: cur || "",
-      onChange: e => setAvailability(ev.id, m.id, e.target.value || null),
-      className: "input text-xs py-1 px-1 text-center",
-      style: {
-        minWidth: 70
-      }
-    }, /*#__PURE__*/React.createElement("option", {
-      value: ""
-    }, "\u2014"), /*#__PURE__*/React.createElement("option", {
-      value: "yes"
-    }, "Yes"), /*#__PURE__*/React.createElement("option", {
-      value: "maybe"
-    }, "Maybe"), /*#__PURE__*/React.createElement("option", {
-      value: "no"
-    }, "No")) : /*#__PURE__*/React.createElement("div", {
-      className: "flex items-center justify-center gap-1"
-    }, /*#__PURE__*/React.createElement(StatusDot, {
-      status: cur
-    }), /*#__PURE__*/React.createElement("span", {
-      className: "text-xs"
-    }, cur ? cur[0].toUpperCase() : "—")));
-  })))))));
+    initial: ev,
+    onSave: f => updateEvent(ev.id, f),
+    onCancel: () => setEditingId(null),
+    onDelete: () => deleteEvent(ev.id),
+    locationSuggestions: locationSuggestions
+  }) : /*#__PURE__*/React.createElement(EventCard, {
+    key: ev.id,
+    ev: ev,
+    member: member,
+    onEdit: () => {
+      setEditingId(ev.id);
+      setAdding(false);
+    },
+    onSetAvailability: setAvailability,
+    onDelete: () => {
+      if (confirm("Delete this past event?")) deleteEvent(ev.id);
+    }
+  }))));
 };
 
 // =========================================================================
@@ -1751,11 +1609,11 @@ const blankSong = () => ({
   votes: {},
   practice: {}
 });
-const SongForm = _ref21 => {
-  let initial = _ref21.initial,
-    onSave = _ref21.onSave,
-    onCancel = _ref21.onCancel,
-    onDelete = _ref21.onDelete;
+const SongForm = _ref19 => {
+  let initial = _ref19.initial,
+    onSave = _ref19.onSave,
+    onCancel = _ref19.onCancel,
+    onDelete = _ref19.onDelete;
   const _useState14 = useState(initial || blankSong()),
     f = _useState14[0],
     setF = _useState14[1];
@@ -1850,9 +1708,9 @@ const SongForm = _ref21 => {
     className: "btn bg-white px-4 py-2 ml-auto text-[var(--berry)]"
   }, "Delete")));
 };
-const VotePill = _ref22 => {
-  let initial = _ref22.initial,
-    vote = _ref22.vote;
+const VotePill = _ref20 => {
+  let initial = _ref20.initial,
+    vote = _ref20.vote;
   const bg = vote === "yes" ? "var(--good)" : vote === "no" ? "var(--learn)" : "transparent";
   const color = vote ? "#fff" : "var(--ink-soft)";
   return /*#__PURE__*/React.createElement("span", {
@@ -1866,11 +1724,11 @@ const VotePill = _ref22 => {
     title: vote || "no vote"
   }, initial);
 };
-const PracticeChip = _ref23 => {
-  let initial = _ref23.initial,
-    state = _ref23.state,
-    isMe = _ref23.isMe,
-    onClick = _ref23.onClick;
+const PracticeChip = _ref21 => {
+  let initial = _ref21.initial,
+    state = _ref21.state,
+    isMe = _ref21.isMe,
+    onClick = _ref21.onClick;
   const bg = state ? PRACTICE_COLOR[state] : "transparent";
   const color = state ? "#fff" : "var(--ink-soft)";
   return /*#__PURE__*/React.createElement("button", {
@@ -1893,14 +1751,14 @@ const cyclePractice = current => {
   if (current === "learn") return null;
   return "good";
 };
-const SongCard = _ref24 => {
-  let song = _ref24.song,
-    member = _ref24.member,
-    onEdit = _ref24.onEdit,
-    onVote = _ref24.onVote,
-    onSetStatus = _ref24.onSetStatus,
-    onSetPractice = _ref24.onSetPractice,
-    onPromote = _ref24.onPromote;
+const SongCard = _ref22 => {
+  let song = _ref22.song,
+    member = _ref22.member,
+    onEdit = _ref22.onEdit,
+    onVote = _ref22.onVote,
+    onSetStatus = _ref22.onSetStatus,
+    onSetPractice = _ref22.onSetPractice,
+    onPromote = _ref22.onPromote;
   const showVotes = song.status === "suggested";
   const showPractice = ["shortlist", "learning", "repertoire"].includes(song.status);
   const yesCount = MEMBERS.filter(m => song.votes?.[m.id] === "yes").length;
@@ -1999,10 +1857,10 @@ const SongCard = _ref24 => {
     className: "pill px-2.5 py-1 text-xs font-semibold whitespace-nowrap shrink-0 " + (s.id === song.status ? "berry-bg text-white" : "bg-white hover:bg-[var(--acid)]")
   }, s.label))));
 };
-const SongsView = _ref25 => {
-  let songs = _ref25.songs,
-    member = _ref25.member,
-    mutate = _ref25.mutate;
+const SongsView = _ref23 => {
+  let songs = _ref23.songs,
+    member = _ref23.member,
+    mutate = _ref23.mutate;
   const _useState15 = useState(null),
     editingId = _useState15[0],
     setEditingId = _useState15[1];
@@ -2212,12 +2070,12 @@ const SongsView = _ref25 => {
 // =========================================================================
 // SETLISTS (unchanged from v4)
 // =========================================================================
-const SetlistsView = _ref26 => {
-  let setlists = _ref26.setlists,
-    songs = _ref26.songs,
-    events = _ref26.events,
-    member = _ref26.member,
-    mutate = _ref26.mutate;
+const SetlistsView = _ref24 => {
+  let setlists = _ref24.setlists,
+    songs = _ref24.songs,
+    events = _ref24.events,
+    member = _ref24.member,
+    mutate = _ref24.mutate;
   const _useState20 = useState(null),
     openId = _useState20[0],
     setOpenId = _useState20[1];
@@ -2341,14 +2199,14 @@ const SetlistsView = _ref26 => {
     }, "Open \u25B8")));
   })));
 };
-const SetlistDetail = _ref27 => {
-  let setlist = _ref27.setlist,
-    songs = _ref27.songs,
-    events = _ref27.events,
-    member = _ref27.member,
-    onBack = _ref27.onBack,
-    onUpdate = _ref27.onUpdate,
-    onDelete = _ref27.onDelete;
+const SetlistDetail = _ref25 => {
+  let setlist = _ref25.setlist,
+    songs = _ref25.songs,
+    events = _ref25.events,
+    member = _ref25.member,
+    onBack = _ref25.onBack,
+    onUpdate = _ref25.onUpdate,
+    onDelete = _ref25.onDelete;
   const _useState23 = useState(false),
     editingName = _useState23[0],
     setEditingName = _useState23[1];
@@ -2367,9 +2225,9 @@ const SetlistDetail = _ref27 => {
     const arr = [...songIds];
     const ni = idx + dir;
     if (ni < 0 || ni >= arr.length) return;
-    var _ref28 = [arr[ni], arr[idx]];
-    arr[idx] = _ref28[0];
-    arr[ni] = _ref28[1];
+    var _ref26 = [arr[ni], arr[idx]];
+    arr[idx] = _ref26[0];
+    arr[ni] = _ref26[1];
     onUpdate({
       songIds: arr
     });
@@ -2543,11 +2401,11 @@ const SetlistDetail = _ref27 => {
     }, "\xD7"))));
   })));
 };
-const SongPicker = _ref29 => {
-  let songs = _ref29.songs,
-    excludeIds = _ref29.excludeIds,
-    onPick = _ref29.onPick,
-    onClose = _ref29.onClose;
+const SongPicker = _ref27 => {
+  let songs = _ref27.songs,
+    excludeIds = _ref27.excludeIds,
+    onPick = _ref27.onPick,
+    onClose = _ref27.onClose;
   const _useState27 = useState(""),
     query = _useState27[0],
     setQuery = _useState27[1];
@@ -2666,12 +2524,12 @@ const dayCellColor = (yesCount, totalMembers) => {
     border: "rgba(26,10,20,0.15)"
   };
 };
-const PracticeView = _ref30 => {
-  let practiceAvail = _ref30.practiceAvail,
-    events = _ref30.events,
-    member = _ref30.member,
-    mutate = _ref30.mutate,
-    onGoToSchedule = _ref30.onGoToSchedule;
+const PracticeView = _ref28 => {
+  let practiceAvail = _ref28.practiceAvail,
+    events = _ref28.events,
+    member = _ref28.member,
+    mutate = _ref28.mutate,
+    onGoToSchedule = _ref28.onGoToSchedule;
   const _useState29 = useState(0),
     weekOffset = _useState29[0],
     setWeekOffset = _useState29[1];
@@ -2734,9 +2592,9 @@ const PracticeView = _ref30 => {
       const pa = {
         ...(prev.practiceAvail || {})
       };
-      allDates.forEach(_ref31 => {
-        let date = _ref31.date,
-          iso = _ref31.iso;
+      allDates.forEach(_ref29 => {
+        let date = _ref29.date,
+          iso = _ref29.iso;
         if (predicate(date)) {
           const day = {
             ...(pa[iso] || {})
@@ -2908,9 +2766,9 @@ const PracticeView = _ref30 => {
   }, weeks.map((week, wi) => /*#__PURE__*/React.createElement("div", {
     key: wi,
     className: "grid grid-cols-7 gap-1"
-  }, week.map((_ref32, di) => {
-    let date = _ref32.date,
-      iso = _ref32.iso;
+  }, week.map((_ref30, di) => {
+    let date = _ref30.date,
+      iso = _ref30.iso;
     const day = practiceAvail?.[iso] || {};
     const yesCount = MEMBERS.filter(m => day[m.id] === "yes").length;
     const cellColor = dayCellColor(yesCount, MEMBERS.length);
@@ -2970,14 +2828,14 @@ const PracticeView = _ref30 => {
     onClose: () => setOpenDate(null)
   }));
 };
-const DayDetailPanel = _ref33 => {
-  let iso = _ref33.iso,
-    day = _ref33.day,
-    member = _ref33.member,
-    existingEvent = _ref33.existingEvent,
-    onSetAvail = _ref33.onSetAvail,
-    onBook = _ref33.onBook,
-    onClose = _ref33.onClose;
+const DayDetailPanel = _ref31 => {
+  let iso = _ref31.iso,
+    day = _ref31.day,
+    member = _ref31.member,
+    existingEvent = _ref31.existingEvent,
+    onSetAvail = _ref31.onSetAvail,
+    onBook = _ref31.onBook,
+    onClose = _ref31.onClose;
   const date = new Date(iso + "T00:00:00");
   const slotDesc = slotDescForDate(date);
   const yesCount = MEMBERS.filter(m => day[m.id] === "yes").length;
@@ -3090,12 +2948,12 @@ const EQUIPMENT_STATUSES = [{
   bg: "bg-blue-100",
   color: "#1f6fb8"
 }];
-const EquipmentForm = _ref34 => {
-  let initial = _ref34.initial,
-    onSave = _ref34.onSave,
-    onCancel = _ref34.onCancel,
-    onDelete = _ref34.onDelete,
-    holderSuggestions = _ref34.holderSuggestions;
+const EquipmentForm = _ref32 => {
+  let initial = _ref32.initial,
+    onSave = _ref32.onSave,
+    onCancel = _ref32.onCancel,
+    onDelete = _ref32.onDelete,
+    holderSuggestions = _ref32.holderSuggestions;
   const _useState33 = useState(initial || blankEquipment()),
     f = _useState33[0],
     setF = _useState33[1];
@@ -3209,11 +3067,11 @@ const EquipmentForm = _ref34 => {
     className: "btn bg-white px-4 py-2 ml-auto text-[var(--berry)]"
   }, "Delete")));
 };
-const EquipmentCard = _ref35 => {
-  let item = _ref35.item,
-    member = _ref35.member,
-    onEdit = _ref35.onEdit,
-    onAssign = _ref35.onAssign;
+const EquipmentCard = _ref33 => {
+  let item = _ref33.item,
+    member = _ref33.member,
+    onEdit = _ref33.onEdit,
+    onAssign = _ref33.onAssign;
   const status = EQUIPMENT_STATUSES.find(s => s.id === item.status) || EQUIPMENT_STATUSES[0];
   const owner = item.ownerType === "member" ? MEMBERS.find(m => m.id === item.ownerMember) : null;
   return /*#__PURE__*/React.createElement("div", {
@@ -3259,11 +3117,11 @@ const EquipmentCard = _ref35 => {
     className: "ticker text-[var(--ink-soft)] italic px-1"
   }, "unassigned"))));
 };
-const EquipmentView = _ref36 => {
-  let equipment = _ref36.equipment,
-    wishlist = _ref36.wishlist,
-    member = _ref36.member,
-    mutate = _ref36.mutate;
+const EquipmentView = _ref34 => {
+  let equipment = _ref34.equipment,
+    wishlist = _ref34.wishlist,
+    member = _ref34.member,
+    mutate = _ref34.mutate;
   const _useState34 = useState("owned"),
     view = _useState34[0],
     setView = _useState34[1];
@@ -3285,10 +3143,10 @@ const EquipmentView = _ref36 => {
     mutate: mutate
   }));
 };
-const OwnedEquipmentView = _ref37 => {
-  let equipment = _ref37.equipment,
-    member = _ref37.member,
-    mutate = _ref37.mutate;
+const OwnedEquipmentView = _ref35 => {
+  let equipment = _ref35.equipment,
+    member = _ref35.member,
+    mutate = _ref35.mutate;
   const _useState35 = useState(null),
     editingId = _useState35[0],
     setEditingId = _useState35[1];
@@ -3479,11 +3337,11 @@ const WISHLIST_STATUSES = [{
   label: "Rejected",
   bg: "bg-red-100"
 }];
-const WishItemForm = _ref38 => {
-  let initial = _ref38.initial,
-    onSave = _ref38.onSave,
-    onCancel = _ref38.onCancel,
-    onDelete = _ref38.onDelete;
+const WishItemForm = _ref36 => {
+  let initial = _ref36.initial,
+    onSave = _ref36.onSave,
+    onCancel = _ref36.onCancel,
+    onDelete = _ref36.onDelete;
   const _useState38 = useState(initial || blankWishItem()),
     f = _useState38[0],
     setF = _useState38[1];
@@ -3578,12 +3436,12 @@ const WishItemForm = _ref38 => {
     className: "btn bg-white px-4 py-2 ml-auto text-[var(--berry)]"
   }, "Delete")));
 };
-const WishItemCard = _ref39 => {
-  let item = _ref39.item,
-    member = _ref39.member,
-    onEdit = _ref39.onEdit,
-    onVote = _ref39.onVote,
-    onSetStatus = _ref39.onSetStatus;
+const WishItemCard = _ref37 => {
+  let item = _ref37.item,
+    member = _ref37.member,
+    onEdit = _ref37.onEdit,
+    onVote = _ref37.onVote,
+    onSetStatus = _ref37.onSetStatus;
   const status = WISHLIST_STATUSES.find(s => s.id === item.status) || WISHLIST_STATUSES[0];
   const yesCount = MEMBERS.filter(m => item.votes?.[m.id] === "yes").length;
   const noCount = MEMBERS.filter(m => item.votes?.[m.id] === "no").length;
@@ -3659,10 +3517,10 @@ const WishItemCard = _ref39 => {
     className: "pill px-2.5 py-1 text-xs font-semibold whitespace-nowrap shrink-0 " + (s.id === item.status ? "berry-bg text-white" : "bg-white hover:bg-[var(--acid)]")
   }, s.label))));
 };
-const WishlistView = _ref40 => {
-  let wishlist = _ref40.wishlist,
-    member = _ref40.member,
-    mutate = _ref40.mutate;
+const WishlistView = _ref38 => {
+  let wishlist = _ref38.wishlist,
+    member = _ref38.member,
+    mutate = _ref38.mutate;
   const _useState39 = useState(null),
     editingId = _useState39[0],
     setEditingId = _useState39[1];
@@ -3672,9 +3530,9 @@ const WishlistView = _ref40 => {
   const _useState41 = useState("active"),
     statusFilter = _useState41[0],
     setStatusFilter = _useState41[1]; // active | all | <statusId>
-  const all = Object.entries(wishlist || {}).map(_ref41 => {
-    let id = _ref41[0],
-      x = _ref41[1];
+  const all = Object.entries(wishlist || {}).map(_ref39 => {
+    let id = _ref39[0],
+      x = _ref39[1];
     return {
       id,
       ...x
@@ -3825,7 +3683,7 @@ const App = () => {
   const _useMemberIdentity = useMemberIdentity(),
     member = _useMemberIdentity[0],
     setMemberId = _useMemberIdentity[1];
-  const _useState44 = useState("schedule"),
+  const _useState44 = useState("gigs"),
     tab = _useState44[0],
     setTab = _useState44[1];
   const _useState45 = useState(false),
@@ -3917,14 +3775,14 @@ const App = () => {
       WebkitOverflowScrolling: "touch"
     }
   }, [{
-    id: "schedule",
-    label: "Schedule"
+    id: "gigs",
+    label: "Gigs"
   }, {
-    id: "availability",
-    label: "Availability"
+    id: "rehearsals",
+    label: "Rehearsals"
   }, {
     id: "practice",
-    label: "Practice"
+    label: "Planner"
   }, {
     id: "songs",
     label: "Songs"
@@ -3943,20 +3801,22 @@ const App = () => {
   }, /*#__PURE__*/React.createElement(SyncBadge, {
     sync: sync,
     onOpen: () => setShowSyncPanel(true)
-  }))))), tab === "schedule" && /*#__PURE__*/React.createElement(ScheduleView, {
+  }))))), tab === "gigs" && /*#__PURE__*/React.createElement(TypedScheduleView, {
     events: events,
     member: member,
-    mutate: sync.mutate
-  }), tab === "availability" && /*#__PURE__*/React.createElement(AvailabilityView, {
+    mutate: sync.mutate,
+    eventType: "gig"
+  }), tab === "rehearsals" && /*#__PURE__*/React.createElement(TypedScheduleView, {
     events: events,
     member: member,
-    mutate: sync.mutate
+    mutate: sync.mutate,
+    eventType: "rehearsal"
   }), tab === "practice" && /*#__PURE__*/React.createElement(PracticeView, {
     practiceAvail: practiceAvail,
     events: events,
     member: member,
     mutate: sync.mutate,
-    onGoToSchedule: () => setTab("schedule")
+    onGoToSchedule: () => setTab("rehearsals")
   }), tab === "songs" && /*#__PURE__*/React.createElement(SongsView, {
     songs: songs,
     member: member,
