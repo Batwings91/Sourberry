@@ -36,6 +36,7 @@
     }
     .ticker { letter-spacing: 0.18em; text-transform: uppercase; font-weight: 600; font-size: 0.72rem; }
     .card { background: var(--bg-card); border: 1.5px solid var(--line); box-shadow: 4px 4px 0 var(--line); }
+    .card-flat { background: var(--bg-card); border: 1.5px solid var(--line); }
     .btn {
       border: 1.5px solid var(--line); box-shadow: 3px 3px 0 var(--line);
       transition: transform 80ms ease, box-shadow 80ms ease;
@@ -55,8 +56,6 @@
     details > summary { cursor: pointer; list-style: none; }
     details > summary::-webkit-details-marker { display: none; }
     @media (max-width: 640px) { .card { box-shadow: 3px 3px 0 var(--line); } }
-    .spin { animation: sp 1s linear infinite; }
-    @keyframes sp { to { transform: rotate(360deg); } }
   </style>
 
 </head>
@@ -64,17 +63,17 @@
   <div id="root"></div>
 
   <script type="text/babel" data-presets="env,react">
-  const { useState, useEffect, useRef, useCallback } = React;
+  const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
   // ---- Band line-up
   const MEMBERS = [
-    { id: "veena", name: "Veena", color: "#b81f5c" },
-    { id: "james", name: "James", color: "#1f6fb8" },
-    { id: "mike",  name: "Mike",  color: "#1f8f4a" },
-    { id: "omar",  name: "Omar",  color: "#d97a1f" },
+    { id: "veena", name: "Veena" },
+    { id: "james", name: "James" },
+    { id: "mike",  name: "Mike"  },
+    { id: "omar",  name: "Omar"  },
   ];
 
-  // ---- Seed data from the spreadsheet
+  // ---- Schedule seed (from spreadsheet)
   const SEED_EVENTS = [
     { date: "2025-10-09", startTime: "18:00", endTime: "21:00", type: "rehearsal", location: "Earlsfield",  bookingOwner: "",      bookedAndPaid: false, status: "confirmed", title: "", comments: "Could do remote instead from 7pm? JRO could do remote but not live." },
     { date: "2025-10-21", startTime: "18:00", endTime: "21:00", type: "rehearsal", location: "Earlsfield",  bookingOwner: "mike",  bookedAndPaid: true,  status: "confirmed", title: "", comments: "Booked 6-10pm." },
@@ -89,19 +88,184 @@
     { date: "2025-11-21", startTime: "21:00", endTime: "22:30", type: "gig",       location: "",            bookingOwner: "",      bookedAndPaid: false, status: "confirmed", title: "PTA Gig", comments: "" },
   ];
 
-  const buildSeedState = () => {
+  // ---- Songs seed (from spreadsheet)
+  // Each: [title, artist, status, jamtrax, proposer, learnt, lessonUrl, comments]
+  const SEED_SONGS = [
+    // AGREED — learnt
+    ["Creep", "Kelly Clarkson cover (in D)", "agreed", true,  "Sourberry", true,  "", ""],
+    ["Dog Days Are Over", "Florence & The Machine", "agreed", true, "", true, "", ""],
+    ["Groove Is In The Heart", "Deee-Lite", "agreed", false, "Sourberry", true, "", ""],
+    ["Livin' On A Prayer", "Bon Jovi", "agreed", true, "", true, "", ""],
+    ["Mr. Brightside", "Killers, The", "agreed", true, "Sourberry", true, "", ""],
+    ["Nothing Compares 2 U", "Sinead O'Connor", "agreed", true, "", true, "", ""],
+    ["Proud Mary", "Tina Turner", "agreed", true, "", true, "", ""],
+    ["Rolling In The Deep", "Adele", "agreed", true, "Sourberry", true, "", ""],
+    ["Sex on Fire", "Kings of Leon", "agreed", true, "Veca", true, "", ""],
+    ["Son Of A Preacher Man", "Dusty Springfield", "agreed", true, "Sourberry", true, "", ""],
+    ["Sweet Child O' Mine", "Guns N Roses", "agreed", true, "Sourberry", true, "", ""],
+    ["Titanium", "David Guetta", "agreed", false, "Sourberry", true, "", ""],
+    ["Valerie", "Amy Winehouse", "agreed", true, "Sourberry", true, "", ""],
+    ["Zombie", "Cranberries, The", "agreed", true, "", true, "", ""],
+    ["Glorybox", "Portishead", "agreed", true, "", true, "", ""],
+    ["Snowman", "Sia", "agreed", false, "", true, "", ""],
+    ["Rockin' Around The Christmas Tree", "Brenda Lee", "agreed", false, "", true, "", ""],
+    // AGREED — not yet learnt (NEW)
+    ["I've Had The Time Of My Life", "Bill Medley & Jennifer Warnes", "agreed", false, "", false, "https://www.youtube.com/watch?v=4b5FAOdUg4o", ""],
+    ["I Wanna Dance With Somebody", "Whitney Houston", "agreed", false, "", false, "https://www.youtube.com/watch?v=ZAB1h_2Uo1M", ""],
+    ["If I Could Turn Back Time", "Cher", "agreed", false, "", false, "https://www.youtube.com/watch?v=BVFQDXo-mvs", ""],
+    ["Standing In The Way Of Control", "Gossip", "agreed", false, "Sourberry", false, "", ""],
+    ["Like A Virgin", "Madonna", "agreed", false, "", false, "https://www.youtube.com/watch?v=cuio-0WJmMY", ""],
+    ["Uptown Funk", "Mark Ronson ft. Bruno Mars", "agreed", false, "", false, "https://www.youtube.com/watch?v=UiJbXW3ehjo", ""],
+    ["Summer of '69", "Bryan Adams", "agreed", false, "Sourberry", false, "", ""],
+    ["Seven Nation Army / Sweet Dreams (Mashup)", "", "agreed", false, "", false, "", ""],
+    ["Turn The Lights Down Low", "Lauryn Hill & Bob Marley", "agreed", false, "", false, "", ""],
+    ["Sway", "Bic Runga", "agreed", false, "", false, "", ""],
+    // CANDIDATES
+    ["A Little Less Conversation (JXL Edit)", "Elvis Presley, JXL", "candidate", false, "Sourberry", false, "", ""],
+    ["All About That Bass", "Meghan Trainor", "candidate", false, "Sourberry", false, "", ""],
+    ["Alone", "Heart", "candidate", false, "", false, "https://www.youtube.com/watch?v=z9aBFPfk6zw", ""],
+    ["Always On The Run", "Lenny Kravitz", "candidate", false, "", false, "https://www.youtube.com/watch?v=FnzgqGsLcsk", ""],
+    ["American Boy", "Estelle", "candidate", false, "Sourberry", false, "", ""],
+    ["Are You Gonna Go My Way", "Lenny Kravitz", "candidate", false, "Sourberry", false, "", ""],
+    ["Basket Case", "Green Day", "candidate", false, "Sourberry", false, "https://www.youtube.com/watch?v=Y17wx3K2gu0", ""],
+    ["Bette Davis Eyes", "Kim Carnes", "candidate", false, "", false, "https://www.youtube.com/watch?v=RwcqS-7uINs", ""],
+    ["Billie Jean", "Michael Jackson", "candidate", false, "Sourberry", false, "https://www.youtube.com/watch?v=1QvAYSNpz8I", ""],
+    ["Black Magic", "Little Mix", "candidate", false, "Sourberry", false, "", ""],
+    ["Black Or White", "Michael Jackson", "candidate", false, "", false, "https://www.youtube.com/watch?v=txUVEQgwvC0", ""],
+    ["Bonfire Heart", "James Blunt", "candidate", false, "Sourberry", false, "", ""],
+    ["Bring Me To Life", "Evanescence", "candidate", false, "", false, "https://www.youtube.com/watch?v=dC5L1gx1YI4", ""],
+    ["Broken Wings", "Mr. Mister", "candidate", false, "", false, "https://www.youtube.com/watch?v=nbbw3oHyOg0", ""],
+    ["Brown Eyed Girl", "Van Morrison", "candidate", false, "Sourberry", false, "", ""],
+    ["Buck Rogers", "Feeder", "candidate", false, "Sourberry", false, "", ""],
+    ["C'est La Vie", "B*Witched", "candidate", false, "Sourberry", false, "", ""],
+    ["Cake By The Ocean", "DNCE", "candidate", false, "Sourberry", false, "", ""],
+    ["Can't Feel My Face", "The Weeknd", "candidate", false, "Sourberry", false, "", ""],
+    ["Chasing Cars", "Snow Patrol", "candidate", false, "Sourberry", false, "", ""],
+    ["Counting Stars", "OneRepublic", "candidate", false, "Sourberry", false, "", ""],
+    ["Dakota", "Stereophonics", "candidate", false, "Sourberry", false, "", ""],
+    ["Danger Zone", "Kenny Loggins", "candidate", false, "", false, "https://www.youtube.com/watch?v=-1emuTeIlKs", ""],
+    ["Dirty Diana", "Michael Jackson", "candidate", false, "", false, "https://www.youtube.com/watch?v=-JUscJVq1gc", ""],
+    ["Don't Look Back In Anger", "Oasis", "candidate", false, "", false, "https://www.youtube.com/watch?v=USkBvDIGsuk", ""],
+    ["Don't Speak", "No Doubt", "candidate", false, "", false, "", ""],
+    ["Don't Stop Believing", "Journey", "candidate", false, "", false, "https://www.youtube.com/watch?v=UvTgfpJUxig", ""],
+    ["Do You Love Me", "Contours, The", "candidate", false, "Sourberry", false, "", ""],
+    ["Disco 2000", "Pulp", "candidate", false, "Sourberry", false, "", ""],
+    ["Easy", "Faith No More", "candidate", false, "", false, "", ""],
+    ["Fire", "Kasabian", "candidate", false, "Sourberry", false, "", ""],
+    ["Footloose", "Kenny Loggins", "candidate", false, "Sourberry", false, "https://www.youtube.com/watch?v=Hht8FmassjQ", ""],
+    ["Get Lucky", "Daft Punk", "candidate", false, "Sourberry", false, "https://www.youtube.com/watch?v=bENUhLskboo", ""],
+    ["Girls Just Want To Have Fun", "Cyndi Lauper", "candidate", false, "", false, "https://www.youtube.com/watch?v=YsEEhKhITmU", ""],
+    ["Ghostbusters", "Ray Parker Jr.", "candidate", false, "", false, "https://www.youtube.com/watch?v=E2Wj94F2ckQ", ""],
+    ["Good Riddance (Time Of Your Life)", "Green Day", "candidate", false, "Sourberry", false, "", ""],
+    ["Go Your Own Way", "Fleetwood Mac", "candidate", false, "Sourberry", false, "", ""],
+    ["Green Light", "Lorde", "candidate", false, "Sourberry", false, "", ""],
+    ["Happy", "Pharrell Williams", "candidate", false, "Sourberry", false, "", ""],
+    ["Hard To Handle", "Black Crowes, The", "candidate", false, "Sourberry", false, "", ""],
+    ["Hey Ya!", "Outkast", "candidate", false, "Sourberry", false, "", ""],
+    ["Heaven Is A Place On Earth", "Belinda Carlisle", "candidate", false, "", false, "https://www.youtube.com/watch?v=RUByf45A1Oc", ""],
+    ["Hungry Eyes", "Eric Carmen", "candidate", false, "Omar", false, "", ""],
+    ["Hysteria", "Def Leppard", "candidate", false, "", false, "https://www.youtube.com/watch?v=pmqr9l-LOp4", ""],
+    ["Hysteria", "Muse", "candidate", false, "", false, "", ""],
+    ["I Love Rock and Roll", "Joan Jett", "candidate", false, "Sourberry", false, "https://www.youtube.com/watch?v=uUQxZKzjSoc", ""],
+    ["I'm A Believer", "Monkees, The", "candidate", false, "Sourberry", false, "", ""],
+    ["I'm Gonna Be (500 Miles)", "Proclaimers, The", "candidate", false, "Sourberry", false, "", ""],
+    ["It Ain't Over Til It's Over", "Lenny Kravitz", "candidate", false, "", false, "", ""],
+    ["Johnny B. Goode", "Chuck Berry", "candidate", false, "", false, "https://www.youtube.com/watch?v=M8c4LzrEudk", ""],
+    ["Jumping Jack Flash", "Rolling Stones (covered by Tina Turner)", "candidate", false, "", false, "", ""],
+    ["Killing In The Name", "Rage Against The Machine", "candidate", false, "", false, "https://www.youtube.com/watch?v=fxUEgJ2kGmo", ""],
+    ["Lithium", "Nirvana", "candidate", false, "Sourberry", false, "", ""],
+    ["Lonely Eyes", "Chris Young", "candidate", false, "Sourberry", false, "", ""],
+    ["Lovely Day", "Bill Withers", "candidate", false, "", false, "", ""],
+    ["Love Shack", "B-52's, The", "candidate", false, "Sourberry", false, "", ""],
+    ["Mercy", "Duffy", "candidate", true, "", false, "", ""],
+    ["Never Tear Us Apart", "INXS", "candidate", false, "", false, "", ""],
+    ["Nothing's Gonna Stop Us Now", "Starship", "candidate", false, "Omar", false, "https://www.youtube.com/watch?v=tgUvXyf2-qE", ""],
+    ["Nutbush City Limits", "Tina Turner", "candidate", false, "", false, "https://www.youtube.com/watch?v=DbivX78Degg", ""],
+    ["One", "U2", "candidate", false, "", false, "", ""],
+    ["Praise You", "Fatboy Slim", "candidate", false, "", false, "", ""],
+    ["Purple Rain", "Prince", "candidate", false, "Sourberry", false, "", ""],
+    ["Radioactive", "Imagine Dragons", "candidate", false, "Sourberry", false, "", ""],
+    ["Raise Your Glass", "Pink", "candidate", false, "Sourberry", false, "", ""],
+    ["Rapper's Delight / Good Times", "Sugarhill Gang / Chic", "candidate", false, "Sourberry", false, "", ""],
+    ["Roar", "Katy Perry", "candidate", false, "Sourberry", false, "", ""],
+    ["Royals", "Lorde", "candidate", false, "Sourberry", false, "", ""],
+    ["Seven Nation Army", "White Stripes, The", "candidate", false, "Sourberry", false, "https://www.youtube.com/watch?v=YmVPp-DmRSw", ""],
+    ["Shout Out To My Ex", "Little Mix", "candidate", false, "Sourberry", false, "", ""],
+    ["Shut Up And Dance", "Walk The Moon", "candidate", false, "Sourberry", false, "", ""],
+    ["Sing It Back", "Moloko", "candidate", false, "", false, "", ""],
+    ["Sk8er Boi", "Avril Lavigne", "candidate", false, "Sourberry", false, "", ""],
+    ["Smells Like Teen Spirit", "Nirvana", "candidate", false, "Sourberry", false, "https://www.youtube.com/watch?v=Pl-nk1ToL9M", ""],
+    ["Song 2", "Blur", "candidate", false, "Sourberry", false, "https://www.youtube.com/watch?v=kiPEZqVjaq8", ""],
+    ["St. Elmo's Fire", "John Parr", "candidate", false, "", false, "https://www.youtube.com/watch?v=ELg94joX6ZQ", ""],
+    ["Steal My Girl", "One Direction", "candidate", false, "Sourberry", false, "", ""],
+    ["Take Me To The River", "Commitments, The", "candidate", false, "", false, "", ""],
+    ["Teenage Dirtbag", "Wheatus", "candidate", false, "Sourberry", false, "", ""],
+    ["Teenage Kicks", "Undertones, The", "candidate", false, "Sourberry", false, "", ""],
+    ["The Best", "Tina Turner", "candidate", false, "", false, "https://www.youtube.com/watch?v=Fs-atrEZ7Wo", ""],
+    ["The Final Countdown", "Europe", "candidate", false, "", false, "https://www.youtube.com/watch?v=OgwXfrMEDpQ", ""],
+    ["The Power Of Love", "Huey Lewis & The News", "candidate", false, "", false, "https://www.youtube.com/watch?v=1Xtm0L6JyNw", ""],
+    ["Thinking Out Loud", "Ed Sheeran", "candidate", false, "Sourberry", false, "", ""],
+    ["Thriller", "Michael Jackson", "candidate", false, "", false, "https://www.youtube.com/watch?v=uJxIFLpp9Cs", ""],
+    ["Thunderstruck", "AC/DC", "candidate", false, "", false, "https://www.youtube.com/watch?v=7XYxzcI_c5Q", ""],
+    ["Time After Time", "Cyndi Lauper", "candidate", false, "Sourberry", false, "https://www.youtube.com/watch?v=RinUIzeg1JQ", ""],
+    ["Torn", "Natalie Imbruglia", "candidate", false, "", false, "", ""],
+    ["Twist and Shout", "Beatles, The", "candidate", false, "Sourberry", false, "", ""],
+    ["Use Somebody", "Kings Of Leon", "candidate", false, "Sourberry", false, "", ""],
+    ["Wake Me Up", "Avicii", "candidate", false, "Sourberry", false, "", ""],
+    ["Walk Like An Egyptian", "Bangles, The", "candidate", false, "Sourberry", false, "", ""],
+    ["Walk This Way", "Run DMC", "candidate", false, "Sourberry", false, "", ""],
+    ["Walking On Sunshine", "Katrina and the Waves", "candidate", false, "Sourberry", false, "https://www.youtube.com/watch?v=RmaXkZE9R2c", ""],
+    ["Wanted Dead or Alive", "Bon Jovi", "candidate", false, "", false, "", ""],
+    ["We Don't Need Another Hero", "Tina Turner", "candidate", false, "", false, "https://www.youtube.com/watch?v=XkwueU2KUbo", ""],
+    ["What's Up", "4 Non Blondes", "candidate", false, "Sourberry", false, "", ""],
+    ["Weight Of Love", "Black Keys, The", "candidate", false, "James", false, "", ""],
+    ["Where Is My Mind?", "The Pixies", "candidate", false, "", false, "", ""],
+    ["Where The Streets Have No Name", "U2", "candidate", false, "Sourberry", false, "", ""],
+    ["Wherever You Will Go", "Calling, The", "candidate", false, "Sourberry", false, "", ""],
+    ["White Wedding", "Billy Idol", "candidate", false, "Sourberry", false, "", ""],
+    ["With Or Without You", "U2", "candidate", false, "Sourberry", false, "", ""],
+  ];
+
+  // ---- Build seed state
+  const slug = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const songId = (title, artist) => `s_${slug(title)}__${slug(artist)}`;
+
+  const buildEventsSeed = () => {
     const events = {};
     SEED_EVENTS.forEach((ev, i) => {
       const id = `seed_${i}_${Math.random().toString(36).slice(2,7)}`;
       events[id] = { ...ev, availability: {}, createdAt: Date.now() + i };
     });
-    return { schemaVersion: 1, events };
+    return events;
   };
 
-  // ---- JSONBin helpers
-  const JB_BASE = "https://api.jsonbin.io/v3/b";
+  const buildSongsSeed = () => {
+    const songs = {};
+    SEED_SONGS.forEach(([title, artist, status, jamtrax, proposer, learnt, lessonUrl, comments], i) => {
+      const id = songId(title, artist);
+      songs[id] = {
+        title, artist, status,
+        jamtrax: !!jamtrax,
+        proposer: proposer || "",
+        learnt: !!learnt,
+        lessonUrl: lessonUrl || "",
+        comments: comments || "",
+        votes: {},
+        createdAt: Date.now() + i,
+      };
+    });
+    return songs;
+  };
 
-  const jbCreateBin = async (apiKey, initialData) => {
+  const buildSeedState = () => ({
+    schemaVersion: 2,
+    events: buildEventsSeed(),
+    songs: buildSongsSeed(),
+  });
+
+  // ---- JSONBin
+  const JB_BASE = "https://api.jsonbin.io/v3/b";
+  const jbCreateBin = async (apiKey, data) => {
     const res = await fetch(JB_BASE, {
       method: "POST",
       headers: {
@@ -110,37 +274,23 @@
         "X-Bin-Private": "false",
         "X-Bin-Name": "sourberry-band-ops",
       },
-      body: JSON.stringify(initialData),
+      body: JSON.stringify(data),
     });
-    if (!res.ok) {
-      const t = await res.text();
-      throw new Error(`Couldn't create database (HTTP ${res.status}): ${t}`);
-    }
-    const json = await res.json();
-    return json.metadata?.id;
+    if (!res.ok) throw new Error(`Couldn't create database (HTTP ${res.status}): ${await res.text()}`);
+    return (await res.json()).metadata?.id;
   };
-
   const jbReadBin = async (binId) => {
-    const res = await fetch(`${JB_BASE}/${binId}/latest`, {
-      headers: { "X-Bin-Meta": "false" },
-    });
-    if (!res.ok) {
-      const t = await res.text();
-      throw new Error(`Couldn't read database (HTTP ${res.status}): ${t}`);
-    }
+    const res = await fetch(`${JB_BASE}/${binId}/latest`, { headers: { "X-Bin-Meta": "false" } });
+    if (!res.ok) throw new Error(`Couldn't read database (HTTP ${res.status}): ${await res.text()}`);
     return await res.json();
   };
-
   const jbUpdateBin = async (binId, data) => {
     const res = await fetch(`${JB_BASE}/${binId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
-    if (!res.ok) {
-      const t = await res.text();
-      throw new Error(`Couldn't save (HTTP ${res.status}): ${t}`);
-    }
+    if (!res.ok) throw new Error(`Couldn't save (HTTP ${res.status}): ${await res.text()}`);
     return await res.json();
   };
 
@@ -156,13 +306,11 @@
   };
   const isPast = (iso) => iso < todayISO();
   const sortByDateAsc = (a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime);
+  const eventsList = (events) => Object.entries(events || {}).map(([id, ev]) => ({ id, ...ev })).sort(sortByDateAsc);
+  const songsList = (songs) => Object.entries(songs || {}).map(([id, s]) => ({ id, ...s }));
+  const newId = (p="e") => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`;
 
-  const eventsList = (events) =>
-    Object.entries(events || {}).map(([id, ev]) => ({ id, ...ev })).sort(sortByDateAsc);
-
-  const newId = () => `e_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,7)}`;
-
-  // ---- Identity (per device)
+  // ---- Identity
   const useMemberIdentity = () => {
     const [memberId, setMemberIdState] = useState(() => localStorage.getItem("sourberry.memberId") || null);
     const setMemberId = (id) => {
@@ -172,36 +320,27 @@
     return [MEMBERS.find(m => m.id === memberId) || null, setMemberId];
   };
 
-  // ---- Bin ID resolution: URL param wins, else localStorage
-  const getBinIdFromURL = () => {
-    const params = new URLSearchParams(window.location.search);
-    return params.get("bin");
-  };
+  const getBinIdFromURL = () => new URLSearchParams(window.location.search).get("bin");
   const getStoredBinId = () => localStorage.getItem("sourberry.binId");
   const setStoredBinId = (id) => {
     if (id) localStorage.setItem("sourberry.binId", id);
     else localStorage.removeItem("sourberry.binId");
   };
 
-  // ---- Sync state hook
-  // - Loads from JSONBin on mount, polls every POLL_MS
-  // - Pauses polling while window is hidden
-  // - Writes are queued and debounced; the latest state always wins
+  // ---- Sync
   const POLL_MS = 8000;
-
   const useSyncedState = (binId) => {
-    const [state, setState] = useState(null);  // { schemaVersion, events }
-    const [status, setStatus] = useState("loading"); // loading | ok | error | saving
+    const [state, setState] = useState(null);
+    const [status, setStatus] = useState("loading");
     const [errorMsg, setErrorMsg] = useState("");
     const [lastSyncedAt, setLastSyncedAt] = useState(null);
-
     const stateRef = useRef(state);
     stateRef.current = state;
     const writeTimerRef = useRef(null);
     const writeInFlightRef = useRef(false);
     const pendingWriteRef = useRef(false);
+    const migratedRef = useRef(false);
 
-    // Actually push to JSONBin
     const flushWrite = useCallback(async () => {
       if (!binId || writeInFlightRef.current) return;
       writeInFlightRef.current = true;
@@ -209,113 +348,98 @@
       setStatus("saving");
       try {
         await jbUpdateBin(binId, stateRef.current);
-        setStatus("ok");
-        setErrorMsg("");
-        setLastSyncedAt(Date.now());
+        setStatus("ok"); setErrorMsg(""); setLastSyncedAt(Date.now());
       } catch (e) {
-        setStatus("error");
-        setErrorMsg(e.message);
+        setStatus("error"); setErrorMsg(e.message);
       } finally {
         writeInFlightRef.current = false;
-        if (pendingWriteRef.current) {
-          // Another write came in while we were saving — flush it
-          setTimeout(flushWrite, 100);
-        }
+        if (pendingWriteRef.current) setTimeout(flushWrite, 100);
       }
     }, [binId]);
 
-    // Schedule a write (debounced)
     const scheduleWrite = useCallback(() => {
       if (writeTimerRef.current) clearTimeout(writeTimerRef.current);
-      if (writeInFlightRef.current) {
-        pendingWriteRef.current = true;
-        return;
-      }
+      if (writeInFlightRef.current) { pendingWriteRef.current = true; return; }
       writeTimerRef.current = setTimeout(flushWrite, 600);
     }, [flushWrite]);
 
-    // Public mutator: pass a function (prev) => next
     const mutate = useCallback((updater) => {
       setState(prev => {
-        const next = updater(prev || { schemaVersion: 1, events: {} });
+        const next = updater(prev || { schemaVersion: 2, events: {}, songs: {} });
         stateRef.current = next;
         return next;
       });
       scheduleWrite();
     }, [scheduleWrite]);
 
-    // Initial load + polling
     useEffect(() => {
       if (!binId) return;
       let cancelled = false;
       let pollTimer = null;
-
       const fetchOnce = async () => {
-        if (writeInFlightRef.current) return; // don't clobber while saving
+        if (writeInFlightRef.current) return;
         try {
-          const data = await jbReadBin(binId);
+          let data = await jbReadBin(binId);
           if (cancelled) return;
-          // Don't overwrite if we have an unsaved local mutation queued
           if (pendingWriteRef.current || writeTimerRef.current) return;
-          setState(data);
-          stateRef.current = data;
-          setStatus("ok");
-          setErrorMsg("");
-          setLastSyncedAt(Date.now());
+
+          // Migrate old data: add songs if missing
+          if (!migratedRef.current && (!data.songs || data.schemaVersion < 2)) {
+            data = {
+              ...data,
+              schemaVersion: 2,
+              songs: data.songs || buildSongsSeed(),
+              events: data.events || {},
+            };
+            migratedRef.current = true;
+            setState(data); stateRef.current = data;
+            setStatus("ok"); setErrorMsg(""); setLastSyncedAt(Date.now());
+            scheduleWrite();
+            return;
+          }
+
+          setState(data); stateRef.current = data;
+          setStatus("ok"); setErrorMsg(""); setLastSyncedAt(Date.now());
         } catch (e) {
           if (cancelled) return;
-          setStatus("error");
-          setErrorMsg(e.message);
+          setStatus("error"); setErrorMsg(e.message);
         }
       };
-
       fetchOnce();
       const tick = () => {
         if (document.visibilityState === "visible") fetchOnce();
         pollTimer = setTimeout(tick, POLL_MS);
       };
       pollTimer = setTimeout(tick, POLL_MS);
-
-      const onVisibility = () => {
-        if (document.visibilityState === "visible") fetchOnce();
-      };
-      document.addEventListener("visibilitychange", onVisibility);
-
+      const onVis = () => { if (document.visibilityState === "visible") fetchOnce(); };
+      document.addEventListener("visibilitychange", onVis);
       return () => {
         cancelled = true;
         if (pollTimer) clearTimeout(pollTimer);
-        document.removeEventListener("visibilitychange", onVisibility);
+        document.removeEventListener("visibilitychange", onVis);
       };
-    }, [binId]);
+    }, [binId, scheduleWrite]);
 
     return { state, status, errorMsg, lastSyncedAt, mutate };
   };
 
   // =========================================================================
-  // SETUP SCREEN
+  // SETUP & SHARE SCREENS (unchanged from v1 setup flow)
   // =========================================================================
   const SetupScreen = ({ onCreated }) => {
     const [apiKey, setApiKey] = useState("");
     const [working, setWorking] = useState(false);
     const [err, setErr] = useState("");
-
     const create = async () => {
       const key = apiKey.trim();
       if (!key) { setErr("Paste your JSONBin API key first."); return; }
-      setWorking(true);
-      setErr("");
+      setWorking(true); setErr("");
       try {
-        const seed = buildSeedState();
-        const id = await jbCreateBin(key, seed);
-        if (!id) throw new Error("JSONBin didn't return a bin ID. Check your key has 'Create' permission.");
+        const id = await jbCreateBin(key, buildSeedState());
+        if (!id) throw new Error("JSONBin didn't return a bin ID.");
         onCreated(id);
-      } catch (e) {
-        setErr(e.message);
-      } finally {
-        setWorking(false);
-      }
+      } catch (e) { setErr(e.message); } finally { setWorking(false); }
     };
-
     return (
       <div className="max-w-2xl mx-auto px-4 py-8">
         <header className="mb-6">
@@ -324,75 +448,37 @@
             Sour<span className="display-italic font-medium" style={{color:"var(--berry)"}}>berry</span>
           </h1>
         </header>
-
         <div className="card p-5">
           <h2 className="display text-2xl mb-2">Connect your database</h2>
-          <p className="text-sm text-[var(--ink-soft)] mb-4">
-            One-time setup, takes about 30 seconds. After this you'll get a URL to share with the band.
-          </p>
-
+          <p className="text-sm text-[var(--ink-soft)] mb-4">One-time setup, ~30 seconds. After this you'll get a URL to share with the band.</p>
           <ol className="text-sm space-y-2 mb-5 pl-5 list-decimal">
             <li>Open <a className="text-[var(--berry)] underline" href="https://jsonbin.io/api-keys" target="_blank" rel="noopener">jsonbin.io/api-keys</a> in another tab.</li>
-            <li>Copy your <strong>Master Key</strong> (the long string starting with <code className="bg-black/5 px-1 rounded">$2a$</code> or similar).</li>
+            <li>Copy your <strong>Master Key</strong>.</li>
             <li>Paste it below and tap <strong>Create database</strong>.</li>
           </ol>
-
           <label className="block text-sm">
             <div className="ticker mb-1">JSONBin Master Key</div>
-            <input
-              className="input font-mono text-xs"
-              type="password"
-              value={apiKey}
-              onChange={e => setApiKey(e.target.value)}
-              placeholder="$2a$10$..."
-              autoComplete="off"
-              autoCapitalize="off"
-              autoCorrect="off"
-              spellCheck="false"
-            />
+            <input className="input font-mono text-xs" type="password" value={apiKey} onChange={e => setApiKey(e.target.value)}
+              placeholder="$2a$10$..." autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck="false" />
           </label>
-
-          {err && (
-            <div className="mt-3 p-3 border border-[var(--berry)] bg-[var(--berry)]/10 text-sm">
-              <strong>Couldn't set up:</strong> {err}
-            </div>
-          )}
-
+          {err && <div className="mt-3 p-3 border border-[var(--berry)] bg-[var(--berry)]/10 text-sm"><strong>Couldn't set up:</strong> {err}</div>}
           <div className="mt-4 flex items-center gap-3 flex-wrap">
             <button onClick={create} disabled={working} className="btn berry-bg px-5 py-2.5 font-semibold">
               {working ? "Creating…" : "Create database"}
             </button>
-            <span className="text-xs text-[var(--ink-soft)]">
-              Your key stays on this device. The band don't need it.
-            </span>
+            <span className="text-xs text-[var(--ink-soft)]">Your key stays on this device. The band don't need it.</span>
           </div>
         </div>
-
-        <details className="mt-4 card p-4 text-sm">
-          <summary className="ticker text-[var(--ink-soft)] hover:text-[var(--berry)]">How does this work? ▾</summary>
-          <div className="mt-2 space-y-2 text-[var(--ink-soft)]">
-            <p>Your API key is used <em>once</em> to create a public bin in your JSONBin account. After that, the bin lives at a URL like <code className="text-xs bg-black/5 px-1">?bin=XXXX</code>. Anyone with that URL can read and write — no key needed.</p>
-            <p>This means anyone with the URL can edit. For 4 friends and an obscure URL it's fine. Don't post the URL publicly.</p>
-            <p>Your key is stored only on this device (localStorage), and only used as a backup if you ever need to reset.</p>
-          </div>
-        </details>
       </div>
     );
   };
 
-  // =========================================================================
-  // SHARE SCREEN — shown right after setup
-  // =========================================================================
   const ShareScreen = ({ binId, onContinue }) => {
     const [copied, setCopied] = useState(false);
     const url = `${window.location.origin}${window.location.pathname}?bin=${binId}`;
     const copy = async () => {
-      try {
-        await navigator.clipboard.writeText(url);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      } catch (e) {
-        // Fallback: select the text
+      try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2000); }
+      catch (e) {
         const ta = document.getElementById("share-url");
         if (ta) { ta.select(); document.execCommand("copy"); setCopied(true); setTimeout(() => setCopied(false), 2000); }
       }
@@ -401,40 +487,27 @@
       <div className="max-w-2xl mx-auto px-4 py-8">
         <header className="mb-6">
           <div className="ticker text-[var(--berry)]">Done!</div>
-          <h1 className="wordmark text-5xl sm:text-6xl leading-none mt-1">
-            Sour<span className="display-italic font-medium" style={{color:"var(--berry)"}}>berry</span>
-          </h1>
+          <h1 className="wordmark text-5xl sm:text-6xl leading-none mt-1">Sour<span className="display-italic font-medium" style={{color:"var(--berry)"}}>berry</span></h1>
         </header>
-
         <div className="card p-5">
           <h2 className="display text-2xl mb-2">Share this URL with the band</h2>
-          <p className="text-sm text-[var(--ink-soft)] mb-4">
-            Send this link to Veena, James, Mike and Omar. Each person opens it once on each device they want to use.
-          </p>
-
+          <p className="text-sm text-[var(--ink-soft)] mb-4">Send this link to Veena, James, Mike and Omar.</p>
           <div className="flex gap-2 items-stretch">
             <input id="share-url" className="input font-mono text-xs flex-1" readOnly value={url} />
-            <button onClick={copy} className="btn berry-bg px-4 font-semibold whitespace-nowrap">
-              {copied ? "Copied ✓" : "Copy"}
-            </button>
+            <button onClick={copy} className="btn berry-bg px-4 font-semibold whitespace-nowrap">{copied ? "Copied ✓" : "Copy"}</button>
           </div>
-
           <div className="mt-5 p-3 bg-[var(--acid)]/30 border border-[var(--line)] text-sm">
-            <strong>Tip:</strong> bookmark this URL on your iPad's home screen so you don't lose it. Open the link once, then in Safari tap the share icon → "Add to Home Screen".
+            <strong>Tip:</strong> bookmark this URL on your iPad's home screen. Tap Safari's share icon → "Add to Home Screen".
           </div>
-
-          <button onClick={onContinue} className="btn bg-white px-5 py-2.5 mt-5 font-semibold">
-            Open the app →
-          </button>
+          <button onClick={onContinue} className="btn bg-white px-5 py-2.5 mt-5 font-semibold">Open the app →</button>
         </div>
       </div>
     );
   };
 
   // =========================================================================
-  // MAIN APP UI
+  // SHARED UI BITS
   // =========================================================================
-
   const TypeBadge = ({ type, status }) => {
     const isGig = type === "gig";
     const cancelled = status === "cancelled";
@@ -444,13 +517,35 @@
       </span>
     );
   };
-
   const StatusDot = ({ status }) => {
     const map = { yes: "#1f8f4a", no: "#c12c2c", maybe: "#d97a1f" };
     if (!map[status]) return <span className="inline-block w-3 h-3 rounded-full border border-[var(--line)] bg-white" />;
     return <span className="inline-block w-3 h-3 rounded-full border border-[var(--line)]" style={{ background: map[status] }} />;
   };
+  const MemberPicker = ({ value, onChange }) => (
+    <div className="flex items-center gap-2">
+      <span className="ticker text-[var(--ink-soft)]">I am</span>
+      <div className="flex gap-1.5 flex-wrap">
+        {MEMBERS.map(m => (
+          <button key={m.id} onClick={() => onChange(m.id)}
+            className={"pill px-3 py-1 text-sm font-semibold " + (value?.id === m.id ? "berry-bg" : "bg-white hover:bg-[var(--acid)]")}>
+            {m.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+  const SyncBadge = ({ status, errorMsg, lastSyncedAt }) => {
+    const ago = lastSyncedAt ? Math.round((Date.now() - lastSyncedAt) / 1000) : null;
+    if (status === "saving") return <span className="ticker text-[var(--ink-soft)]">Saving…</span>;
+    if (status === "loading") return <span className="ticker text-[var(--ink-soft)]">Loading…</span>;
+    if (status === "error") return <span className="ticker text-[var(--berry)]" title={errorMsg}>Sync error</span>;
+    return <span className="ticker text-[var(--ink-soft)]">{ago !== null ? `synced ${ago}s ago` : "synced"}</span>;
+  };
 
+  // =========================================================================
+  // SCHEDULE & AVAILABILITY (unchanged from v1)
+  // =========================================================================
   const AvailabilityRow = ({ ev }) => (
     <div className="flex items-center gap-3 text-xs">
       {MEMBERS.map(m => (
@@ -461,27 +556,15 @@
       ))}
     </div>
   );
-
   const AvailabilityButtons = ({ ev, member, onSet }) => {
     if (!member) return <p className="text-xs text-[var(--ink-soft)] italic">Pick who you are above to mark availability.</p>;
     const cur = ev.availability?.[member.id];
     const opt = (val, label, bg) => (
-      <button
-        key={val}
-        onClick={() => onSet(ev.id, member.id, cur === val ? null : val)}
+      <button key={val} onClick={() => onSet(ev.id, member.id, cur === val ? null : val)}
         className={"pill px-3 py-1.5 text-xs font-semibold transition-colors " + (cur === val ? "text-white" : "bg-white hover:bg-[var(--acid)]")}
-        style={cur === val ? { background: bg } : {}}
-      >
-        {label}
-      </button>
+        style={cur === val ? { background: bg } : {}}>{label}</button>
     );
-    return (
-      <div className="flex gap-1.5">
-        {opt("yes",   "✓ Yes",   "#1f8f4a")}
-        {opt("maybe", "? Maybe", "#d97a1f")}
-        {opt("no",    "✗ No",    "#c12c2c")}
-      </div>
-    );
+    return <div className="flex gap-1.5">{opt("yes", "✓ Yes", "#1f8f4a")}{opt("maybe", "? Maybe", "#d97a1f")}{opt("no", "✗ No", "#c12c2c")}</div>;
   };
 
   const blankEvent = () => ({
@@ -496,63 +579,39 @@
     return (
       <div className="card p-5 mb-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <label className="text-sm">
-            <div className="ticker mb-1">Type</div>
+          <label className="text-sm"><div className="ticker mb-1">Type</div>
             <select className="input" value={f.type} onChange={e => set("type", e.target.value)}>
-              <option value="rehearsal">Rehearsal</option>
-              <option value="gig">Gig</option>
-            </select>
-          </label>
-          <label className="text-sm">
-            <div className="ticker mb-1">Status</div>
+              <option value="rehearsal">Rehearsal</option><option value="gig">Gig</option>
+            </select></label>
+          <label className="text-sm"><div className="ticker mb-1">Status</div>
             <select className="input" value={f.status} onChange={e => set("status", e.target.value)}>
-              <option value="proposed">Proposed</option>
-              <option value="confirmed">Confirmed</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-          </label>
-          <label className="text-sm md:col-span-2">
-            <div className="ticker mb-1">Title (optional)</div>
-            <input className="input" value={f.title} onChange={e => set("title", e.target.value)} placeholder="e.g. PTA Gig, Dress rehearsal" />
-          </label>
-          <label className="text-sm">
-            <div className="ticker mb-1">Date</div>
-            <input className="input" type="date" value={f.date} onChange={e => set("date", e.target.value)} />
-          </label>
-          <label className="text-sm">
-            <div className="ticker mb-1">Location</div>
-            <input className="input" value={f.location} onChange={e => set("location", e.target.value)} placeholder="e.g. Earlsfield" />
-          </label>
-          <label className="text-sm">
-            <div className="ticker mb-1">Start time</div>
-            <input className="input" type="time" value={f.startTime} onChange={e => set("startTime", e.target.value)} />
-          </label>
-          <label className="text-sm">
-            <div className="ticker mb-1">End time</div>
-            <input className="input" type="time" value={f.endTime} onChange={e => set("endTime", e.target.value)} />
-          </label>
-          <label className="text-sm">
-            <div className="ticker mb-1">Booking owner</div>
+              <option value="proposed">Proposed</option><option value="confirmed">Confirmed</option><option value="cancelled">Cancelled</option>
+            </select></label>
+          <label className="text-sm md:col-span-2"><div className="ticker mb-1">Title (optional)</div>
+            <input className="input" value={f.title} onChange={e => set("title", e.target.value)} placeholder="e.g. PTA Gig" /></label>
+          <label className="text-sm"><div className="ticker mb-1">Date</div>
+            <input className="input" type="date" value={f.date} onChange={e => set("date", e.target.value)} /></label>
+          <label className="text-sm"><div className="ticker mb-1">Location</div>
+            <input className="input" value={f.location} onChange={e => set("location", e.target.value)} placeholder="e.g. Earlsfield" /></label>
+          <label className="text-sm"><div className="ticker mb-1">Start time</div>
+            <input className="input" type="time" value={f.startTime} onChange={e => set("startTime", e.target.value)} /></label>
+          <label className="text-sm"><div className="ticker mb-1">End time</div>
+            <input className="input" type="time" value={f.endTime} onChange={e => set("endTime", e.target.value)} /></label>
+          <label className="text-sm"><div className="ticker mb-1">Booking owner</div>
             <select className="input" value={f.bookingOwner} onChange={e => set("bookingOwner", e.target.value)}>
               <option value="">— none —</option>
               {MEMBERS.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-            </select>
-          </label>
+            </select></label>
           <label className="text-sm flex items-center gap-2 md:mt-6">
             <input type="checkbox" checked={!!f.bookedAndPaid} onChange={e => set("bookedAndPaid", e.target.checked)} className="w-4 h-4" />
-            <span>Booked & paid</span>
-          </label>
-          <label className="text-sm md:col-span-2">
-            <div className="ticker mb-1">Comments</div>
-            <textarea className="input" rows="2" value={f.comments} onChange={e => set("comments", e.target.value)} />
-          </label>
+            <span>Booked & paid</span></label>
+          <label className="text-sm md:col-span-2"><div className="ticker mb-1">Comments</div>
+            <textarea className="input" rows="2" value={f.comments} onChange={e => set("comments", e.target.value)} /></label>
         </div>
         <div className="flex flex-wrap gap-2 mt-4">
           <button onClick={() => onSave(f)} className="btn berry-bg px-4 py-2 font-semibold">Save</button>
           <button onClick={onCancel} className="btn bg-white px-4 py-2">Cancel</button>
-          {onDelete && (
-            <button onClick={() => { if (confirm("Delete this event?")) onDelete(); }} className="btn bg-white px-4 py-2 ml-auto text-[var(--berry)]">Delete</button>
-          )}
+          {onDelete && <button onClick={() => { if (confirm("Delete this event?")) onDelete(); }} className="btn bg-white px-4 py-2 ml-auto text-[var(--berry)]">Delete</button>}
         </div>
       </div>
     );
@@ -577,8 +636,7 @@
             </div>
             {ev.title && <div className="display text-xl mt-1.5 leading-tight">{ev.title}</div>}
             <div className="text-sm mt-1 text-[var(--ink-soft)]">
-              {ev.startTime}–{ev.endTime}{ev.location ? ` · ${ev.location}` : ""}
-              {owner ? ` · booking: ${owner.name}` : ""}
+              {ev.startTime}–{ev.endTime}{ev.location ? ` · ${ev.location}` : ""}{owner ? ` · booking: ${owner.name}` : ""}
             </div>
             {ev.comments && (
               <details className="mt-2 text-sm">
@@ -604,94 +662,37 @@
     const [editingId, setEditingId] = useState(null);
     const [adding, setAdding] = useState(false);
     const [showPast, setShowPast] = useState(false);
-
     const all = eventsList(events);
     const upcoming = all.filter(e => !isPast(e.date));
     const past = all.filter(e => isPast(e.date)).reverse();
     const list = showPast ? past : upcoming;
-
-    const setAvailability = (eventId, memberId, value) => {
-      mutate(prev => {
-        const events = { ...(prev.events || {}) };
-        const ev = { ...(events[eventId] || {}) };
-        const av = { ...(ev.availability || {}) };
-        if (value === null) delete av[memberId];
-        else av[memberId] = value;
-        ev.availability = av;
-        events[eventId] = ev;
-        return { ...prev, events };
-      });
-    };
-    const updateEvent = (eventId, data) => {
-      mutate(prev => {
-        const events = { ...(prev.events || {}) };
-        events[eventId] = { ...events[eventId], ...data };
-        return { ...prev, events };
-      });
-    };
-    const createEvent = (data) => {
-      mutate(prev => {
-        const events = { ...(prev.events || {}) };
-        events[newId()] = { ...data, availability: {}, createdAt: Date.now() };
-        return { ...prev, events };
-      });
-    };
-    const deleteEvent = (eventId) => {
-      mutate(prev => {
-        const events = { ...(prev.events || {}) };
-        delete events[eventId];
-        return { ...prev, events };
-      });
-    };
-
+    const setAvailability = (eid, mid, val) => mutate(prev => {
+      const events = { ...(prev.events || {}) };
+      const ev = { ...(events[eid] || {}) };
+      const av = { ...(ev.availability || {}) };
+      if (val === null) delete av[mid]; else av[mid] = val;
+      ev.availability = av; events[eid] = ev;
+      return { ...prev, events };
+    });
+    const updateEvent = (eid, data) => mutate(prev => ({ ...prev, events: { ...(prev.events||{}), [eid]: { ...(prev.events?.[eid]||{}), ...data } } }));
+    const createEvent = (data) => mutate(prev => ({ ...prev, events: { ...(prev.events||{}), [newId("e")]: { ...data, availability: {}, createdAt: Date.now() } } }));
+    const deleteEvent = (eid) => mutate(prev => { const events = { ...(prev.events||{}) }; delete events[eid]; return { ...prev, events }; });
     return (
       <div>
         <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
           <div className="flex gap-2">
-            <button onClick={() => setShowPast(false)} className={"pill px-3 py-1 text-sm " + (!showPast ? "berry-bg text-white" : "bg-white")}>
-              Upcoming ({upcoming.length})
-            </button>
-            <button onClick={() => setShowPast(true)} className={"pill px-3 py-1 text-sm " + (showPast ? "berry-bg text-white" : "bg-white")}>
-              Past ({past.length})
-            </button>
+            <button onClick={() => setShowPast(false)} className={"pill px-3 py-1 text-sm " + (!showPast ? "berry-bg text-white" : "bg-white")}>Upcoming ({upcoming.length})</button>
+            <button onClick={() => setShowPast(true)} className={"pill px-3 py-1 text-sm " + (showPast ? "berry-bg text-white" : "bg-white")}>Past ({past.length})</button>
           </div>
           <button onClick={() => { setAdding(true); setEditingId(null); }} className="btn berry-bg px-4 py-2 text-sm font-semibold">+ Add event</button>
         </div>
-
-        {adding && (
-          <EventForm
-            onSave={(f) => { createEvent(f); setAdding(false); }}
-            onCancel={() => setAdding(false)}
-          />
-        )}
-
-        {list.length === 0 && !adding && (
-          <div className="card p-6 text-center">
-            <p className="display text-xl">{showPast ? "No past events." : "Nothing in the diary yet."}</p>
-            {!showPast && <p className="text-sm mt-2 text-[var(--ink-soft)]">Tap "+ Add event" to propose a date.</p>}
-          </div>
-        )}
-
+        {adding && <EventForm onSave={f => { createEvent(f); setAdding(false); }} onCancel={() => setAdding(false)} />}
+        {list.length === 0 && !adding && <div className="card p-6 text-center"><p className="display text-xl">{showPast ? "No past events." : "Nothing in the diary yet."}</p>{!showPast && <p className="text-sm mt-2 text-[var(--ink-soft)]">Tap "+ Add event" to propose a date.</p>}</div>}
         <div className="space-y-3">
-          {list.map(ev => (
-            editingId === ev.id ? (
-              <EventForm
-                key={ev.id}
-                initial={ev}
-                onSave={(f) => { updateEvent(ev.id, f); setEditingId(null); }}
-                onCancel={() => setEditingId(null)}
-                onDelete={() => { deleteEvent(ev.id); setEditingId(null); }}
-              />
-            ) : (
-              <EventCard
-                key={ev.id}
-                ev={ev}
-                member={member}
-                onEdit={() => { setEditingId(ev.id); setAdding(false); }}
-                onSetAvailability={setAvailability}
-              />
-            )
-          ))}
+          {list.map(ev => editingId === ev.id
+            ? <EventForm key={ev.id} initial={ev} onSave={f => { updateEvent(ev.id, f); setEditingId(null); }} onCancel={() => setEditingId(null)} onDelete={() => { deleteEvent(ev.id); setEditingId(null); }} />
+            : <EventCard key={ev.id} ev={ev} member={member} onEdit={() => { setEditingId(ev.id); setAdding(false); }} onSetAvailability={setAvailability} />
+          )}
         </div>
       </div>
     );
@@ -699,40 +700,29 @@
 
   const AvailabilityView = ({ events, member, mutate }) => {
     const upcoming = eventsList(events).filter(e => !isPast(e.date));
-    const setAvailability = (eventId, memberId, value) => {
-      mutate(prev => {
-        const events = { ...(prev.events || {}) };
-        const ev = { ...(events[eventId] || {}) };
-        const av = { ...(ev.availability || {}) };
-        if (!value) delete av[memberId];
-        else av[memberId] = value;
-        ev.availability = av;
-        events[eventId] = ev;
-        return { ...prev, events };
-      });
-    };
-    if (upcoming.length === 0) {
-      return <div className="card p-6 text-center"><p className="display text-xl">No upcoming dates yet.</p><p className="text-sm mt-1 text-[var(--ink-soft)]">Add some on the Schedule tab.</p></div>;
-    }
+    const setAvailability = (eid, mid, val) => mutate(prev => {
+      const events = { ...(prev.events || {}) };
+      const ev = { ...(events[eid] || {}) };
+      const av = { ...(ev.availability || {}) };
+      if (!val) delete av[mid]; else av[mid] = val;
+      ev.availability = av; events[eid] = ev;
+      return { ...prev, events };
+    });
+    if (upcoming.length === 0) return <div className="card p-6 text-center"><p className="display text-xl">No upcoming dates yet.</p><p className="text-sm mt-1 text-[var(--ink-soft)]">Add some on the Schedule tab.</p></div>;
     return (
       <div>
         <div className="card p-4 mb-4">
           <div className="ticker text-[var(--berry)]">Quick mark</div>
           <p className="display text-2xl leading-tight mt-1">Tell the band when you're free.</p>
-          <p className="text-sm text-[var(--ink-soft)] mt-1">Mark your availability across all upcoming dates. Updates save for the whole band.</p>
+          <p className="text-sm text-[var(--ink-soft)] mt-1">Mark your availability across all upcoming dates.</p>
         </div>
-
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-[var(--ink)] text-[var(--bg)]">
-              <tr>
-                <th className="text-left px-3 py-2 ticker">Date</th>
-                <th className="text-left px-3 py-2 ticker">When</th>
-                {MEMBERS.map(m => (
-                  <th key={m.id} className="px-3 py-2 ticker text-center">{m.name}</th>
-                ))}
-              </tr>
-            </thead>
+            <thead className="bg-[var(--ink)] text-[var(--bg)]"><tr>
+              <th className="text-left px-3 py-2 ticker">Date</th>
+              <th className="text-left px-3 py-2 ticker">When</th>
+              {MEMBERS.map(m => <th key={m.id} className="px-3 py-2 ticker text-center">{m.name}</th>)}
+            </tr></thead>
             <tbody>
               {upcoming.map(ev => (
                 <tr key={ev.id} className="border-t border-[var(--line)]/20">
@@ -741,8 +731,7 @@
                     <div className="text-xs text-[var(--ink-soft)] mt-0.5"><TypeBadge type={ev.type} status={ev.status} /> {ev.title}</div>
                   </td>
                   <td className="px-3 py-2.5 text-xs text-[var(--ink-soft)] align-top">
-                    <div>{ev.startTime}–{ev.endTime}</div>
-                    {ev.location && <div>{ev.location}</div>}
+                    <div>{ev.startTime}–{ev.endTime}</div>{ev.location && <div>{ev.location}</div>}
                   </td>
                   {MEMBERS.map(m => {
                     const isMe = member?.id === m.id;
@@ -750,22 +739,12 @@
                     return (
                       <td key={m.id} className="px-2 py-2.5 text-center align-top">
                         {isMe ? (
-                          <select
-                            value={cur || ""}
-                            onChange={e => setAvailability(ev.id, m.id, e.target.value || null)}
-                            className="input text-xs py-1 px-1 text-center"
-                            style={{ minWidth: 70 }}
-                          >
-                            <option value="">—</option>
-                            <option value="yes">Yes</option>
-                            <option value="maybe">Maybe</option>
-                            <option value="no">No</option>
+                          <select value={cur || ""} onChange={e => setAvailability(ev.id, m.id, e.target.value || null)}
+                            className="input text-xs py-1 px-1 text-center" style={{ minWidth: 70 }}>
+                            <option value="">—</option><option value="yes">Yes</option><option value="maybe">Maybe</option><option value="no">No</option>
                           </select>
                         ) : (
-                          <div className="flex items-center justify-center gap-1">
-                            <StatusDot status={cur} />
-                            <span className="text-xs">{cur ? cur[0].toUpperCase() : "—"}</span>
-                          </div>
+                          <div className="flex items-center justify-center gap-1"><StatusDot status={cur} /><span className="text-xs">{cur ? cur[0].toUpperCase() : "—"}</span></div>
                         )}
                       </td>
                     );
@@ -775,34 +754,272 @@
             </tbody>
           </table>
         </div>
-
-        <p className="text-xs text-[var(--ink-soft)] mt-3 italic">Other members' columns show their answer. To change yours, switch who you are at the top of the page.</p>
+        <p className="text-xs text-[var(--ink-soft)] mt-3 italic">Other members' columns show their answer. To change yours, switch who you are at the top.</p>
       </div>
     );
   };
 
-  const SyncBadge = ({ status, errorMsg, lastSyncedAt }) => {
-    const ago = lastSyncedAt ? Math.round((Date.now() - lastSyncedAt) / 1000) : null;
-    if (status === "saving") return <span className="ticker text-[var(--ink-soft)]">Saving…</span>;
-    if (status === "loading") return <span className="ticker text-[var(--ink-soft)]">Loading…</span>;
-    if (status === "error") return <span className="ticker text-[var(--berry)]" title={errorMsg}>Sync error</span>;
-    return <span className="ticker text-[var(--ink-soft)]">{ago !== null ? `synced ${ago}s ago` : "synced"}</span>;
+  // =========================================================================
+  // SONGS
+  // =========================================================================
+
+  const blankSong = () => ({
+    title: "", artist: "", status: "candidate",
+    jamtrax: false, proposer: "", learnt: false,
+    lessonUrl: "", comments: "", votes: {},
+  });
+
+  const SongForm = ({ initial, onSave, onCancel, onDelete }) => {
+    const [f, setF] = useState(initial || blankSong());
+    const set = (k, v) => setF(prev => ({ ...prev, [k]: v }));
+    return (
+      <div className="card p-5 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <label className="text-sm md:col-span-2"><div className="ticker mb-1">Title</div>
+            <input className="input" value={f.title} onChange={e => set("title", e.target.value)} placeholder="Song title" /></label>
+          <label className="text-sm md:col-span-2"><div className="ticker mb-1">Artist</div>
+            <input className="input" value={f.artist} onChange={e => set("artist", e.target.value)} placeholder="Artist" /></label>
+          <label className="text-sm"><div className="ticker mb-1">Status</div>
+            <select className="input" value={f.status} onChange={e => set("status", e.target.value)}>
+              <option value="candidate">Candidate</option>
+              <option value="agreed">Agreed</option>
+            </select></label>
+          <label className="text-sm"><div className="ticker mb-1">Proposed by</div>
+            <input className="input" value={f.proposer} onChange={e => set("proposer", e.target.value)} placeholder="e.g. Veena, or Sourberry" /></label>
+          <label className="text-sm flex items-center gap-2 mt-2 md:mt-7">
+            <input type="checkbox" checked={!!f.jamtrax} onChange={e => set("jamtrax", e.target.checked)} className="w-4 h-4" />
+            <span>Jamtrax available</span></label>
+          <label className="text-sm flex items-center gap-2 mt-2 md:mt-7">
+            <input type="checkbox" checked={!!f.learnt} onChange={e => set("learnt", e.target.checked)} className="w-4 h-4" />
+            <span>Band has learnt it</span></label>
+          <label className="text-sm md:col-span-2"><div className="ticker mb-1">Lesson / tab URL</div>
+            <input className="input" type="url" value={f.lessonUrl} onChange={e => set("lessonUrl", e.target.value)} placeholder="https://…" /></label>
+          <label className="text-sm md:col-span-2"><div className="ticker mb-1">Comments</div>
+            <textarea className="input" rows="2" value={f.comments} onChange={e => set("comments", e.target.value)} /></label>
+        </div>
+        <div className="flex flex-wrap gap-2 mt-4">
+          <button onClick={() => onSave(f)} className="btn berry-bg px-4 py-2 font-semibold">Save</button>
+          <button onClick={onCancel} className="btn bg-white px-4 py-2">Cancel</button>
+          {onDelete && <button onClick={() => { if (confirm("Delete this song?")) onDelete(); }} className="btn bg-white px-4 py-2 ml-auto text-[var(--berry)]">Delete</button>}
+        </div>
+      </div>
+    );
   };
 
-  const MemberPicker = ({ value, onChange }) => (
-    <div className="flex items-center gap-2">
-      <span className="ticker text-[var(--ink-soft)]">I am</span>
-      <div className="flex gap-1.5 flex-wrap">
-        {MEMBERS.map(m => (
-          <button key={m.id}
-            onClick={() => onChange(m.id)}
-            className={"pill px-3 py-1 text-sm font-semibold " + (value?.id === m.id ? "berry-bg" : "bg-white hover:bg-[var(--acid)]")}>
-            {m.name}
-          </button>
-        ))}
+  const VotePill = ({ memberInitial, vote }) => {
+    const bg = vote === "yes" ? "#1f8f4a" : vote === "no" ? "#c12c2c" : "transparent";
+    const color = vote ? "#fff" : "var(--ink-soft)";
+    return (
+      <span className="inline-flex items-center justify-center text-xs font-semibold rounded-full border border-[var(--line)]"
+            style={{ width: 22, height: 22, background: bg, color }} title={vote || "no vote"}>
+        {memberInitial}
+      </span>
+    );
+  };
+
+  const SongCard = ({ song, member, onEdit, onVote, onPromote, onToggleLearnt }) => {
+    const isAgreed = song.status === "agreed";
+    const yesCount = MEMBERS.filter(m => song.votes?.[m.id] === "yes").length;
+    const noCount  = MEMBERS.filter(m => song.votes?.[m.id] === "no").length;
+    const allYes = yesCount === MEMBERS.length;
+    const myVote = member ? song.votes?.[member.id] : null;
+
+    return (
+      <div className="card-flat p-3 sm:p-4">
+        <div className="flex items-start gap-3 flex-wrap">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-baseline gap-2 flex-wrap">
+              <span className="display text-lg leading-tight">{song.title || "(untitled)"}</span>
+              {song.artist && <span className="text-sm text-[var(--ink-soft)] italic">— {song.artist}</span>}
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+              {isAgreed && song.learnt && <span className="ticker bg-green-100 px-2 py-0.5">Learnt</span>}
+              {isAgreed && !song.learnt && <span className="ticker bg-yellow-100 px-2 py-0.5">Not yet learnt</span>}
+              {song.jamtrax && <span className="ticker acid-bg px-2 py-0.5">Jamtrax</span>}
+              {song.proposer && <span className="ticker text-[var(--ink-soft)]">prop: {song.proposer}</span>}
+              {song.lessonUrl && (
+                <a href={song.lessonUrl} target="_blank" rel="noopener" className="ticker text-[var(--berry)] underline">
+                  Lesson ↗
+                </a>
+              )}
+            </div>
+            {song.comments && (
+              <details className="mt-2 text-sm">
+                <summary className="ticker text-[var(--ink-soft)] hover:text-[var(--berry)]">Notes ▾</summary>
+                <p className="mt-1.5 italic text-[var(--ink-soft)]">{song.comments}</p>
+              </details>
+            )}
+          </div>
+          <button onClick={onEdit} className="ticker text-[var(--ink-soft)] hover:text-[var(--berry)] shrink-0">Edit ▸</button>
+        </div>
+
+        {/* Action row */}
+        {!isAgreed && (
+          <div className="mt-3 pt-3 border-t border-[var(--line)]/20 flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              {MEMBERS.map(m => <VotePill key={m.id} memberInitial={m.name[0]} vote={song.votes?.[m.id]} />)}
+            </div>
+            <span className="text-xs text-[var(--ink-soft)]">
+              {yesCount} yes{noCount ? ` · ${noCount} no` : ""}
+            </span>
+
+            {member ? (
+              <div className="flex gap-1.5 ml-auto">
+                <button onClick={() => onVote(song.id, member.id, myVote === "yes" ? null : "yes")}
+                  className={"pill px-3 py-1 text-xs font-semibold " + (myVote === "yes" ? "text-white" : "bg-white hover:bg-[var(--acid)]")}
+                  style={myVote === "yes" ? { background: "#1f8f4a" } : {}}>✓ Yes</button>
+                <button onClick={() => onVote(song.id, member.id, myVote === "no" ? null : "no")}
+                  className={"pill px-3 py-1 text-xs font-semibold " + (myVote === "no" ? "text-white" : "bg-white hover:bg-[var(--acid)]")}
+                  style={myVote === "no" ? { background: "#c12c2c" } : {}}>✗ No</button>
+              </div>
+            ) : (
+              <span className="ml-auto text-xs italic text-[var(--ink-soft)]">Pick who you are to vote</span>
+            )}
+            {allYes && (
+              <button onClick={() => onPromote(song.id)} className="btn berry-bg px-3 py-1.5 text-xs font-semibold w-full sm:w-auto">
+                All in! Promote to agreed →
+              </button>
+            )}
+          </div>
+        )}
+
+        {isAgreed && (
+          <div className="mt-3 pt-3 border-t border-[var(--line)]/20 flex flex-wrap items-center gap-2">
+            <button onClick={() => onToggleLearnt(song.id, !song.learnt)}
+              className="pill px-3 py-1 text-xs font-semibold bg-white hover:bg-[var(--acid)]">
+              {song.learnt ? "Mark as not yet learnt" : "Mark as learnt"}
+            </button>
+          </div>
+        )}
       </div>
-    </div>
-  );
+    );
+  };
+
+  const SongsView = ({ songs, member, mutate }) => {
+    const [editingId, setEditingId] = useState(null);
+    const [adding, setAdding] = useState(false);
+    const [view, setView] = useState("agreed"); // agreed | candidates
+    const [query, setQuery] = useState("");
+
+    const all = songsList(songs);
+    const agreed = all.filter(s => s.status === "agreed");
+    const candidates = all.filter(s => s.status !== "agreed");
+
+    // Sort: agreed by learnt-then-title; candidates by yes-count desc then title
+    agreed.sort((a, b) => {
+      if (!!b.learnt - !!a.learnt !== 0) return (b.learnt ? 1 : 0) - (a.learnt ? 1 : 0);
+      return (a.title || "").localeCompare(b.title || "");
+    });
+    candidates.sort((a, b) => {
+      const yA = MEMBERS.filter(m => a.votes?.[m.id] === "yes").length;
+      const yB = MEMBERS.filter(m => b.votes?.[m.id] === "yes").length;
+      if (yA !== yB) return yB - yA;
+      return (a.title || "").localeCompare(b.title || "");
+    });
+
+    const filt = (list) => {
+      const q = query.trim().toLowerCase();
+      if (!q) return list;
+      return list.filter(s =>
+        (s.title || "").toLowerCase().includes(q) ||
+        (s.artist || "").toLowerCase().includes(q) ||
+        (s.proposer || "").toLowerCase().includes(q)
+      );
+    };
+
+    const list = filt(view === "agreed" ? agreed : candidates);
+
+    const updateSong = (id, data) => mutate(prev => ({ ...prev, songs: { ...(prev.songs||{}), [id]: { ...(prev.songs?.[id]||{}), ...data } } }));
+    const createSong = (data) => mutate(prev => ({ ...prev, songs: { ...(prev.songs||{}), [newId("s")]: { ...data, votes: data.votes || {}, createdAt: Date.now() } } }));
+    const deleteSong = (id) => mutate(prev => { const songs = { ...(prev.songs||{}) }; delete songs[id]; return { ...prev, songs }; });
+    const voteSong = (id, mid, val) => mutate(prev => {
+      const songs = { ...(prev.songs||{}) };
+      const s = { ...(songs[id] || {}) };
+      const v = { ...(s.votes || {}) };
+      if (!val) delete v[mid]; else v[mid] = val;
+      s.votes = v; songs[id] = s;
+      return { ...prev, songs };
+    });
+    const promoteSong = (id) => mutate(prev => {
+      const songs = { ...(prev.songs||{}) };
+      songs[id] = { ...(songs[id]||{}), status: "agreed", votes: {} };
+      return { ...prev, songs };
+    });
+    const toggleLearnt = (id, learnt) => updateSong(id, { learnt });
+
+    const learntCount = agreed.filter(s => s.learnt).length;
+    const allInCount  = candidates.filter(c => MEMBERS.every(m => c.votes?.[m.id] === "yes")).length;
+
+    return (
+      <div>
+        {/* Top bar */}
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <div className="flex gap-2">
+            <button onClick={() => setView("agreed")}
+              className={"pill px-3 py-1 text-sm " + (view === "agreed" ? "berry-bg text-white" : "bg-white")}>
+              Agreed ({agreed.length})
+            </button>
+            <button onClick={() => setView("candidates")}
+              className={"pill px-3 py-1 text-sm " + (view === "candidates" ? "berry-bg text-white" : "bg-white")}>
+              Candidates ({candidates.length}{allInCount ? ` · ${allInCount} ready` : ""})
+            </button>
+          </div>
+          <button onClick={() => { setAdding(true); setEditingId(null); }} className="btn berry-bg px-4 py-2 text-sm font-semibold">+ Add song</button>
+        </div>
+
+        {/* Search */}
+        <div className="mb-3">
+          <input className="input" value={query} onChange={e => setQuery(e.target.value)}
+            placeholder={`Search ${view === "agreed" ? "agreed" : "candidate"} songs by title, artist, or proposer…`} />
+        </div>
+
+        {/* Banner with summary */}
+        <div className="card p-4 mb-4">
+          <div className="ticker text-[var(--berry)]">
+            {view === "agreed" ? "The set" : "On the table"}
+          </div>
+          <p className="display text-xl leading-tight mt-1">
+            {view === "agreed"
+              ? `${learntCount} learnt, ${agreed.length - learntCount} still to learn.`
+              : `${candidates.length} candidates · ${allInCount} where everyone said yes.`
+            }
+          </p>
+          {view === "candidates" && (
+            <p className="text-xs text-[var(--ink-soft)] mt-1">
+              Each member taps ✓ or ✗. When all 4 say yes, anyone can promote it.
+            </p>
+          )}
+        </div>
+
+        {adding && (
+          <SongForm
+            onSave={(f) => { createSong(f); setAdding(false); }}
+            onCancel={() => setAdding(false)}
+          />
+        )}
+
+        {list.length === 0 && !adding && (
+          <div className="card p-6 text-center">
+            <p className="display text-xl">{query ? "No matches." : view === "agreed" ? "No agreed songs yet." : "No candidates."}</p>
+          </div>
+        )}
+
+        <div className="space-y-2.5">
+          {list.map(s => editingId === s.id
+            ? <SongForm key={s.id} initial={s}
+                onSave={f => { updateSong(s.id, f); setEditingId(null); }}
+                onCancel={() => setEditingId(null)}
+                onDelete={() => { deleteSong(s.id); setEditingId(null); }} />
+            : <SongCard key={s.id} song={s} member={member}
+                onEdit={() => { setEditingId(s.id); setAdding(false); }}
+                onVote={voteSong}
+                onPromote={promoteSong}
+                onToggleLearnt={toggleLearnt} />
+          )}
+        </div>
+      </div>
+    );
+  };
 
   // =========================================================================
   // ROOT
@@ -815,32 +1032,21 @@
     const [member, setMemberId] = useMemberIdentity();
     const [tab, setTab] = useState("schedule");
 
-    // Persist bin id from URL into localStorage so it's remembered next visit
     useEffect(() => {
       if (urlBin && urlBin !== storedBin) setStoredBinId(urlBin);
     }, [urlBin, storedBin]);
 
     const sync = useSyncedState(binId);
 
-    // No bin yet → setup screen
-    if (!binId) {
-      return <SetupScreen onCreated={(id) => {
-        setStoredBinId(id);
-        // Push bin id into URL so a refresh keeps it
-        const url = new URL(window.location.href);
-        url.searchParams.set("bin", id);
-        window.history.replaceState({}, "", url.toString());
-        setBinId(id);
-        setShowShare(true);
-      }} />;
-    }
+    if (!binId) return <SetupScreen onCreated={(id) => {
+      setStoredBinId(id);
+      const url = new URL(window.location.href);
+      url.searchParams.set("bin", id);
+      window.history.replaceState({}, "", url.toString());
+      setBinId(id); setShowShare(true);
+    }} />;
+    if (showShare) return <ShareScreen binId={binId} onContinue={() => setShowShare(false)} />;
 
-    // Just finished setup → share screen
-    if (showShare) {
-      return <ShareScreen binId={binId} onContinue={() => setShowShare(false)} />;
-    }
-
-    // Loading initial data
     if (!sync.state) {
       return (
         <div className="max-w-3xl mx-auto px-4 py-12 text-center">
@@ -850,10 +1056,7 @@
               <div className="ticker text-[var(--berry)]">Couldn't load</div>
               <p className="display text-xl mt-1">Something's wrong with the database.</p>
               <p className="text-sm mt-2 text-[var(--ink-soft)]">{sync.errorMsg}</p>
-              <p className="text-sm mt-3">Check the URL has <code className="bg-black/5 px-1">?bin=…</code> and the bin ID is correct. If you set this up, try opening the original setup link again.</p>
-              <button onClick={() => { setStoredBinId(null); setBinId(null); }} className="btn bg-white px-4 py-2 mt-4">
-                Reset and start over
-              </button>
+              <button onClick={() => { setStoredBinId(null); setBinId(null); }} className="btn bg-white px-4 py-2 mt-4">Reset and start over</button>
             </div>
           ) : (
             <p className="display-italic text-lg text-[var(--ink-soft)]">Loading the band's data…</p>
@@ -863,6 +1066,7 @@
     }
 
     const events = sync.state.events || {};
+    const songs = sync.state.songs || {};
 
     return (
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
@@ -877,26 +1081,26 @@
             <MemberPicker value={member} onChange={setMemberId} />
           </div>
 
-          <nav className="mt-6 flex items-center border-y-2 border-[var(--line)]">
-            {[{ id: "schedule", label: "Schedule" }, { id: "availability", label: "Availability" }].map(t => (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={"px-5 py-2.5 ticker " + (tab === t.id ? "tab-active" : "hover:bg-[var(--acid)]")}
-              >
+          <nav className="mt-6 flex items-center border-y-2 border-[var(--line)] overflow-x-auto">
+            {[
+              { id: "schedule",     label: "Schedule" },
+              { id: "availability", label: "Availability" },
+              { id: "songs",        label: "Songs" },
+            ].map(t => (
+              <button key={t.id} onClick={() => setTab(t.id)}
+                className={"px-5 py-2.5 ticker whitespace-nowrap " + (tab === t.id ? "tab-active" : "hover:bg-[var(--acid)]")}>
                 {t.label}
               </button>
             ))}
-            <div className="ml-auto pr-2">
+            <div className="ml-auto pr-2 shrink-0">
               <SyncBadge status={sync.status} errorMsg={sync.errorMsg} lastSyncedAt={sync.lastSyncedAt} />
             </div>
           </nav>
         </header>
 
-        {tab === "schedule"
-          ? <ScheduleView events={events} member={member} mutate={sync.mutate} />
-          : <AvailabilityView events={events} member={member} mutate={sync.mutate} />
-        }
+        {tab === "schedule"     && <ScheduleView     events={events} member={member} mutate={sync.mutate} />}
+        {tab === "availability" && <AvailabilityView events={events} member={member} mutate={sync.mutate} />}
+        {tab === "songs"        && <SongsView        songs={songs}   member={member} mutate={sync.mutate} />}
 
         <footer className="mt-12 pt-6 border-t border-[var(--line)]/30 text-xs text-[var(--ink-soft)] flex justify-between flex-wrap gap-2">
           <span>Sourberry · keep the cover band tight</span>
