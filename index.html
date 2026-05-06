@@ -47,6 +47,16 @@
     .acid-bg { background: var(--acid); color: var(--ink); }
     details > summary { cursor: pointer; list-style: none; }
     details > summary::-webkit-details-marker { display: none; }
+    .tab-nav-wrap { position: relative; }
+    .tab-nav-wrap::after {
+      content: "";
+      position: absolute; top: 0; right: 0; bottom: 0; width: 24px;
+      background: linear-gradient(to right, transparent, var(--bg));
+      pointer-events: none;
+    }
+    @media (min-width: 640px) {
+      .tab-nav-wrap::after { display: none; }
+    }
     @media (max-width: 640px) {
       .card { box-shadow: 3px 3px 0 var(--line); }
       .modal-bg { padding: 0.5rem; }
@@ -1047,16 +1057,20 @@ const MemberPicker = _ref11 => {
   let value = _ref11.value,
     onChange = _ref11.onChange;
   return /*#__PURE__*/React.createElement("div", {
-    className: "flex items-center gap-2"
+    className: "flex items-center gap-1.5 sm:gap-2 shrink-0"
   }, /*#__PURE__*/React.createElement("span", {
-    className: "ticker text-[var(--ink-soft)]"
+    className: "ticker text-[var(--ink-soft)] hidden sm:inline"
   }, "I am"), /*#__PURE__*/React.createElement("div", {
-    className: "flex gap-1.5 flex-wrap"
+    className: "flex gap-1 sm:gap-1.5 flex-wrap"
   }, MEMBERS.map(m => /*#__PURE__*/React.createElement("button", {
     key: m.id,
     onClick: () => onChange(m.id),
-    className: "pill px-3 py-1 text-sm font-semibold " + (value?.id === m.id ? "berry-bg" : "bg-white hover:bg-[var(--acid)]")
-  }, m.name))));
+    className: "pill px-2 sm:px-3 py-1 text-xs sm:text-sm font-semibold " + (value?.id === m.id ? "berry-bg" : "bg-white hover:bg-[var(--acid)]")
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "sm:hidden"
+  }, m.name[0]), /*#__PURE__*/React.createElement("span", {
+    className: "hidden sm:inline"
+  }, m.name)))));
 };
 const SyncPanel = _ref12 => {
   let sync = _ref12.sync,
@@ -2377,7 +2391,7 @@ const SetlistDetail = _ref27 => {
     onClick: onBack,
     className: "ticker text-[var(--berry)] mb-3"
   }, "\u2190 Back to setlists"), /*#__PURE__*/React.createElement("div", {
-    className: "card p-4 mb-4"
+    className: "card p-3 sm:p-4 mb-4"
   }, editingName ? /*#__PURE__*/React.createElement("div", {
     className: "flex gap-2"
   }, /*#__PURE__*/React.createElement("input", {
@@ -2394,12 +2408,12 @@ const SetlistDetail = _ref27 => {
     },
     className: "btn berry-bg px-3 py-1.5 text-sm font-semibold"
   }, "Save")) : /*#__PURE__*/React.createElement("div", {
-    className: "flex items-center justify-between gap-3 flex-wrap"
+    className: "flex items-start justify-between gap-3"
   }, /*#__PURE__*/React.createElement("h2", {
-    className: "display text-2xl sm:text-3xl leading-tight break-words"
+    className: "display text-xl sm:text-2xl md:text-3xl leading-tight break-words flex-1 min-w-0"
   }, setlist.name), /*#__PURE__*/React.createElement("button", {
     onClick: () => setEditingName(true),
-    className: "ticker text-[var(--ink-soft)] hover:text-[var(--berry)] shrink-0"
+    className: "ticker text-[var(--ink-soft)] hover:text-[var(--berry)] shrink-0 mt-1"
   }, "Rename \u25B8")), /*#__PURE__*/React.createElement("div", {
     className: "mt-3 flex items-center gap-2 flex-wrap"
   }, /*#__PURE__*/React.createElement("span", {
@@ -2415,12 +2429,12 @@ const SetlistDetail = _ref27 => {
   }, "\u2014 none \u2014"), gigOptions.map(g => /*#__PURE__*/React.createElement("option", {
     key: g.id,
     value: g.id
-  }, fmtDate(g.date), " \xB7 ", g.title || "Gig")))), /*#__PURE__*/React.createElement("label", {
+  }, fmtDate(g.date), " \xB7 ", g.title || "Gig")))), /*#__PURE__*/React.createElement("details", {
     className: "block mt-3"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "ticker mb-1 text-[var(--ink-soft)]"
-  }, "Notes"), /*#__PURE__*/React.createElement("textarea", {
-    className: "input text-sm",
+  }, /*#__PURE__*/React.createElement("summary", {
+    className: "ticker text-[var(--ink-soft)] hover:text-[var(--berry)]"
+  }, "Notes \u25BE"), /*#__PURE__*/React.createElement("textarea", {
+    className: "input text-sm mt-2",
     rows: "2",
     value: setlist.notes || "",
     onChange: e => onUpdate({
@@ -2428,10 +2442,10 @@ const SetlistDetail = _ref27 => {
     }),
     placeholder: "e.g. running order tweaks, key changes\u2026"
   })), /*#__PURE__*/React.createElement("div", {
-    className: "mt-4 flex gap-2 flex-wrap items-center"
+    className: "mt-3 sm:mt-4 flex gap-2 flex-wrap items-center"
   }, /*#__PURE__*/React.createElement("button", {
     onClick: () => setPicker(true),
-    className: "btn berry-bg px-4 py-2 text-sm font-semibold"
+    className: "btn berry-bg px-3 sm:px-4 py-2 text-sm font-semibold"
   }, "+ Add songs"), /*#__PURE__*/React.createElement("div", {
     className: "flex gap-1"
   }, /*#__PURE__*/React.createElement("button", {
@@ -3882,11 +3896,11 @@ const App = () => {
   }), /*#__PURE__*/React.createElement("header", {
     className: "mb-4 sm:mb-6"
   }, /*#__PURE__*/React.createElement("div", {
-    className: "flex items-end justify-between gap-3 flex-wrap"
+    className: "flex items-center justify-between gap-3 mb-2 sm:mb-0 sm:items-end sm:flex-wrap"
   }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    className: "ticker text-[var(--berry)] text-[10px] sm:text-xs"
+    className: "ticker text-[var(--berry)] text-[10px] sm:text-xs hidden sm:block"
   }, "Band ops \xB7 est. for fun"), /*#__PURE__*/React.createElement("h1", {
-    className: "wordmark text-5xl sm:text-6xl md:text-7xl leading-none mt-1"
+    className: "wordmark text-3xl sm:text-6xl md:text-7xl leading-none"
   }, "Sour", /*#__PURE__*/React.createElement("span", {
     className: "display-italic font-medium",
     style: {
@@ -3895,8 +3909,13 @@ const App = () => {
   }, "berry"))), /*#__PURE__*/React.createElement(MemberPicker, {
     value: member,
     onChange: setMemberId
-  })), /*#__PURE__*/React.createElement("nav", {
-    className: "mt-4 sm:mt-6 flex items-center border-y-2 border-[var(--line)] overflow-x-auto"
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "tab-nav-wrap mt-3 sm:mt-6"
+  }, /*#__PURE__*/React.createElement("nav", {
+    className: "flex items-center border-y-2 border-[var(--line)] overflow-x-auto",
+    style: {
+      WebkitOverflowScrolling: "touch"
+    }
   }, [{
     id: "schedule",
     label: "Schedule"
@@ -3924,7 +3943,7 @@ const App = () => {
   }, /*#__PURE__*/React.createElement(SyncBadge, {
     sync: sync,
     onOpen: () => setShowSyncPanel(true)
-  })))), tab === "schedule" && /*#__PURE__*/React.createElement(ScheduleView, {
+  }))))), tab === "schedule" && /*#__PURE__*/React.createElement(ScheduleView, {
     events: events,
     member: member,
     mutate: sync.mutate
