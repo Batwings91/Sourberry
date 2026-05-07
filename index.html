@@ -119,7 +119,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.17.0";
+const APP_VERSION = "0.18.0";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 // Instruments for member profiles (multi-select). Order is the display order.
 // Icons are emoji — render natively on iOS/macOS/Android. Bass uses 🪕 (banjo) as the closest
@@ -2205,7 +2205,7 @@ const EventForm = ({initial, onSave, onCancel, onDelete, locationSuggestions, sa
   );
 };
 
-const EventCard = ({ev, member, memberProfiles, songs, events, pinnedSetlist, onEdit, onSetAvailability, onDelete, onStartRehearsal, onLocate, settings}) => {
+const EventCard = ({ev, member, memberProfiles, songs, events, pinnedSetlist, onEdit, onSetAvailability, onDelete, onStartRehearsal, onLocate, settings, onUpdateEvent}) => {
   const owner = MEMBERS.find(m => m.id === ev.bookingOwner);
   const yesCount = MEMBERS.filter(m => ev.availability && ev.availability[m.id] === "yes").length;
   const isRehearsal = ev.type === "rehearsal";
@@ -2256,6 +2256,11 @@ const EventCard = ({ev, member, memberProfiles, songs, events, pinnedSetlist, on
           h(TypeBadge,{type:ev.type, status:ev.status}),
           isRehearsal && h(VenueBadge,{venueType:ev.venueType}),
           ev.status==="proposed" && !past && h("span",{className:"ticker bg-yellow-100 px-2 py-0.5"},"Proposed"),
+          // v0.18.0: parity with PROPOSED — gigs marked status="confirmed" get an explicit green CONFIRMED pill.
+          // Limited to gigs (rehearsals are usually confirmed implicitly when scheduled, so a green badge on every
+          // rehearsal would be visual noise). The existing "Booking confirmed" pill below is a different thing
+          // (the boolean ev.confirmed = "booking is paid for"), kept untouched.
+          ev.type==="gig" && ev.status==="confirmed" && !past && h("span",{className:"ticker bg-green-100 px-2 py-0.5"},"Confirmed"),
           ev.confirmed && !past && h("span",{className:"ticker bg-green-100 px-2 py-0.5"},"Booking confirmed"),
           past && h("span",{className:"ticker bg-gray-200 text-gray-600 px-2 py-0.5"},"Past")
         ),
@@ -2272,25 +2277,63 @@ const EventCard = ({ev, member, memberProfiles, songs, events, pinnedSetlist, on
         // Gig: timing planner
         (() => {
           if (past || ev.type !== "gig" || !pinnedSetlist) return null;
+          // v0.18.0: per-event break override (scheduleBreakMin), falls back to band default.
+          const evBreakMin = (typeof ev.scheduleBreakMin === "number" && ev.scheduleBreakMin >= 0) ? ev.scheduleBreakMin : getSetting(settings, "breakDefaultMin");
           const sched = computeGigSchedule(ev, pinnedSetlist, songs, {
             preferredHrs: getSetting(settings, "setupPreferredHrs"),
             minHrs: getSetting(settings, "setupMinHrs"),
-            breakMin: getSetting(settings, "breakDefaultMin")
+            breakMin: evBreakMin
           });
           if (!sched) return null;
           const overrun = sched.overrunMin;
+          // v0.18.0: dropped the green "Xm to spare" badge — users found it confusing
+          // (was easy to misread as "you're behind by Xm"). Over-runs still need a clear
+          // ⚠ warning because that's an actionable problem; under-runs are usually fine
+          // and clutter without that badge. Exact match still surfaces a small confirm pill.
           const overrunBadge = overrun > 0
             ? h("span",{className:"ticker px-1.5 py-0.5 text-[10px]",style:{background:"#fee2e2",color:"#7f1d1d"}}, "⚠ " + overrun + "m over gig end")
-            : overrun < 0
-              ? h("span",{className:"ticker px-1.5 py-0.5 text-[10px]",style:{background:"#dcfce7",color:"#14532d"}}, (-overrun) + "m to spare")
-              : h("span",{className:"ticker px-1.5 py-0.5 text-[10px]",style:{background:"#dcfce7",color:"#14532d"}}, "fits exactly");
+            : overrun === 0
+              ? h("span",{className:"ticker px-1.5 py-0.5 text-[10px]",style:{background:"#dcfce7",color:"#14532d"}}, "fits exactly")
+              : null;
           return h("details",{className:"mt-2 text-sm"},
             h("summary",{className:"ticker text-[var(--berry)] hover:underline cursor-pointer"},
               "Schedule ▾ ",
-              h("span",{className:"ml-1"}, overrunBadge),
+              overrunBadge && h("span",{className:"ml-1"}, overrunBadge),
               sched.hasMissingDurations && h("span",{className:"ml-1 ticker text-[var(--ink-soft)] text-[10px]"},"(some lengths missing — actual time may differ)")
             ),
             h("div",{className:"mt-2 card-flat p-2"},
+              // v0.18.0: inline schedule editor — change start/end/break right here, no need to open the full event form.
+              // Start/end write back to ev.startTime / ev.endTime (same fields the form uses).
+              // Break minutes is a per-gig override (ev.scheduleBreakMin); if unset or === default, no override stored.
+              onUpdateEvent && h("div",{className:"flex flex-wrap items-center gap-x-3 gap-y-1.5 mb-2 pb-2 border-b border-[var(--line)]/15"},
+                h("label",{className:"flex items-center gap-1 text-xs"},
+                  h("span",{className:"ticker text-[var(--ink-soft)]"},"Start"),
+                  h("input",{type:"time", value: ev.startTime || "", onChange: e => onUpdateEvent({startTime: e.target.value}), className:"input text-sm py-0.5", style:{width:"6.5rem"}})
+                ),
+                h("label",{className:"flex items-center gap-1 text-xs"},
+                  h("span",{className:"ticker text-[var(--ink-soft)]"},"End"),
+                  h("input",{type:"time", value: ev.endTime || "", onChange: e => onUpdateEvent({endTime: e.target.value}), className:"input text-sm py-0.5", style:{width:"6.5rem"}})
+                ),
+                h("label",{className:"flex items-center gap-1 text-xs"},
+                  h("span",{className:"ticker text-[var(--ink-soft)]"},"Break"),
+                  h("input",{
+                    type:"number", min:"0", max:"120", step:"1",
+                    value: evBreakMin,
+                    onChange: e => {
+                      const v = parseInt(e.target.value, 10);
+                      if (isNaN(v) || v < 0) return;
+                      onUpdateEvent({scheduleBreakMin: v});
+                    },
+                    className:"input text-sm py-0.5", style:{width:"4rem"}
+                  }),
+                  h("span",{className:"ticker text-[var(--ink-soft)]"},"min")
+                ),
+                (typeof ev.scheduleBreakMin === "number" && ev.scheduleBreakMin !== getSetting(settings, "breakDefaultMin")) && h("button",{
+                  onClick: () => onUpdateEvent({scheduleBreakMin: null}),
+                  className:"ticker text-[var(--berry)] hover:underline text-[10px]",
+                  title:"Reset break to band default"
+                },"reset")
+              ),
               h("div",{className:"text-xs text-[var(--ink-soft)] mb-2"},
                 "Arrive by ", h("span",{className:"font-semibold text-[var(--ink)]"}, fmtHHMM(sched.arrivalPreferred)),
                 " for full ", sched.preferredHrs, "h setup, or ", h("span",{className:"font-semibold text-[var(--ink)]"}, fmtHHMM(sched.arrivalMinimum)),
@@ -2538,7 +2581,7 @@ const TypedScheduleView = ({events, songs, setlists, member, memberProfiles, mut
     h("div",{className:"space-y-3"},
       list.map(ev => editingId===ev.id
         ? h(EventForm,{key:ev.id, initial:ev, onSave: f => updateEvent(ev.id, f), onCancel:()=>setEditingId(null), onDelete:()=>deleteEvent(ev.id), locationSuggestions:locationSuggestions, savedRehearsalLocations: ev.type === "rehearsal" ? getRehearsalLocations(settings) : [], songs:songs})
-        : h(EventCard,{key:ev.id, ev:ev, member:member, memberProfiles:memberProfiles, songs:songs, events:events, pinnedSetlist: setlistByGig[ev.id], settings: settings, onEdit:()=>{setEditingId(ev.id); setAdding(false);}, onSetAvailability:setAvailability, onStartRehearsal: onStartRehearsal, onLocate: async () => {
+        : h(EventCard,{key:ev.id, ev:ev, member:member, memberProfiles:memberProfiles, songs:songs, events:events, pinnedSetlist: setlistByGig[ev.id], settings: settings, onEdit:()=>{setEditingId(ev.id); setAdding(false);}, onSetAvailability:setAvailability, onStartRehearsal: onStartRehearsal, onUpdateEvent: (data) => mutate(prev => Object.assign({}, prev, {events: Object.assign({}, prev.events||{}, {[ev.id]: Object.assign({}, (prev.events&&prev.events[ev.id])||{}, data)})})), onLocate: async () => {
           if (!ev.location) return;
           const geo = await geocodeLocation(ev.location);
           if (!geo) { alert("Couldn't find that location on the map. Try editing it to be more specific (e.g. add the city)."); return; }
@@ -3392,6 +3435,11 @@ const GigModeView = ({setlist, songs, events, onClose}) => {
   const [autoFit, setAutoFit] = useState(true);
   const containerRef = useRef(null);
   const sets = setlist.sets || [];
+  // v0.18.0 (feedback item 1): Gig Mode now also renders soundcheck and encore.
+  // Auto-fit denominator below already factored these in, see comments there.
+  const soundcheckId = setlist.soundcheckSongId || null;
+  const soundcheckSong = soundcheckId ? (songs && songs[soundcheckId]) : null;
+  const encoreIds = Array.isArray(setlist.encoreSongIds) ? setlist.encoreSongIds : [];
   const pinnedGig = setlist.gigEventId && events ? events[setlist.gigEventId] : null;
   // Auto-fit: estimate font size from row count and viewport height. Not pixel-perfect
   // (we can't measure mid-render), but good enough for typical 4-set / 30-song setlists.
@@ -3403,8 +3451,15 @@ const GigModeView = ({setlist, songs, events, onClose}) => {
       // Each set adds a header at size * 1.05.
       const songRows = sets.reduce((acc, s) => acc + (s.songIds || []).length, 0);
       const setHeaders = sets.length;
-      // size * 1.4 * songRows + size * 1.05 * setHeaders + size * 1.8 (title) ≤ vh
-      const denom = 1.4 * songRows + 1.05 * setHeaders + 1.8 + 1.0; // +1 for the meta line
+      // v0.18.0: include soundcheck row (1 song + 1 header) and encore rows (N songs + 1 header) in the fit calc.
+      const soundcheckRows = soundcheckSong ? 1 : 0;
+      const soundcheckHeader = soundcheckSong ? 1 : 0;
+      const encoreSongRows = encoreIds.length;
+      const encoreHeader = encoreIds.length > 0 ? 1 : 0;
+      // size * 1.4 * (allSongRows) + size * 1.05 * (allHeaders) + size * 1.8 (title) ≤ vh
+      const denom = 1.4 * (songRows + soundcheckRows + encoreSongRows)
+                  + 1.05 * (setHeaders + soundcheckHeader + encoreHeader)
+                  + 1.8 + 1.0; // +1 for the meta line
       const target = Math.floor(vh / Math.max(denom, 5));
       setFontPx(Math.max(16, Math.min(64, target)));
     };
@@ -3412,7 +3467,7 @@ const GigModeView = ({setlist, songs, events, onClose}) => {
     const onResize = () => fit();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
-  }, [autoFit, sets]);
+  }, [autoFit, sets, soundcheckSong, encoreIds]);
   // ESC to exit
   useEffect(() => {
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
@@ -3455,6 +3510,18 @@ const GigModeView = ({setlist, songs, events, onClose}) => {
           fmtDate(pinnedGig.date), pinnedGig.title ? (" · " + pinnedGig.title) : "", pinnedGig.location ? (" · " + pinnedGig.location) : ""
         )
       ),
+      // v0.18.0 (feedback item 1): Soundcheck, Sets, and Encore — all three sections render
+      // identically and all appear in print. Sections are conditional so empty parts don't
+      // produce blank headers.
+      // Soundcheck (single song, if set)
+      soundcheckSong && h("div",{className:"mt-3 mb-4"},
+        h("div",{className:"display border-b-2 border-[var(--berry)] pb-1 mb-1",style:{fontSize: Math.round(fontPx * 1.05) + "px",color:"var(--berry)"}}, "Soundcheck"),
+        h("ol",{className:"list-decimal pl-8 sm:pl-12",style:{fontSize: fontPx + "px",lineHeight:1.4}},
+          h("li",{className:"break-words"},
+            h("span",{className:"font-semibold"}, soundcheckSong.title || "(untitled)")
+          )
+        )
+      ),
       // Sets
       h("div",{className:"mt-3"},
         sets.length === 0 ? h("p",{className:"italic"},"Empty setlist.") : sets.map((set, si) => {
@@ -3477,6 +3544,19 @@ const GigModeView = ({setlist, songs, events, onClose}) => {
                 )
           );
         })
+      ),
+      // Encore (if any)
+      encoreIds.length > 0 && h("div",{className:"mb-4"},
+        h("div",{className:"display border-b-2 border-[var(--berry)] pb-1 mb-1",style:{fontSize: Math.round(fontPx * 1.05) + "px",color:"var(--berry)"}}, "Encore"),
+        h("ol",{className:"list-decimal pl-8 sm:pl-12",style:{fontSize: fontPx + "px",lineHeight:1.4}},
+          encoreIds.map((sid, i) => {
+            const s = songs && songs[sid];
+            if (!s) return h("li",{key:"de-"+i,className:"italic text-[var(--ink-soft)]"},"(deleted)");
+            return h("li",{key:sid,className:"break-words"},
+              h("span",{className:"font-semibold"}, s.title || "(untitled)")
+            );
+          })
+        )
       )
     )
   );
@@ -3574,6 +3654,19 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack
       return s;
     })});
   };
+  // v0.18.0 (feedback item 5): move a song from a set into the encore list.
+  // Single onUpdate so set-removal and encore-add are one mutation (no transient state where the song is in neither).
+  const moveSongToEncore = (fromSetIdx, songIdx) => {
+    const fromArr = (sets[fromSetIdx].songIds || []).slice();
+    const [sid] = fromArr.splice(songIdx, 1);
+    if (!sid) return;
+    const curEncore = Array.isArray(setlist.encoreSongIds) ? setlist.encoreSongIds.slice() : [];
+    const newEncore = curEncore.includes(sid) ? curEncore : curEncore.concat([sid]);
+    onUpdate({
+      sets: sets.map((s, i) => i === fromSetIdx ? Object.assign({}, s, {songIds: fromArr}) : s),
+      encoreSongIds: newEncore
+    });
+  };
   const addSongToSet = (setIdx, songId) => {
     const cur = sets[setIdx].songIds || [];
     if (cur.includes(songId)) return;
@@ -3600,12 +3693,24 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack
   };
 
   // Picker handlers
+  // v0.18.0 (feedback item 4): when adding from the picker, briefly flash + scroll to the newly added song
+  // so it's visually obvious something happened. Especially needed for encore adds — picker closes and the
+  // user is left at the top of the page with no feedback if the encore section is below the fold.
+  const [flashSongId, setFlashSongId] = useState(null);
+  const flashRef = useRef(null);
+  useEffect(() => {
+    if (!flashSongId || !flashRef.current) return;
+    try { flashRef.current.scrollIntoView({behavior:"smooth", block:"center"}); } catch(_){}
+    const t = setTimeout(() => setFlashSongId(null), 1600);
+    return () => clearTimeout(t);
+  }, [flashSongId]);
   const handlePick = (songId) => {
     if (!picker) return;
     if (picker.kind === "soundcheck") setSoundcheck(songId);
     else if (picker.kind === "encore") addEncore(songId);
     else if (picker.kind === "set") addSongToSet(picker.index, songId);
     setPicker(null);
+    setFlashSongId(songId);
   };
   const pickerExcludeIds = picker
     ? (picker.kind === "soundcheck" ? (soundcheckId ? [soundcheckId] : [])
@@ -3672,15 +3777,25 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack
       h("div",{className:"flex flex-col gap-1 shrink-0 pt-3"},
         h("button",{onClick:()=>moveSongInSet(setIdx, songIdx, -1),disabled:songIdx===0,className:"pill px-2 py-0.5 text-xs bg-white disabled:opacity-30",title:"Move up"},"↑"),
         h("button",{onClick:()=>moveSongInSet(setIdx, songIdx, 1),disabled:isLast,className:"pill px-2 py-0.5 text-xs bg-white disabled:opacity-30",title:"Move down"},"↓"),
-        sets.length > 1 && h("select",{
+        // v0.18.0 (feedback item 5): always show the move dropdown, with Encore as an option.
+        // Previously hidden when there was only one set, and never offered Encore as a destination.
+        // Values: integer = set index, "encore" = encore list.
+        h("select",{
           value:"",
-          onChange:e=>{ const v = e.target.value; if (v !== "") { moveSongToSet(setIdx, songIdx, parseInt(v,10)); } e.target.value=""; },
+          onChange:e=>{
+            const v = e.target.value;
+            if (v === "") return;
+            if (v === "encore") moveSongToEncore(setIdx, songIdx);
+            else moveSongToSet(setIdx, songIdx, parseInt(v,10));
+            e.target.value="";
+          },
           className:"pill px-1 py-0.5 text-xs bg-white",
-          title:"Move to another set",
-          style:{maxWidth:"68px"}
+          title:"Move to another set or encore",
+          style:{maxWidth:"82px"}
         },
-          h("option",{value:""},"→ Set"),
-          sets.map((s, i) => i === setIdx ? null : h("option",{key:i,value:i}, s.name || ("Set " + (i+1))))
+          h("option",{value:""},"→ Move"),
+          sets.map((s, i) => i === setIdx ? null : h("option",{key:i,value:i}, s.name || ("Set " + (i+1)))),
+          h("option",{value:"encore"},"Encore")
         ),
         h("button",{onClick:()=>removeSongFromSet(setIdx, songIdx),className:"pill px-2 py-0.5 text-xs bg-white text-[var(--berry)]",title:"Remove from setlist"},"×")
       )
@@ -3775,29 +3890,46 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack
                   const s = songs && songs[sid];
                   if (!s) return h("li",{key:sid+"-"+i,className:"text-[var(--ink-soft)] italic"}, (i+1) + ". (deleted song)");
                   const sLen = formatDuration(s.lengthSec);
+                  // v0.18.0 (feedback item 6): group title + artist into one nested flex unit so the gap
+                  // between them is consistent across setlists and never gets pushed apart by ml-auto on
+                  // the duration column. Previously, when some songs had a duration and others didn't,
+                  // the row layout shifted and artists could end up spaced away from titles.
                   return h("li",{key:sid+"-"+i,className:"flex gap-2 items-baseline"},
                     h("span",{className:"text-[var(--berry)] font-semibold w-6 shrink-0"}, (i+1) + "."),
-                    h("span",{className:"font-semibold"}, s.title),
-                    s.artist && h("span",{className:"text-[var(--ink-soft)] italic"},"— " + s.artist),
-                    sLen && h("span",{className:"ticker text-[var(--ink-soft)] ml-auto shrink-0"}, sLen)
+                    h("span",{className:"flex-1 min-w-0 flex items-baseline gap-1.5 flex-wrap"},
+                      h("span",{className:"font-semibold"}, s.title),
+                      s.artist && h("span",{className:"text-[var(--ink-soft)] italic"},"— " + s.artist)
+                    ),
+                    sLen && h("span",{className:"ticker text-[var(--ink-soft)] shrink-0"}, sLen)
                   );
                 })
               )
         );
       }),
       // Encore in summary
-      encoreIds.length > 0 && h("div",null,
-        h("div",{className:"ticker text-[var(--berry)] mb-2"},"Encore"),
-        h("ol",{className:"space-y-1 text-sm"},
+      // v0.18.0: previously hidden when no encore songs existed, leaving no way to add the first one
+      // (the "+ Add encore song" button only existed in Detailed view). Now always shown, with an inline
+      // + Add button that opens the same picker the Detailed view uses.
+      h("div",null,
+        h("div",{className:"flex items-center justify-between gap-2 mb-2 flex-wrap"},
+          h("div",{className:"ticker text-[var(--berry)]"},"Encore"),
+          h("button",{onClick:()=>setPicker({kind:"encore"}),className:"btn bg-white px-3 py-1 text-xs"},"+ Add encore song")
+        ),
+        encoreIds.length === 0
+          ? h("p",{className:"text-xs italic text-[var(--ink-soft)]"},"No encore yet.")
+          : h("ol",{className:"space-y-1 text-sm"},
           encoreIds.map((sid, i) => {
             const s = songs && songs[sid];
             if (!s) return h("li",{key:sid+"-"+i,className:"text-[var(--ink-soft)] italic"}, (i+1) + ". (deleted song)");
             const sLen = formatDuration(s.lengthSec);
+            // v0.18.0: same title+artist grouping fix as set rows above.
             return h("li",{key:sid+"-"+i,className:"flex gap-2 items-baseline"},
               h("span",{className:"text-[var(--berry)] font-semibold w-6 shrink-0"}, (i+1) + "."),
-              h("span",{className:"font-semibold"}, s.title),
-              s.artist && h("span",{className:"text-[var(--ink-soft)] italic"},"— " + s.artist),
-              sLen && h("span",{className:"ticker text-[var(--ink-soft)] ml-auto shrink-0"}, sLen)
+              h("span",{className:"flex-1 min-w-0 flex items-baseline gap-1.5 flex-wrap"},
+                h("span",{className:"font-semibold"}, s.title),
+                s.artist && h("span",{className:"text-[var(--ink-soft)] italic"},"— " + s.artist)
+              ),
+              sLen && h("span",{className:"ticker text-[var(--ink-soft)] shrink-0"}, sLen)
             );
           })
         )
@@ -3888,13 +4020,15 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack
           ? h("p",{className:"text-xs italic text-[var(--ink-soft)]"},"No encore yet.")
           : h("ol",{className:"space-y-1.5"}, encoreIds.map((sid, i) => {
               const s = songs && songs[sid];
-              if (!s) return h("li",{key:sid+"-"+i,className:"card-flat p-2 text-sm flex items-center gap-2"},
+              const isFlash = sid === flashSongId;
+              const flashProps = isFlash ? {ref: flashRef, className: "card-flat p-2 text-sm flex items-center gap-2 flash-target"} : {className:"card-flat p-2 text-sm flex items-center gap-2"};
+              if (!s) return h("li",Object.assign({key:sid+"-"+i}, flashProps),
                 h("span",{className:"text-[var(--ink-soft)] w-6 text-right shrink-0 text-xs"}, (i+1) + "."),
                 h("span",{className:"flex-1 italic text-[var(--ink-soft)]"},"(deleted song)"),
                 h("button",{onClick:()=>removeEncore(sid),className:"pill px-2 py-0.5 text-xs bg-white text-[var(--berry)] font-bold"},"×")
               );
               const sLen = formatDuration(s.lengthSec);
-              return h("li",{key:sid+"-"+i,className:"card-flat p-2 text-sm flex items-center gap-2"},
+              return h("li",Object.assign({key:sid+"-"+i}, flashProps),
                 h("span",{className:"text-[var(--ink-soft)] w-6 text-right shrink-0 text-xs"}, (i+1) + "."),
                 h("div",{className:"flex-1 min-w-0"},
                   h("div",null,
