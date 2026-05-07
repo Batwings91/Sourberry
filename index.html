@@ -83,7 +83,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.4.0";
+const APP_VERSION = "0.5.0";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 const SONG_STATUSES = [
   {id:"suggested",label:"Suggested",desc:"In the voting pool"},
@@ -627,6 +627,80 @@ const isStaleSong = (lastRehearsed, weeks) => {
   const cutoffISO = (new Date(Date.now() - w * 7 * 24 * 60 * 60 * 1000)).toISOString().slice(0,10);
   return lastRehearsed < cutoffISO;
 };
+
+// === ITERATION: GIG TIMING PLANNER ===
+// Given a gig with start/end times and a setlist with set durations, derive a suggested
+// schedule: arrival window, set start/end times, breaks, and music end. Honest about
+// what's missing (e.g. some songs have no length) and warns if music end > gig end.
+const GIG_SETUP_PREFERRED_HRS = 2;
+const GIG_SETUP_MIN_HRS = 1;
+const GIG_BREAK_DEFAULT_MIN = 20;
+// Parse "HH:MM" (24h) into minutes-from-midnight, or null.
+const parseHHMM = (t) => {
+  if (!t || typeof t !== "string") return null;
+  const m = t.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = parseInt(m[1],10), mm = parseInt(m[2],10);
+  if (isNaN(h) || isNaN(mm) || h > 23 || mm > 59) return null;
+  return h * 60 + mm;
+};
+// Format minutes-from-midnight as "HH:MM". Wraps modulo 24*60. Negative wraps to previous day.
+const fmtHHMM = (mins) => {
+  let m = ((mins % 1440) + 1440) % 1440;
+  const h = Math.floor(m / 60), mm = m % 60;
+  return String(h).padStart(2,"0") + ":" + String(mm).padStart(2,"0");
+};
+// Returns null if planner can't run; otherwise an object with the schedule + warnings.
+const computeGigSchedule = (event, setlist, songs, options) => {
+  const opts = Object.assign({preferredHrs: GIG_SETUP_PREFERRED_HRS, minHrs: GIG_SETUP_MIN_HRS, breakMin: GIG_BREAK_DEFAULT_MIN}, options || {});
+  if (!event || event.type !== "gig") return null;
+  if (!setlist) return null;
+  const startMin = parseHHMM(event.startTime);
+  const endMin = parseHHMM(event.endTime);
+  if (startMin == null || endMin == null) return null;
+  if (endMin <= startMin) return null; // No gigs spanning midnight for now.
+  const sets = setlist.sets || [];
+  if (sets.length === 0) return null;
+  // Compute per-set durations (in seconds) plus missing-length counts.
+  const setInfo = sets.map(set => {
+    const ids = set.songIds || [];
+    let total = 0, missing = 0;
+    ids.forEach(sid => {
+      const s = songs && songs[sid];
+      if (s && s.lengthSec) total += s.lengthSec; else missing += 1;
+    });
+    return {totalSec: total, missingCount: missing, songCount: ids.length, name: set.name};
+  });
+  // Build schedule with cursor in minutes.
+  const schedule = [];
+  let cursor = startMin;
+  const hasMissing = setInfo.some(si => si.missingCount > 0);
+  setInfo.forEach((si, i) => {
+    const durMin = Math.round(si.totalSec / 60);
+    schedule.push({type:"set", index:i, name: si.name || ("Set " + (i+1)), startMin: cursor, endMin: cursor + durMin, durMin, missingCount: si.missingCount, songCount: si.songCount});
+    cursor += durMin;
+    if (i < setInfo.length - 1) {
+      schedule.push({type:"break", startMin: cursor, endMin: cursor + opts.breakMin, durMin: opts.breakMin});
+      cursor += opts.breakMin;
+    }
+  });
+  const musicEndMin = cursor;
+  const overrunMin = musicEndMin - endMin;
+  return {
+    schedule,
+    musicEndMin,
+    overrunMin, // positive = over, negative = under, 0 = exact
+    arrivalPreferred: startMin - opts.preferredHrs * 60,
+    arrivalMinimum: startMin - opts.minHrs * 60,
+    gigStartMin: startMin,
+    gigEndMin: endMin,
+    breakMin: opts.breakMin,
+    breakCount: Math.max(0, sets.length - 1),
+    setInfo,
+    hasMissingDurations: hasMissing
+  };
+};
+// === END GIG TIMING PLANNER ===
 const setlistTotals = (sl, songs) => sumLengths(setlistAllSongIds(sl), songs);
 const setlistSongCount = (sl) => setlistAllSongIds(sl).length;
 const appleMusicLinkFor = (song) => song.iTunesUrl || ("https://music.apple.com/search?term=" + encodeURIComponent(((song.artist||"") + " " + (song.title||"")).trim()));
@@ -941,32 +1015,173 @@ const StatusDot = ({status}) => {
   return h("span",{className:"inline-block w-3 h-3 rounded-full border border-[var(--line)]",style:{background: map[status]}});
 };
 // Resize uploaded photo to a 200x200 center-cropped JPEG data URL (~10-30KB)
-const processProfileImage = file => new Promise((resolve, reject) => {
+// Reads a file (image) into a data URL. Validates type and size.
+const readImageFile = file => new Promise((resolve, reject) => {
   if (!file) return reject(new Error("No file selected"));
   if (!file.type || !file.type.startsWith("image/")) return reject(new Error("That's not an image file"));
   if (file.size > 10*1024*1024) return reject(new Error("Image too large (max 10MB)"));
   const reader = new FileReader();
-  reader.onload = ev => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        const target = 200;
-        const canvas = document.createElement("canvas");
-        canvas.width = target; canvas.height = target;
-        const ctx = canvas.getContext("2d");
-        const size = Math.min(img.width, img.height);
-        const sx = Math.floor((img.width - size) / 2);
-        const sy = Math.floor((img.height - size) / 2);
-        ctx.drawImage(img, sx, sy, size, size, 0, 0, target, target);
-        resolve(canvas.toDataURL("image/jpeg", 0.7));
-      } catch(e) { reject(new Error("Couldn't process image")); }
-    };
-    img.onerror = () => reject(new Error("Couldn't load image"));
-    img.src = ev.target.result;
-  };
+  reader.onload = ev => resolve(ev.target.result);
   reader.onerror = () => reject(new Error("Couldn't read file"));
   reader.readAsDataURL(file);
 });
+// Older auto-crop-to-square helper, kept for fallback (centred crop).
+const processProfileImage = file => readImageFile(file).then(dataUrl => new Promise((resolve, reject) => {
+  const img = new Image();
+  img.onload = () => {
+    try {
+      const target = 200;
+      const canvas = document.createElement("canvas");
+      canvas.width = target; canvas.height = target;
+      const ctx = canvas.getContext("2d");
+      const size = Math.min(img.width, img.height);
+      const sx = Math.floor((img.width - size) / 2);
+      const sy = Math.floor((img.height - size) / 2);
+      ctx.drawImage(img, sx, sy, size, size, 0, 0, target, target);
+      resolve(canvas.toDataURL("image/jpeg", 0.7));
+    } catch(e) { reject(new Error("Couldn't process image")); }
+  };
+  img.onerror = () => reject(new Error("Couldn't load image"));
+  img.src = dataUrl;
+}));
+// Crop a source data URL to a 200×200 JPEG, given:
+//   src: original image data URL
+//   imgW, imgH: natural dimensions
+//   zoom: scale multiplier (>= 1; image fills viewport at zoom=1)
+//   offX, offY: pan offsets in viewport pixels (positive = move image right/down)
+//   viewport: viewport size in pixels (e.g. 240)
+const cropImageToDataURL = (src, imgW, imgH, zoom, offX, offY, viewport) => new Promise((resolve, reject) => {
+  const target = 200;
+  const img = new Image();
+  img.onload = () => {
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = target; canvas.height = target;
+      const ctx = canvas.getContext("2d");
+      // White background in case of transparency.
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0,0,target,target);
+      // The image, when displayed in the viewport, has pixel size: imgW*scale, imgH*scale,
+      // where scale = (viewport / min(imgW, imgH)) * zoom (this matches CSS object-fit:cover at zoom=1).
+      const baseScale = viewport / Math.min(imgW, imgH);
+      const scale = baseScale * zoom;
+      const drawnW = imgW * scale, drawnH = imgH * scale;
+      // The viewport's top-left in image-pixel coords is the inverse of where the image's top-left
+      // sits relative to the viewport's top-left. Image is centred at zoom=1, then offset by (offX, offY).
+      // So the image's top-left in viewport coords is: (viewport - drawnW)/2 + offX, (viewport - drawnH)/2 + offY
+      const imgTLX = (viewport - drawnW) / 2 + offX;
+      const imgTLY = (viewport - drawnH) / 2 + offY;
+      // The viewport area corresponds to image coords from -imgTLX/scale .. (-imgTLX + viewport)/scale
+      const sx = -imgTLX / scale;
+      const sy = -imgTLY / scale;
+      const sW = viewport / scale;
+      const sH = viewport / scale;
+      ctx.drawImage(img, sx, sy, sW, sH, 0, 0, target, target);
+      resolve(canvas.toDataURL("image/jpeg", 0.78));
+    } catch(e) { reject(new Error("Couldn't crop image")); }
+  };
+  img.onerror = () => reject(new Error("Couldn't load image"));
+  img.src = src;
+});
+
+// === PHOTO CROPPER MODAL ===
+// Touch-friendly crop UI for profile photos: zoom slider + drag-to-pan.
+// At zoom=1 the image fills the round viewport (object-fit:cover style). At higher
+// zooms the user can pan to position the crop. Output is a 200×200 JPEG dataUrl.
+const PhotoCropper = ({src, onCancel, onConfirm}) => {
+  const VIEWPORT = 240;
+  const [imgW, setImgW] = useState(0);
+  const [imgH, setImgH] = useState(0);
+  const [zoom, setZoom] = useState(1);
+  const [offX, setOffX] = useState(0);
+  const [offY, setOffY] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const dragRef = useRef(null);
+  const onImgLoad = e => {
+    setImgW(e.target.naturalWidth);
+    setImgH(e.target.naturalHeight);
+    setZoom(1); setOffX(0); setOffY(0);
+  };
+  // Pan via pointer events. setPointerCapture so dragging off the image still tracks.
+  const onPointerDown = e => {
+    e.preventDefault();
+    dragRef.current = {sx: e.clientX, sy: e.clientY, sOffX: offX, sOffY: offY};
+    try { e.target.setPointerCapture(e.pointerId); } catch(_){}
+  };
+  const onPointerMove = e => {
+    if (!dragRef.current) return;
+    e.preventDefault();
+    const dx = e.clientX - dragRef.current.sx;
+    const dy = e.clientY - dragRef.current.sy;
+    setOffX(dragRef.current.sOffX + dx);
+    setOffY(dragRef.current.sOffY + dy);
+  };
+  const onPointerUp = e => {
+    dragRef.current = null;
+    try { e.target.releasePointerCapture(e.pointerId); } catch(_){}
+  };
+  const apply = async () => {
+    if (!imgW || !imgH) { setError("Image hasn't loaded yet."); return; }
+    setBusy(true); setError("");
+    try {
+      const dataUrl = await cropImageToDataURL(src, imgW, imgH, zoom, offX, offY, VIEWPORT);
+      onConfirm(dataUrl);
+    } catch (e) {
+      setError(e.message || "Couldn't crop");
+    } finally {
+      setBusy(false);
+    }
+  };
+  // Compute image display style based on zoom + offset.
+  const baseScale = (imgW && imgH) ? (VIEWPORT / Math.min(imgW, imgH)) : 1;
+  const drawnW = imgW * baseScale * zoom;
+  const drawnH = imgH * baseScale * zoom;
+  const imgStyle = {
+    position: "absolute",
+    left: ((VIEWPORT - drawnW) / 2 + offX) + "px",
+    top: ((VIEWPORT - drawnH) / 2 + offY) + "px",
+    width: drawnW + "px",
+    height: drawnH + "px",
+    maxWidth: "none",
+    touchAction: "none",
+    userSelect: "none",
+    WebkitUserSelect: "none",
+    cursor: dragRef.current ? "grabbing" : "grab"
+  };
+  return h("div",{className:"modal-bg",onClick:onCancel},
+    h("div",{className:"card p-5 max-w-md w-full",onClick:e=>e.stopPropagation()},
+      h("h3",{className:"display text-2xl mb-2"},"Position your photo"),
+      h("p",{className:"text-xs text-[var(--ink-soft)] mb-3"},"Drag to pan, use the slider to zoom in. The circle is what everyone will see."),
+      // Viewport
+      h("div",{className:"mx-auto mb-3 relative overflow-hidden rounded-full border-2 border-[var(--berry)]",
+        style:{width:VIEWPORT+"px",height:VIEWPORT+"px",background:"#fafafa",touchAction:"none"}},
+        src && h("img",{
+          src:src, alt:"", draggable:false, onLoad:onImgLoad,
+          onPointerDown:onPointerDown, onPointerMove:onPointerMove, onPointerUp:onPointerUp, onPointerCancel:onPointerUp,
+          style:imgStyle
+        })
+      ),
+      // Zoom slider
+      h("div",{className:"flex items-center gap-2 mb-3"},
+        h("span",{className:"ticker text-[var(--ink-soft)] shrink-0"},"Zoom"),
+        h("input",{type:"range", min:"1", max:"3", step:"0.05", value: zoom, onChange:e=>setZoom(parseFloat(e.target.value)),
+          className:"flex-1", style:{accentColor: "var(--berry)"}}),
+        h("span",{className:"text-xs text-[var(--ink-soft)] w-12 text-right shrink-0"}, zoom.toFixed(2) + "×")
+      ),
+      h("div",{className:"flex items-center gap-2 mb-1"},
+        h("button",{onClick:()=>{ setZoom(1); setOffX(0); setOffY(0); },className:"btn bg-white px-2 py-1 text-xs"},"Reset"),
+        h("span",{className:"text-xs text-[var(--ink-soft)] italic ml-2"},"Output: 200×200 JPEG")
+      ),
+      error && h("p",{className:"text-sm text-[var(--berry)] mt-2"}, error),
+      h("div",{className:"flex gap-2 mt-4"},
+        h("button",{onClick:onCancel,disabled:busy,className:"btn bg-white px-4 py-2 text-sm"},"Cancel"),
+        h("button",{onClick:apply,disabled:busy || !imgW,className:"btn berry-bg px-4 py-2 text-sm font-semibold ml-auto"}, busy ? "Saving…" : "Save photo")
+      )
+    )
+  );
+};
+// === END PHOTO CROPPER ===
 
 // === ITERATION A.1: BackupsSection component ===
 const BackupsSection = ({binId, state, onRestore}) => {
@@ -1139,21 +1354,30 @@ const ConflictBanner = ({conflict, onResolve}) => {
 const SettingsModal = ({memberProfiles, onClose, mutate, binId, state, onRestore}) => {
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState("");
+  // When set, opens the PhotoCropper for the given member with the chosen file's data URL.
+  const [cropping, setCropping] = useState(null); // { memberId, srcDataUrl } | null
   const onUpload = async (memberId, file) => {
     setError(""); setBusy(memberId);
     try {
-      const dataUrl = await processProfileImage(file);
-      mutate(prev => {
-        const profiles = Object.assign({}, prev.memberProfiles || {});
-        profiles[memberId] = Object.assign({}, profiles[memberId] || {}, {photoUrl: dataUrl});
-        return Object.assign({}, prev, {memberProfiles: profiles});
-      });
+      const dataUrl = await readImageFile(file);
+      setCropping({memberId, srcDataUrl: dataUrl});
     } catch (e) {
       setError(e.message || "Upload failed");
     } finally {
       setBusy(null);
     }
   };
+  const onCropConfirmed = (croppedDataUrl) => {
+    if (!cropping) return;
+    const memberId = cropping.memberId;
+    mutate(prev => {
+      const profiles = Object.assign({}, prev.memberProfiles || {});
+      profiles[memberId] = Object.assign({}, profiles[memberId] || {}, {photoUrl: croppedDataUrl});
+      return Object.assign({}, prev, {memberProfiles: profiles});
+    });
+    setCropping(null);
+  };
+  const onCropCancelled = () => setCropping(null);
   const onRemove = (memberId) => {
     mutate(prev => {
       const profiles = Object.assign({}, prev.memberProfiles || {});
@@ -1162,6 +1386,7 @@ const SettingsModal = ({memberProfiles, onClose, mutate, binId, state, onRestore
     });
   };
   return h("div",{className:"modal-bg",onClick:onClose},
+    cropping && h(PhotoCropper, {src: cropping.srcDataUrl, onCancel: onCropCancelled, onConfirm: onCropConfirmed}),
     h("div",{className:"card p-5 max-w-md w-full max-h-[90vh] overflow-y-auto",onClick:e=>e.stopPropagation()},
       h("div",{className:"flex items-center justify-between mb-3"},
         h("h3",{className:"display text-2xl"},"Settings"),
@@ -1169,7 +1394,7 @@ const SettingsModal = ({memberProfiles, onClose, mutate, binId, state, onRestore
       ),
       h("div",{className:"mb-2"},
         h("div",{className:"ticker text-[var(--berry)] mb-2"},"Profile photos"),
-        h("p",{className:"text-xs text-[var(--ink-soft)] mb-3"},"Visible to everyone in the band. Photos are auto-cropped to a square, resized to 200×200, and compressed to keep things lightweight.")
+        h("p",{className:"text-xs text-[var(--ink-soft)] mb-3"},"Visible to everyone in the band. After picking a photo you can pan and zoom to position it. Final size is 200×200 JPEG.")
       ),
       h("div",{className:"space-y-1"},
         MEMBERS.map(m => {
@@ -1408,6 +1633,59 @@ const EventCard = ({ev, member, songs, events, pinnedSetlist, onEdit, onSetAvail
           h("div",{className:"font-semibold text-[var(--ink)]"},"⚠️ " + stale.length + " setlist song" + (stale.length===1?"":"s") + " not rehearsed in 4+ weeks"),
           h("div",{className:"text-xs text-[var(--ink-soft)] mt-0.5 truncate"}, stale.slice(0,5).map(songName).join(", ") + (stale.length > 5 ? (" + " + (stale.length - 5) + " more") : ""))
         ),
+        // Gig: timing planner
+        (() => {
+          if (past || ev.type !== "gig" || !pinnedSetlist) return null;
+          const sched = computeGigSchedule(ev, pinnedSetlist, songs);
+          if (!sched) return null;
+          const overrun = sched.overrunMin;
+          const overrunBadge = overrun > 0
+            ? h("span",{className:"ticker px-1.5 py-0.5 text-[10px]",style:{background:"#fee2e2",color:"#7f1d1d"}}, "⚠ " + overrun + "m over gig end")
+            : overrun < 0
+              ? h("span",{className:"ticker px-1.5 py-0.5 text-[10px]",style:{background:"#dcfce7",color:"#14532d"}}, (-overrun) + "m to spare")
+              : h("span",{className:"ticker px-1.5 py-0.5 text-[10px]",style:{background:"#dcfce7",color:"#14532d"}}, "fits exactly");
+          return h("details",{className:"mt-2 text-sm"},
+            h("summary",{className:"ticker text-[var(--berry)] hover:underline cursor-pointer"},
+              "Schedule ▾ ",
+              h("span",{className:"ml-1"}, overrunBadge),
+              sched.hasMissingDurations && h("span",{className:"ml-1 ticker text-[var(--ink-soft)] text-[10px]"},"(some lengths missing — actual time may differ)")
+            ),
+            h("div",{className:"mt-2 card-flat p-2"},
+              h("div",{className:"text-xs text-[var(--ink-soft)] mb-2"},
+                "Arrive by ", h("span",{className:"font-semibold text-[var(--ink)]"}, fmtHHMM(sched.arrivalPreferred)),
+                " for full ", GIG_SETUP_PREFERRED_HRS, "h setup, or ", h("span",{className:"font-semibold text-[var(--ink)]"}, fmtHHMM(sched.arrivalMinimum)),
+                " minimum (", GIG_SETUP_MIN_HRS, "h)."
+              ),
+              h("ul",{className:"text-sm space-y-0.5 font-mono"},
+                sched.schedule.map((row, i) => {
+                  if (row.type === "break") {
+                    return h("li",{key:"b-"+i,className:"text-[var(--ink-soft)] italic"},
+                      "  " + fmtHHMM(row.startMin) + "–" + fmtHHMM(row.endMin) + "  Break (" + row.durMin + "m)"
+                    );
+                  }
+                  return h("li",{key:"s-"+i},
+                    fmtHHMM(row.startMin), "–", fmtHHMM(row.endMin), "  ",
+                    h("span",{className:"font-semibold not-italic"}, row.name),
+                    h("span",{className:"text-[var(--ink-soft)] not-italic"},
+                      " (", row.durMin, "m · ", row.songCount, " song", row.songCount===1?"":"s",
+                      row.missingCount > 0 ? (" · " + row.missingCount + " missing length") : "",
+                      ")"
+                    )
+                  );
+                })
+              ),
+              h("div",{className:"mt-2 pt-2 border-t border-[var(--line)]/20 text-xs"},
+                h("div",null,
+                  h("span",{className:"ticker text-[var(--ink-soft)]"},"Music ends "),
+                  h("span",{className:"font-semibold"}, fmtHHMM(sched.musicEndMin)),
+                  h("span",{className:"text-[var(--ink-soft)]"}, " · gig ends ", fmtHHMM(sched.gigEndMin))
+                ),
+                overrun > 0 && h("div",{className:"text-[var(--berry)] mt-1"},"Cut ", overrun, "m of music or shorten breaks."),
+                sched.breakCount > 0 && h("div",{className:"text-[var(--ink-soft)] italic mt-1"},"Breaks default to ", sched.breakMin, "m each.")
+              )
+            )
+          );
+        })(),
         // Rehearsal summary (agenda / played / notes)
         isRehearsal && (agendaIds.length > 0 || playedIds.length > 0 || ev.rehearsalNotes) && h("details",{className:"mt-2 text-sm",open: !past && agendaIds.length > 0},
           h("summary",{className:"ticker text-[var(--berry)] hover:underline"},
@@ -1788,11 +2066,23 @@ const SongsView = ({songs, events, member, mutate}) => {
   const [staleOnly, setStaleOnly] = useState(false); // Iteration B.1: filter Repertoire to stale songs only
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkProgress, setBulkProgress] = useState(null); // {current, total, song}
-  const [bulkResult, setBulkResult] = useState(null); // {filled, skipped, failed, total}
+  const [bulkResult, setBulkResult] = useState(null); // {filled, skipped, failed, total, skippedIds}
   // When true, bulk fill operates on every song with title+artist (regardless of whether
   // it already has metadata) and overwrites existing fields. Default false: only blanks get filled.
   const [bulkRefetchAll, setBulkRefetchAll] = useState(false);
   const bulkCancelRef = useRef(false);
+  // Iteration: review wizard for songs missing metadata (or skipped from bulk fill).
+  // Goes through them one at a time, surfacing top Apple Music candidates so the user
+  // can pick the right one or skip without leaving the song list.
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewQueue, setReviewQueue] = useState([]); // array of song ids snapshot at start
+  const [reviewIndex, setReviewIndex] = useState(0);
+  const [reviewQuery, setReviewQuery] = useState("");
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewResults, setReviewResults] = useState([]);
+  const [reviewError, setReviewError] = useState("");
+  const [reviewApplied, setReviewApplied] = useState(0);
+  const [reviewSkipped, setReviewSkipped] = useState(0);
 
   const all = songsList(songs);
   const counts = {}; SONG_STATUSES.forEach(s => { counts[s.id] = all.filter(x => x.status === s.id).length; });
@@ -1864,6 +2154,7 @@ const SongsView = ({songs, events, member, mutate}) => {
       return;
     }
     let filled = 0, skipped = 0, failed = 0;
+    const skippedIds = [];
     for (let i = 0; i < candidates.length; i++) {
       if (bulkCancelRef.current) break;
       const song = candidates[i];
@@ -1871,7 +2162,7 @@ const SongsView = ({songs, events, member, mutate}) => {
       try {
         const results = await itunesSearch((song.artist||"") + " " + (song.title||""), 1);
         const top = results[0];
-        if (!top || !confidenceMatch(song, top)) { skipped++; continue; }
+        if (!top || !confidenceMatch(song, top)) { skipped++; skippedIds.push(song.id); continue; }
         const updates = {};
         // In missing-only mode, never overwrite existing values.
         // In re-fetch-all mode, overwrite when the API returns a value.
@@ -1885,15 +2176,88 @@ const SongsView = ({songs, events, member, mutate}) => {
         writeIf("year");
         writeIf("coverArtUrl");
         writeIf("iTunesUrl");
-        if (Object.keys(updates).length > 0) { updateSong(song.id, updates); filled++; } else { skipped++; }
+        if (Object.keys(updates).length > 0) { updateSong(song.id, updates); filled++; } else { skipped++; skippedIds.push(song.id); }
       } catch (e) { failed++; }
       await new Promise(r => setTimeout(r, 220));
     }
     setBulkProgress(null);
-    setBulkResult({filled, skipped, failed, total: candidates.length, cancelled: bulkCancelRef.current, mode: bulkRefetchAll ? "refetchAll" : "missingOnly"});
+    setBulkResult({filled, skipped, failed, total: candidates.length, cancelled: bulkCancelRef.current, mode: bulkRefetchAll ? "refetchAll" : "missingOnly", skippedIds: skippedIds});
   };
   const cancelBulk = () => { bulkCancelRef.current = true; };
   const closeBulk = () => { setBulkOpen(false); setBulkProgress(null); setBulkResult(null); };
+
+  // ---- Review wizard for songs missing metadata
+  const doReviewSearch = async (q) => {
+    setReviewQuery(q);
+    setReviewBusy(true); setReviewError(""); setReviewResults([]);
+    try {
+      const results = await itunesSearch(q, 5);
+      setReviewResults(results);
+      if (results.length === 0) setReviewError("No matches. Try editing the search above.");
+    } catch (e) {
+      setReviewError("Search failed: " + e.message);
+    } finally {
+      setReviewBusy(false);
+    }
+  };
+  const startReview = (songIds) => {
+    if (!songIds || songIds.length === 0) return;
+    // Snapshot current song data for the queue so even if mutate fires the queue stays stable.
+    setReviewQueue(songIds.slice());
+    setReviewIndex(0);
+    setReviewApplied(0);
+    setReviewSkipped(0);
+    setReviewOpen(true);
+    // Close bulk modal if it was open (so review takes over).
+    setBulkOpen(false);
+    const firstId = songIds[0];
+    const firstSong = songs && songs[firstId];
+    if (firstSong) {
+      doReviewSearch(((firstSong.artist || "") + " " + (firstSong.title || "")).trim());
+    }
+  };
+  const advanceReview = () => {
+    const next = reviewIndex + 1;
+    if (next >= reviewQueue.length) {
+      setReviewOpen(false);
+      return;
+    }
+    setReviewIndex(next);
+    const sid = reviewQueue[next];
+    const s = songs && songs[sid];
+    if (s) {
+      doReviewSearch(((s.artist || "") + " " + (s.title || "")).trim());
+    } else {
+      setReviewQuery(""); setReviewResults([]); setReviewError("");
+    }
+  };
+  const reviewUseResult = (r) => {
+    const sid = reviewQueue[reviewIndex];
+    const s = songs && songs[sid];
+    if (!s || !r) { advanceReview(); return; }
+    const updates = {};
+    // In review mode the user is explicitly picking, so overwrite blanks AND existing wrong values.
+    // (User can hit the Edit button on the song afterwards if they want to undo.)
+    if (r.lengthSec) updates.lengthSec = r.lengthSec;
+    if (r.album) updates.album = r.album;
+    if (r.year) updates.year = r.year;
+    if (r.coverArtUrl) updates.coverArtUrl = r.coverArtUrl;
+    if (r.iTunesUrl) updates.iTunesUrl = r.iTunesUrl;
+    if (Object.keys(updates).length > 0) {
+      updateSong(sid, updates);
+      setReviewApplied(n => n + 1);
+    }
+    advanceReview();
+  };
+  const reviewSkip = () => {
+    setReviewSkipped(n => n + 1);
+    advanceReview();
+  };
+  const reviewClose = () => { setReviewOpen(false); };
+  // Songs that currently have title+artist but are missing core metadata — candidates for review.
+  const missingMetadataIds = useMemo(() => {
+    return all.filter(s => s.title && s.artist && (!s.lengthSec || !s.coverArtUrl || !s.album || !s.iTunesUrl)).map(s => s.id);
+  }, [all]);
 
   const allInSuggested = all.filter(c => c.status==="suggested" && MEMBERS.every(m => c.votes && c.votes[m.id]==="yes")).length;
   const newSuggested = all.filter(c => c.status==="suggested" && isNew(c.createdAt)).length;
@@ -1959,12 +2323,73 @@ const SongsView = ({songs, events, member, mutate}) => {
             bulkResult.failed > 0 && h("div",null, h("span",{className:"text-[var(--berry)] font-semibold"},"✗ Failed: "), bulkResult.failed, " ", h("span",{className:"text-xs text-[var(--ink-soft)] italic"},"(network/API error)"))
           ),
           h("p",{className:"text-xs text-[var(--ink-soft)] italic mt-3"},"Skipped songs need manual lookup — open each and tap the Apple Music search button."),
-          h("div",{className:"mt-4 flex gap-2"},
-            h("button",{onClick:closeBulk,className:"btn berry-bg px-4 py-2 text-sm font-semibold"},"Close")
+          h("div",{className:"mt-4 flex gap-2 flex-wrap"},
+            bulkResult.skipped > 0 && bulkResult.skippedIds && bulkResult.skippedIds.length > 0 && h("button",{
+              onClick:()=>startReview(bulkResult.skippedIds),
+              className:"btn berry-bg px-4 py-2 text-sm font-semibold"
+            },"Review skipped (" + bulkResult.skipped + ")"),
+            h("button",{onClick:closeBulk,className:"btn bg-white px-4 py-2 text-sm"},"Close")
           )
         )
       )
     ),
+    // Review wizard modal
+    reviewOpen && reviewQueue[reviewIndex] && (() => {
+      const sid = reviewQueue[reviewIndex];
+      const s = (songs && songs[sid]) || {};
+      return h("div",{className:"modal-bg",onClick:reviewClose},
+        h("div",{className:"card p-5 max-w-md w-full max-h-[90vh] overflow-y-auto",onClick:e=>e.stopPropagation()},
+          h("h3",{className:"display text-2xl mb-1"},"Review missing metadata"),
+          h("p",{className:"text-xs text-[var(--ink-soft)] mb-3"},
+            "Song ", (reviewIndex+1), " of ", reviewQueue.length, " · ",
+            h("span",{className:"text-[var(--good)]"}, reviewApplied + " fixed"), " · ",
+            h("span",null, reviewSkipped + " skipped")
+          ),
+          // Current song
+          h("div",{className:"card-flat p-3 mb-3"},
+            h("div",{className:"font-semibold"}, s.title || "(untitled)"),
+            h("div",{className:"text-xs text-[var(--ink-soft)] italic"}, s.artist || "(no artist)"),
+            h("div",{className:"text-xs text-[var(--ink-soft)] mt-1"},
+              "Currently missing: ",
+              [
+                !s.lengthSec && "length",
+                !s.album && "album",
+                !s.coverArtUrl && "cover art",
+                !s.iTunesUrl && "Apple Music link"
+              ].filter(Boolean).join(", ") || "nothing"
+            )
+          ),
+          // Editable search
+          h("div",{className:"flex gap-2 mb-3"},
+            h("input",{className:"input flex-1 text-sm",value:reviewQuery,onChange:e=>setReviewQuery(e.target.value),placeholder:"Title and artist…",
+              onKeyDown:e=>{if(e.key==="Enter"){e.preventDefault(); doReviewSearch(reviewQuery);}}}),
+            h("button",{onClick:()=>doReviewSearch(reviewQuery),disabled:reviewBusy,className:"btn berry-bg px-3 py-1.5 text-sm font-semibold"}, reviewBusy?"…":"Search")
+          ),
+          // Results / status
+          reviewBusy && h("p",{className:"text-sm italic text-[var(--ink-soft)]"},"Searching Apple Music…"),
+          reviewError && !reviewBusy && h("p",{className:"text-sm italic text-[var(--ink-soft)]"}, reviewError),
+          !reviewBusy && reviewResults.length > 0 && h("div",{className:"space-y-1.5 mb-3"},
+            reviewResults.map((r, i) => h("button",{
+              key:i, onClick:()=>reviewUseResult(r),
+              className:"card-flat p-2 w-full text-left hover:bg-[var(--acid)]/30 flex items-center gap-3"
+            },
+              r.coverArtUrl && h("img",{src:r.coverArtUrl,alt:"",className:"shrink-0 rounded border border-[var(--line)]/30",style:{width:48,height:48,objectFit:"cover"},onError:e=>{e.target.style.display="none";}}),
+              h("div",{className:"flex-1 min-w-0"},
+                h("div",{className:"font-semibold truncate text-sm"}, r.title || "(no title)"),
+                h("div",{className:"text-xs text-[var(--ink-soft)] italic truncate"}, r.artist || ""),
+                h("div",{className:"text-xs text-[var(--ink-soft)] truncate"}, [r.album, r.year, formatDuration(r.lengthSec)].filter(Boolean).join(" · "))
+              ),
+              h("span",{className:"ticker text-[var(--berry)] shrink-0"},"Use ▸")
+            ))
+          ),
+          // Footer
+          h("div",{className:"mt-3 pt-3 border-t border-[var(--line)]/15 flex gap-2 items-center flex-wrap"},
+            h("button",{onClick:reviewClose,className:"btn bg-white px-3 py-1.5 text-xs"},"Stop"),
+            h("button",{onClick:reviewSkip,className:"btn bg-white px-3 py-1.5 text-xs ml-auto"},"Skip →")
+          )
+        )
+      );
+    })(),
 
     // Status pills
     h("div",{className:"flex gap-2 overflow-x-auto pb-1 mb-3"},
@@ -2014,7 +2439,14 @@ const SongsView = ({songs, events, member, mutate}) => {
             ? (bulkCandidatesMissing.length + " song" + (bulkCandidatesMissing.length===1?"":"s") + " missing details")
             : "All songs have details — re-fetch available"
         ),
-        h("button",{onClick:openBulkFill,className:"btn bg-white px-2.5 py-1 text-xs font-semibold ml-auto"},"🔍 Auto-fill from Apple Music")
+        h("div",{className:"flex gap-1.5 ml-auto flex-wrap"},
+          missingMetadataIds.length > 0 && h("button",{
+            onClick:()=>startReview(missingMetadataIds),
+            className:"btn bg-white px-2.5 py-1 text-xs font-semibold",
+            title:"Step through each missing song one at a time"
+          },"✏️ Review " + missingMetadataIds.length),
+          h("button",{onClick:openBulkFill,className:"btn bg-white px-2.5 py-1 text-xs font-semibold"},"🔍 Auto-fill from Apple Music")
+        )
       )
     ),
     adding && h(SongForm,{onSave: createSong, onCancel: () => setAdding(false)}),
@@ -2106,6 +2538,22 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, onBack, onUpdate
   const gigOptions = eventsList(events).filter(e => e.type === "gig");
   const totals = setlistTotals(setlist, songs);
   const totalSongs = setlistSongCount(setlist);
+  // Iteration: per-set durations for breakdown.
+  const setDurations = sets.map(set => {
+    const ids = set.songIds || [];
+    return ids.reduce((acc, sid) => {
+      const s = songs && songs[sid];
+      if (s && s.lengthSec) { acc.total += s.lengthSec; } else { acc.missing += 1; }
+      return acc;
+    }, {total: 0, missing: 0});
+  });
+  const setBreakdownLabel = (sets.length > 1)
+    ? sets.map((s, i) => {
+        const sd = setDurations[i];
+        const lbl = sd.total > 0 ? formatDuration(sd.total) + (sd.missing > 0 ? "+" : "") : "—";
+        return (s.name || ("Set " + (i+1))) + ": " + lbl;
+      }).join("  ·  ")
+    : null;
   const totalsLabel = (() => {
     const setLabel = sets.length + " set" + (sets.length===1?"":"s");
     if (totalSongs === 0) return "Empty · " + setLabel;
@@ -2273,6 +2721,7 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, onBack, onUpdate
             h("h2",{className:"display text-xl sm:text-2xl md:text-3xl leading-tight break-words flex-1 min-w-0"}, setlist.name),
             h("button",{onClick:()=>setEditingName(true),className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)] shrink-0 mt-1"},"Rename ▸")),
       h("div",{className:"mt-1.5 text-sm text-[var(--ink-soft)]"}, totalsLabel),
+      setBreakdownLabel && h("div",{className:"mt-1 text-xs text-[var(--ink-soft)] font-mono"}, setBreakdownLabel),
       h("div",{className:"mt-3 flex items-center gap-2 flex-wrap"},
         h("span",{className:"ticker text-[var(--ink-soft)]"},"Pin to gig"),
         h("select",{className:"input text-sm flex-1 min-w-0",value: setlist.gigEventId || "",onChange:e=>onUpdate({gigEventId: e.target.value || null})},
