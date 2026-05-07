@@ -83,7 +83,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.6.0";
+const APP_VERSION = "0.7.0";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 const SONG_STATUSES = [
   {id:"suggested",label:"Suggested",desc:"In the voting pool"},
@@ -1478,6 +1478,12 @@ const SettingsModal = ({memberProfiles, onClose, mutate, binId, state, onRestore
     setCropping(null);
   };
   const onCropCancelled = () => setCropping(null);
+  // Open the cropper on an already-saved photo so the user can re-position without re-uploading.
+  const onEditExisting = (memberId, existingDataUrl) => {
+    if (!existingDataUrl) return;
+    setError("");
+    setCropping({memberId, srcDataUrl: existingDataUrl});
+  };
   const onRemove = (memberId) => {
     mutate(prev => {
       const profiles = Object.assign({}, prev.memberProfiles || {});
@@ -1510,6 +1516,7 @@ const SettingsModal = ({memberProfiles, onClose, mutate, binId, state, onRestore
                 isBusy ? "Uploading…" : (photo ? "Change" : "Upload"),
                 h("input",{type:"file",accept:"image/*",className:"hidden",disabled:isBusy,onChange:e=>{ const f = e.target.files && e.target.files[0]; if (f) onUpload(m.id, f); e.target.value = ""; }})
               ),
+              photo && h("button",{onClick:()=>onEditExisting(m.id, photo),className:"btn bg-white px-3 py-1.5 text-xs font-semibold",title:"Reposition the existing photo"},"Edit"),
               photo && h("button",{onClick:()=>onRemove(m.id),className:"btn bg-white px-2 py-1.5 text-xs text-[var(--berry)]",title:"Remove photo"},"×")
             )
           );
@@ -1690,7 +1697,7 @@ const EventForm = ({initial, onSave, onCancel, onDelete, locationSuggestions, so
   );
 };
 
-const EventCard = ({ev, member, songs, events, pinnedSetlist, onEdit, onSetAvailability, onDelete, settings}) => {
+const EventCard = ({ev, member, songs, events, pinnedSetlist, onEdit, onSetAvailability, onDelete, onStartRehearsal, settings}) => {
   const owner = MEMBERS.find(m => m.id === ev.bookingOwner);
   const yesCount = MEMBERS.filter(m => ev.availability && ev.availability[m.id] === "yes").length;
   const isRehearsal = ev.type === "rehearsal";
@@ -1841,7 +1848,8 @@ const EventCard = ({ev, member, songs, events, pinnedSetlist, onEdit, onSetAvail
           ),
           h("div",{className:"mt-3 flex flex-wrap items-center gap-2"},
             h(AvailabilityButtons,{ev:ev, member:member, onSet:onSetAvailability}),
-            h("button",{onClick:onEdit,className:"ticker ml-auto text-[var(--ink-soft)] hover:text-[var(--berry)]"},"Edit ▸")
+            isRehearsal && onStartRehearsal && h("button",{onClick:()=>onStartRehearsal(ev.id),className:"btn berry-bg px-3 py-1.5 text-xs font-semibold ml-auto",title:"Open the focused rehearsal runner"},"▶ Start rehearsal"),
+            h("button",{onClick:onEdit,className:"ticker " + (isRehearsal && onStartRehearsal ? "" : "ml-auto") + " text-[var(--ink-soft)] hover:text-[var(--berry)]"},"Edit ▸")
           )
         ),
         past && h("div",{className:"mt-3 flex items-center gap-2"},
@@ -1853,7 +1861,7 @@ const EventCard = ({ev, member, songs, events, pinnedSetlist, onEdit, onSetAvail
   );
 };
 
-const TypedScheduleView = ({events, songs, setlists, member, mutate, eventType, settings}) => {
+const TypedScheduleView = ({events, songs, setlists, member, mutate, eventType, onStartRehearsal, settings}) => {
   const [editingId, setEditingId] = useState(null);
   const [adding, setAdding] = useState(false);
   const [showPast, setShowPast] = useState(false);
@@ -1916,7 +1924,7 @@ const TypedScheduleView = ({events, songs, setlists, member, mutate, eventType, 
     h("div",{className:"space-y-3"},
       list.map(ev => editingId===ev.id
         ? h(EventForm,{key:ev.id, initial:ev, onSave: f => updateEvent(ev.id, f), onCancel:()=>setEditingId(null), onDelete:()=>deleteEvent(ev.id), locationSuggestions:locationSuggestions, songs:songs})
-        : h(EventCard,{key:ev.id, ev:ev, member:member, songs:songs, events:events, pinnedSetlist: setlistByGig[ev.id], settings: settings, onEdit:()=>{setEditingId(ev.id); setAdding(false);}, onSetAvailability:setAvailability, onDelete:()=>{ if(confirm("Delete this past event?")) deleteEvent(ev.id); }})
+        : h(EventCard,{key:ev.id, ev:ev, member:member, songs:songs, events:events, pinnedSetlist: setlistByGig[ev.id], settings: settings, onEdit:()=>{setEditingId(ev.id); setAdding(false);}, onSetAvailability:setAvailability, onStartRehearsal: onStartRehearsal, onDelete:()=>{ if(confirm("Delete this past event?")) deleteEvent(ev.id); }})
       )
     )
   );
@@ -3588,6 +3596,221 @@ const EquipmentView = ({equipment, wishlist, member, mutate}) => {
   );
 };
 
+// === ITERATION C.1: REHEARSAL RUN MODE ===
+// Full-page focused UI for running a rehearsal: step through agenda one song at a time,
+// mark Played / Skip, log unplanned songs, set practice statuses, take notes.
+// All state lives on the event itself (playedSongIds, rehearsalNotes) — closing and
+// reopening just resumes from wherever you were.
+const RehearsalRunMode = ({event, songs, member, mutate, onClose}) => {
+  const eid = event.id;
+  const agendaIds = Array.isArray(event.agendaSongIds) ? event.agendaSongIds : [];
+  const playedIds = Array.isArray(event.playedSongIds) ? event.playedSongIds : [];
+  const extraPlayed = playedIds.filter(id => !agendaIds.includes(id));
+  // currentIdx: pointer into agendaIds for "the song we're working on now".
+  // Initial: first un-played agenda item, or 0 if everything's done.
+  const initialIdx = (() => {
+    const i = agendaIds.findIndex(id => !playedIds.includes(id));
+    return i >= 0 ? i : agendaIds.length;
+  })();
+  const [currentIdx, setCurrentIdx] = useState(initialIdx);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  // Notes are debounced so typing doesn't fire mutate every keystroke.
+  const [notesDraft, setNotesDraft] = useState(event.rehearsalNotes || "");
+  const notesTimerRef = useRef(null);
+  const updateEvent = useCallback((fn) => {
+    mutate(prev => {
+      const events = Object.assign({}, prev.events||{});
+      const ev = Object.assign({}, events[eid]||{});
+      const patch = fn(ev);
+      if (!patch) return prev;
+      events[eid] = Object.assign({}, ev, patch);
+      return Object.assign({}, prev, {events});
+    });
+  }, [mutate, eid]);
+  useEffect(() => {
+    if (notesTimerRef.current) clearTimeout(notesTimerRef.current);
+    notesTimerRef.current = setTimeout(() => {
+      updateEvent(ev => (ev.rehearsalNotes !== notesDraft) ? {rehearsalNotes: notesDraft} : null);
+    }, 700);
+    return () => { if (notesTimerRef.current) clearTimeout(notesTimerRef.current); };
+  }, [notesDraft, updateEvent]);
+  const markPlayed = (sid) => {
+    updateEvent(ev => {
+      const cur = Array.isArray(ev.playedSongIds) ? ev.playedSongIds : [];
+      if (cur.includes(sid)) return null;
+      return {playedSongIds: cur.concat([sid])};
+    });
+  };
+  const unmarkPlayed = (sid) => {
+    updateEvent(ev => {
+      const cur = Array.isArray(ev.playedSongIds) ? ev.playedSongIds : [];
+      return {playedSongIds: cur.filter(x => x !== sid)};
+    });
+  };
+  const advance = () => setCurrentIdx(i => Math.min(i + 1, agendaIds.length));
+  const goBack = () => setCurrentIdx(i => Math.max(0, i - 1));
+  const onPlayed = () => {
+    const sid = agendaIds[currentIdx];
+    if (sid) markPlayed(sid);
+    advance();
+  };
+  const onAddUnplanned = (sid) => {
+    markPlayed(sid);
+    setPickerOpen(false);
+  };
+  const setMyPractice = (sid, val) => {
+    if (!member) return;
+    mutate(prev => {
+      const sg = Object.assign({}, prev.songs||{});
+      const s = Object.assign({}, sg[sid]||{});
+      const p = Object.assign({}, s.practice||{});
+      if (!val) delete p[member.id]; else p[member.id] = val;
+      s.practice = p; sg[sid] = s;
+      return Object.assign({}, prev, {songs: sg});
+    });
+  };
+  // Derived UI values
+  const totalToCover = agendaIds.length + extraPlayed.length;
+  const totalDone = agendaIds.filter(id => playedIds.includes(id)).length + extraPlayed.length;
+  const currentSongId = agendaIds[currentIdx];
+  const currentSong = currentSongId ? (songs && songs[currentSongId]) : null;
+  const isAtEnd = currentIdx >= agendaIds.length;
+  return h("div",{className:"max-w-3xl mx-auto px-3 sm:px-4 py-3 sm:py-4"},
+    // Header
+    h("header",{className:"flex items-center justify-between gap-3 mb-3"},
+      h("button",{onClick:onClose,className:"btn bg-white px-3 py-1.5 text-sm font-semibold","aria-label":"End rehearsal mode"},"× End rehearsal"),
+      h("div",{className:"text-right min-w-0"},
+        h("div",{className:"ticker text-[var(--berry)]"},"Rehearsal mode"),
+        h("div",{className:"text-xs text-[var(--ink-soft)] truncate"}, fmtDate(event.date) + (event.startTime ? (" · " + event.startTime) : ""))
+      )
+    ),
+    // Progress
+    h("div",{className:"card p-3 mb-3"},
+      h("div",{className:"flex items-baseline justify-between gap-2 flex-wrap"},
+        h("div",{className:"text-sm font-semibold"},
+          agendaIds.length === 0
+            ? "No agenda — log songs as you play"
+            : isAtEnd ? "Agenda done!" : ("Song " + (currentIdx+1) + " of " + agendaIds.length)
+        ),
+        h("div",{className:"text-xs text-[var(--ink-soft)]"},
+          totalDone, " played",
+          agendaIds.length > 0 && (" · " + Math.max(0, agendaIds.length - agendaIds.filter(id => playedIds.includes(id)).length) + " agenda left"),
+          extraPlayed.length > 0 && (" · " + extraPlayed.length + " unplanned")
+        )
+      ),
+      totalToCover > 0 && h("div",{className:"mt-2 h-2 bg-[var(--line)]/10 rounded overflow-hidden"},
+        h("div",{className:"h-full berry-bg",style:{width: Math.round((totalDone/totalToCover)*100) + "%"}})
+      )
+    ),
+    // Current song card OR completion message OR no-agenda CTA
+    agendaIds.length === 0
+      ? h("div",{className:"card p-4 mb-3 text-center"},
+          h("div",{className:"display text-xl"},"This rehearsal has no agenda"),
+          h("p",{className:"text-sm text-[var(--ink-soft)] mt-1"},"Use \"Add unplanned song\" below to log what you're playing as you go.")
+        )
+      : isAtEnd
+        ? h("div",{className:"card p-4 mb-3 text-center"},
+            h("div",{className:"display text-2xl"},"Done with the agenda 🎉"),
+            h("p",{className:"text-sm text-[var(--ink-soft)] mt-1"},"Add an unplanned song below or end the rehearsal.")
+          )
+        : currentSong
+          ? h("div",{className:"card p-3 sm:p-4 mb-3"},
+              h("div",{className:"flex items-start gap-3"},
+                currentSong.coverArtUrl && h("img",{src:currentSong.coverArtUrl,alt:"",className:"shrink-0 rounded border border-[var(--line)]/30",style:{width:64,height:64,objectFit:"cover"},onError:e=>{e.target.style.display="none";}}),
+                h("div",{className:"flex-1 min-w-0"},
+                  h("div",{className:"display text-2xl leading-tight"}, currentSong.title || "(untitled)"),
+                  currentSong.artist && h("div",{className:"text-sm text-[var(--ink-soft)] italic"}, currentSong.artist),
+                  h("div",{className:"text-xs text-[var(--ink-soft)] mt-1"},
+                    [currentSong.album, currentSong.year, formatDuration(currentSong.lengthSec)].filter(Boolean).join(" · ") || "no metadata yet"
+                  ),
+                  h("div",{className:"mt-2 flex flex-wrap items-center gap-2"},
+                    h("a",{href:appleMusicLinkFor(currentSong),target:"_blank",rel:"noopener",className:"ticker text-[var(--berry)] underline"}, currentSong.iTunesUrl ? "Apple Music ↗" : "Apple Music 🔍"),
+                    h("a",{href:spotifyLinkFor(currentSong),target:"_blank",rel:"noopener",className:"ticker text-[var(--berry)] underline"}, currentSong.spotifyUrl ? "Spotify ↗" : "Spotify 🔍"),
+                    currentSong.lessonUrl && h("a",{href:currentSong.lessonUrl,target:"_blank",rel:"noopener",className:"ticker text-[var(--berry)] underline"},"Lesson ↗")
+                  )
+                )
+              ),
+              // Practice chips for the current song
+              h("div",{className:"mt-3 pt-3 border-t border-[var(--line)]/15"},
+                h("div",{className:"flex items-center gap-3 flex-wrap"},
+                  h("span",{className:"ticker text-[var(--ink-soft)]"},"Practice"),
+                  h("div",{className:"flex items-center gap-1.5"},
+                    MEMBERS.map(m => h(PracticeChip,{key:m.id, initial:m.name[0], state:currentSong.practice && currentSong.practice[m.id], isMe: member && member.id===m.id, onClick:()=>setMyPractice(currentSongId, cyclePractice(currentSong.practice && currentSong.practice[m.id]))}))
+                  ),
+                  member ? h("span",{className:"text-xs text-[var(--ink-soft)] italic"},"Tap your circle to log how it went")
+                         : h("span",{className:"text-xs text-[var(--ink-soft)] italic"},"Pick who you are at top to log practice")
+                )
+              ),
+              // Action row
+              h("div",{className:"mt-3 grid grid-cols-3 gap-2"},
+                h("button",{onClick:goBack,disabled:currentIdx===0,className:"btn bg-white px-3 py-2.5 text-sm font-semibold disabled:opacity-30"},"← Back"),
+                h("button",{onClick:onPlayed,className:"btn berry-bg px-3 py-2.5 text-sm font-semibold"},"✓ Played"),
+                h("button",{onClick:advance,className:"btn bg-white px-3 py-2.5 text-sm font-semibold"},"Skip →")
+              )
+            )
+          : h("div",{className:"card p-4 mb-3"},
+              h("p",{className:"text-sm italic text-[var(--ink-soft)]"},"(This song was deleted from the song list.)"),
+              h("div",{className:"mt-3 grid grid-cols-3 gap-2"},
+                h("button",{onClick:goBack,disabled:currentIdx===0,className:"btn bg-white px-3 py-2.5 text-sm font-semibold disabled:opacity-30"},"← Back"),
+                h("button",{onClick:advance,className:"btn berry-bg px-3 py-2.5 text-sm font-semibold col-span-2"},"Skip ahead →")
+              )
+            ),
+    // Add unplanned song
+    pickerOpen
+      ? h(SongPicker, {songs:songs, excludeIds:playedIds, onPick:onAddUnplanned, onClose:()=>setPickerOpen(false)})
+      : h("button",{onClick:()=>setPickerOpen(true),className:"btn bg-white px-3 py-2 text-sm font-semibold w-full mb-3"},"+ Add unplanned song"),
+    // Up next preview (collapsed)
+    !isAtEnd && agendaIds.length > 1 && currentIdx + 1 < agendaIds.length && h("details",{className:"card p-3 mb-3"},
+      h("summary",{className:"ticker text-[var(--berry)] cursor-pointer"},"Up next ▾"),
+      h("ol",{className:"mt-2 space-y-1 text-sm",style:{listStyle:"none",paddingLeft:0}},
+        agendaIds.slice(currentIdx+1).map((sid, i) => {
+          const s = songs && songs[sid];
+          const done = playedIds.includes(sid);
+          return h("li",{key:"up-"+sid+"-"+i, className:"flex items-center gap-2"},
+            h("span",{className:"text-[var(--ink-soft)] w-7 text-right shrink-0"}, (currentIdx + i + 2) + "."),
+            h("span",{className: done ? "line-through text-[var(--ink-soft)] flex-1 truncate" : "flex-1 truncate"}, s ? (s.title || "(untitled)") : "(deleted)"),
+            done && h("span",{className:"ticker text-[var(--good)]"},"✓")
+          );
+        })
+      )
+    ),
+    // Played so far (collapsed)
+    playedIds.length > 0 && h("details",{className:"card p-3 mb-3"},
+      h("summary",{className:"ticker text-[var(--berry)] cursor-pointer"},"Played so far (", playedIds.length, ") ▾"),
+      h("ul",{className:"mt-2 space-y-1 text-sm",style:{listStyle:"none",paddingLeft:0}},
+        playedIds.map(sid => {
+          const s = songs && songs[sid];
+          const isExtra = !agendaIds.includes(sid);
+          return h("li",{key:"p-"+sid,className:"flex items-center gap-2"},
+            h("span",{className:"text-[var(--good)]"},"✓"),
+            h("span",{className:"flex-1 min-w-0 truncate"},
+              s ? (s.title || "(untitled)") : "(deleted)",
+              isExtra && h("span",{className:"ml-1 ticker text-[var(--ink-soft)] text-[10px]"},"unplanned")
+            ),
+            h("button",{onClick:()=>unmarkPlayed(sid),className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)] shrink-0"},"undo")
+          );
+        })
+      )
+    ),
+    // Notes
+    h("div",{className:"card p-3 mb-3"},
+      h("div",{className:"ticker text-[var(--berry)] mb-1"},"Rehearsal notes"),
+      h("textarea",{
+        className:"input",
+        rows:"3",
+        value:notesDraft,
+        onChange:e=>setNotesDraft(e.target.value),
+        placeholder:"What went well, what to fix, ideas to try next time…"
+      }),
+      h("p",{className:"text-xs text-[var(--ink-soft)] italic mt-1"},"Saves automatically.")
+    ),
+    h("div",{className:"mt-4"},
+      h("button",{onClick:onClose,className:"btn berry-bg px-5 py-2.5 text-sm font-semibold w-full"},"End rehearsal")
+    )
+  );
+};
+// === END REHEARSAL RUN MODE ===
+
 const App = () => {
   const urlBin = getBinIdFromURL();
   const storedBin = getStoredBinId();
@@ -3597,6 +3820,8 @@ const App = () => {
   const [tab, setTab] = useState("gigs");
   const [showSyncPanel, setShowSyncPanel] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  // Iteration C.1: when set, App takes over with the focused Run Rehearsal page.
+  const [runRehearsalId, setRunRehearsalId] = useState(null);
   useEffect(() => { if (urlBin && urlBin !== storedBin) setStoredBinId(urlBin); }, [urlBin, storedBin]);
   const sync = useSyncedState(binId, member && member.id);
 
@@ -3629,6 +3854,16 @@ const App = () => {
   const memberProfiles = sync.state.memberProfiles || {};
   const settings = sync.state.settings || {};
 
+  // Iteration C.1: full-page takeover for the rehearsal runner.
+  if (runRehearsalId && events[runRehearsalId] && events[runRehearsalId].type === "rehearsal") {
+    const ev = Object.assign({id: runRehearsalId}, events[runRehearsalId]);
+    return h(RehearsalRunMode, {event: ev, songs: songs, member: member, mutate: sync.mutate, onClose: () => setRunRehearsalId(null)});
+  }
+  // If the id pointed to something that's gone or isn't a rehearsal, clear it silently.
+  if (runRehearsalId && (!events[runRehearsalId] || events[runRehearsalId].type !== "rehearsal")) {
+    setRunRehearsalId(null);
+  }
+
   return h("div",{className:"max-w-5xl xl:max-w-6xl mx-auto px-3 sm:px-6 py-4 sm:py-6"},
     sync.conflict && h(ConflictBanner,{conflict:sync.conflict,onResolve:sync.resolveConflict}),
     showSyncPanel && h(SyncPanel,{sync:sync,onClose:()=>setShowSyncPanel(false)}),
@@ -3658,7 +3893,7 @@ const App = () => {
       )
     ),
     tab==="gigs" && h(TypedScheduleView,{events:events,songs:songs,setlists:setlists,member:member,mutate:sync.mutate,eventType:"gig",settings:settings}),
-    tab==="rehearsals" && h(TypedScheduleView,{events:events,songs:songs,setlists:setlists,member:member,mutate:sync.mutate,eventType:"rehearsal",settings:settings}),
+    tab==="rehearsals" && h(TypedScheduleView,{events:events,songs:songs,setlists:setlists,member:member,mutate:sync.mutate,eventType:"rehearsal",settings:settings,onStartRehearsal: (id) => setRunRehearsalId(id)}),
     tab==="practice" && h(PracticeView,{practiceAvail:practiceAvail,events:events,member:member,mutate:sync.mutate,onGoToSchedule:()=>setTab("rehearsals")}),
     tab==="songs" && h(SongsView,{songs:songs,events:events,member:member,mutate:sync.mutate,settings:settings}),
     tab==="setlists" && h(SetlistsView,{setlists:setlists,songs:songs,events:events,member:member,mutate:sync.mutate,settings:settings}),
