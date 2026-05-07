@@ -83,8 +83,18 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.8.1";
+const APP_VERSION = "0.9.0";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
+// Instruments for member profiles (multi-select). Order is the display order.
+const INSTRUMENTS = [
+  {id:"vocals", label:"Vocals"},
+  {id:"guitar", label:"Guitar"},
+  {id:"bass", label:"Bass"},
+  {id:"drums", label:"Drums"},
+  {id:"keys", label:"Keys"},
+  {id:"percussion", label:"Percussion"},
+  {id:"other", label:"Other"}
+];
 const SONG_STATUSES = [
   {id:"suggested",label:"Suggested",desc:"In the voting pool"},
   {id:"shortlist",label:"Shortlist",desc:"Agreed, not yet started"},
@@ -1451,6 +1461,48 @@ const BandSettingsSection = ({settings, mutate}) => {
 };
 // === END BandSettingsSection ===
 
+// === MEMBER INSTRUMENTS SECTION ===
+// Each band member can pick which instrument(s) they play. Multi-select. Stored on
+// memberProfiles[memberId].instruments as an array of instrument ids.
+const MemberInstrumentsSection = ({memberProfiles, mutate}) => {
+  const toggleInstrument = (memberId, instId) => {
+    mutate(prev => {
+      const profiles = Object.assign({}, prev.memberProfiles || {});
+      const cur = Object.assign({}, profiles[memberId] || {});
+      const list = Array.isArray(cur.instruments) ? cur.instruments.slice() : [];
+      const idx = list.indexOf(instId);
+      if (idx >= 0) list.splice(idx, 1); else list.push(instId);
+      cur.instruments = list;
+      profiles[memberId] = cur;
+      return Object.assign({}, prev, {memberProfiles: profiles});
+    });
+  };
+  return h("div",{className:"mt-5 pt-4 border-t border-[var(--line)]/15"},
+    h("div",{className:"ticker text-[var(--berry)] mb-2"},"Instruments"),
+    h("p",{className:"text-xs text-[var(--ink-soft)] mb-3"},"Tap to toggle. Pick all that apply — most of us play more than one."),
+    h("div",{className:"space-y-3"},
+      MEMBERS.map(m => {
+        const cur = (memberProfiles && memberProfiles[m.id] && Array.isArray(memberProfiles[m.id].instruments)) ? memberProfiles[m.id].instruments : [];
+        return h("div",{key:m.id},
+          h("div",{className:"text-sm font-semibold mb-1"}, m.name),
+          h("div",{className:"flex flex-wrap gap-1.5"},
+            INSTRUMENTS.map(inst => {
+              const on = cur.includes(inst.id);
+              return h("button",{
+                key:inst.id,
+                onClick:()=>toggleInstrument(m.id, inst.id),
+                className:"pill px-2.5 py-1 text-xs font-semibold " + (on ? "berry-bg text-white" : "bg-white"),
+                title: on ? ("Tap to remove " + inst.label) : ("Tap to add " + inst.label)
+              }, (on ? "✓ " : "") + inst.label);
+            })
+          )
+        );
+      })
+    )
+  );
+};
+// === END MEMBER INSTRUMENTS SECTION ===
+
 const SettingsModal = ({memberProfiles, onClose, mutate, binId, state, onRestore, settings}) => {
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState("");
@@ -1523,26 +1575,38 @@ const SettingsModal = ({memberProfiles, onClose, mutate, binId, state, onRestore
         })
       ),
       error && h("div",{className:"mt-3 text-sm text-[var(--berry)]"}, error),
+      h(MemberInstrumentsSection, {memberProfiles: memberProfiles, mutate: mutate}),
       h(BandSettingsSection, {settings: settings, mutate: mutate}),
       binId && h(BackupsSection, {binId: binId, state: state, onRestore: onRestore})
     )
   );
 };
 
-const MemberPicker = ({value, onChange, profiles}) => h("div",{className:"flex items-center gap-1.5 sm:gap-2 shrink-0"},
+const MemberPicker = ({value, onChange, profiles, onSelfClick}) => h("div",{className:"flex items-center gap-1.5 sm:gap-2 shrink-0"},
   h("span",{className:"ticker text-[var(--ink-soft)] hidden sm:inline"},"I am"),
   h("div",{className:"flex gap-1 sm:gap-1.5 flex-wrap"},
     MEMBERS.map(m => {
       const active = value && value.id === m.id;
       const photo = (profiles && profiles[m.id] && profiles[m.id].photoUrl) || "";
-      return h("button",{key:m.id,onClick:()=>onChange(m.id),className:"pill flex items-center gap-1.5 px-2 sm:px-3 py-1 text-xs sm:text-sm font-semibold transition-all " + (active?"berry-bg":"bg-white hover:bg-[var(--acid)]")},
+      // Tapping the active tile (your own name) opens Settings instead of being a no-op.
+      const handleClick = () => {
+        if (active && onSelfClick) onSelfClick();
+        else onChange(m.id);
+      };
+      return h("button",{
+        key:m.id,
+        onClick: handleClick,
+        title: active && onSelfClick ? "Open settings" : ("I am " + m.name),
+        className:"pill flex items-center gap-1.5 px-2 sm:px-3 py-1 text-xs sm:text-sm font-semibold transition-all " + (active?"berry-bg":"bg-white hover:bg-[var(--acid)]")
+      },
         photo && h("img",{src:photo,alt:"",className:"rounded-full border border-white/40 object-cover shrink-0",style:{width:20,height:20}}),
         photo
           ? h("span",null, m.name)
           : h(React.Fragment,null,
               h("span",{className:"sm:hidden"}, active?m.name:m.name[0]),
               h("span",{className:"hidden sm:inline"}, m.name)
-            )
+            ),
+        active && onSelfClick && h("span",{className:"opacity-60 ml-0.5","aria-hidden":"true"},"⚙")
       );
     })
   )
@@ -3661,6 +3725,352 @@ const EquipmentView = ({equipment, wishlist, member, mutate}) => {
   );
 };
 
+// === ITERATION: FEEDBACK BOARD ===
+// Lightweight kanban-style feedback for the band: comments, bug reports, feature requests.
+// Lives at state.feedback as an object keyed by id. Status (backlog / in_progress / done),
+// priority (high / medium / low), and a numeric `rank` per status (lower = top of column).
+// Anyone can add, edit own items, or change status/priority/rank — trust-based.
+const FEEDBACK_TYPES = [
+  {id:"comment", label:"Comment", icon:"💬"},
+  {id:"bug", label:"Bug", icon:"🐛"},
+  {id:"feature", label:"Feature", icon:"✨"}
+];
+const FEEDBACK_PRIORITIES = [
+  {id:"high", label:"High", colorBg:"#fee2e2", colorText:"#7f1d1d"},
+  {id:"medium", label:"Medium", colorBg:"#fef3c7", colorText:"#78350f"},
+  {id:"low", label:"Low", colorBg:"#e5e7eb", colorText:"#374151"}
+];
+const FEEDBACK_STATUSES = [
+  {id:"backlog", label:"Backlog", helper:"Logged, not picked up yet."},
+  {id:"in_progress", label:"In Progress", helper:"Someone's working on it."},
+  {id:"done", label:"Done", helper:"Shipped or resolved."}
+];
+const feedbackTypeMeta = (id) => FEEDBACK_TYPES.find(t => t.id === id) || FEEDBACK_TYPES[0];
+const feedbackPriorityMeta = (id) => FEEDBACK_PRIORITIES.find(p => p.id === id) || FEEDBACK_PRIORITIES[1];
+const feedbackStatusMeta = (id) => FEEDBACK_STATUSES.find(s => s.id === id) || FEEDBACK_STATUSES[0];
+const fmtFeedbackDate = (ts) => {
+  if (!ts) return "—";
+  const d = new Date(ts);
+  return d.toLocaleDateString(undefined, {day:"numeric", month:"short"}) + " " + d.toLocaleTimeString(undefined, {hour:"2-digit", minute:"2-digit"});
+};
+const newFeedbackId = () => "fb_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2,7);
+const FeedbackView = ({feedback, member, memberProfiles, mutate}) => {
+  const [adding, setAdding] = useState(false);
+  const [draftType, setDraftType] = useState("feature");
+  const [draftPriority, setDraftPriority] = useState("medium");
+  const [draftBody, setDraftBody] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editingBody, setEditingBody] = useState("");
+  const [filterType, setFilterType] = useState("all");
+  const [filterAuthor, setFilterAuthor] = useState("all");
+
+  const items = useMemo(() => {
+    const arr = Object.keys(feedback || {}).map(id => Object.assign({id}, feedback[id]));
+    return arr;
+  }, [feedback]);
+
+  // Group by status, then sort each by rank ascending (fallback createdAt asc).
+  const byStatus = useMemo(() => {
+    const groups = {backlog: [], in_progress: [], done: []};
+    items.forEach(it => {
+      const s = it.status || "backlog";
+      (groups[s] || groups.backlog).push(it);
+    });
+    Object.keys(groups).forEach(k => {
+      groups[k].sort((a, b) => {
+        const ar = (typeof a.rank === "number") ? a.rank : Number.MAX_SAFE_INTEGER;
+        const br = (typeof b.rank === "number") ? b.rank : Number.MAX_SAFE_INTEGER;
+        if (ar !== br) return ar - br;
+        return (a.createdAt || 0) - (b.createdAt || 0);
+      });
+    });
+    return groups;
+  }, [items]);
+
+  // Apply filters AFTER ordering so positions stay stable.
+  const passesFilter = (it) => {
+    if (filterType !== "all" && (it.type || "feature") !== filterType) return false;
+    if (filterAuthor !== "all" && it.fromMemberId !== filterAuthor) return false;
+    return true;
+  };
+
+  const updateFeedback = (id, patch) => {
+    mutate(prev => {
+      const fb = Object.assign({}, prev.feedback || {});
+      if (!fb[id]) return prev;
+      fb[id] = Object.assign({}, fb[id], patch);
+      return Object.assign({}, prev, {feedback: fb});
+    });
+  };
+  const addItem = () => {
+    if (!draftBody.trim()) return;
+    const id = newFeedbackId();
+    const fromMemberId = (member && member.id) || null;
+    const now = Date.now();
+    mutate(prev => {
+      const fb = Object.assign({}, prev.feedback || {});
+      // New items go to the top of Backlog: rank = (min rank in backlog) - 1, fallback 0.
+      const backlog = Object.keys(fb).map(k => fb[k]).filter(x => (x.status || "backlog") === "backlog");
+      const minRank = backlog.length === 0 ? 0 : Math.min.apply(null, backlog.map(x => (typeof x.rank === "number") ? x.rank : 0));
+      fb[id] = {
+        id: id,
+        type: draftType,
+        priority: draftPriority,
+        status: "backlog",
+        body: draftBody.trim(),
+        fromMemberId: fromMemberId,
+        createdAt: now,
+        rank: minRank - 1
+      };
+      return Object.assign({}, prev, {feedback: fb});
+    });
+    setDraftBody("");
+    setDraftType("feature");
+    setDraftPriority("medium");
+    setAdding(false);
+  };
+  const deleteItem = (id) => {
+    if (!confirm("Delete this feedback item?")) return;
+    mutate(prev => {
+      const fb = Object.assign({}, prev.feedback || {});
+      delete fb[id];
+      return Object.assign({}, prev, {feedback: fb});
+    });
+  };
+  const move = (id, dir) => {
+    // Reorder within the item's current status group.
+    const item = items.find(x => x.id === id);
+    if (!item) return;
+    const status = item.status || "backlog";
+    const list = byStatus[status].slice();
+    const idx = list.findIndex(x => x.id === id);
+    if (idx < 0) return;
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= list.length) return;
+    // Swap and renumber ranks 0..N for stability.
+    list.splice(idx, 1);
+    list.splice(newIdx, 0, item);
+    mutate(prev => {
+      const fb = Object.assign({}, prev.feedback || {});
+      list.forEach((it, i) => {
+        if (fb[it.id]) fb[it.id] = Object.assign({}, fb[it.id], {rank: i});
+      });
+      return Object.assign({}, prev, {feedback: fb});
+    });
+  };
+  const setStatus = (id, newStatus) => {
+    // When moving to a new status, place at end of new status (highest rank in that column + 1).
+    mutate(prev => {
+      const fb = Object.assign({}, prev.feedback || {});
+      if (!fb[id]) return prev;
+      const inTarget = Object.keys(fb).map(k => fb[k]).filter(x => (x.status || "backlog") === newStatus && k !== id);
+      const maxRank = inTarget.length === 0 ? -1 : Math.max.apply(null, inTarget.map(x => (typeof x.rank === "number") ? x.rank : 0));
+      fb[id] = Object.assign({}, fb[id], {status: newStatus, rank: maxRank + 1});
+      return Object.assign({}, prev, {feedback: fb});
+    });
+  };
+  const startEdit = (item) => { setEditingId(item.id); setEditingBody(item.body || ""); };
+  const saveEdit = () => {
+    if (!editingId) return;
+    if (!editingBody.trim()) return;
+    updateFeedback(editingId, {body: editingBody.trim()});
+    setEditingId(null);
+    setEditingBody("");
+  };
+  const cancelEdit = () => { setEditingId(null); setEditingBody(""); };
+
+  const renderCard = (item, idx, total) => {
+    const tm = feedbackTypeMeta(item.type);
+    const pm = feedbackPriorityMeta(item.priority);
+    const author = MEMBERS.find(m => m.id === item.fromMemberId);
+    const authorName = author ? author.name : (item.fromMemberId || "(unknown)");
+    const authorPhoto = (memberProfiles && item.fromMemberId && memberProfiles[item.fromMemberId] && memberProfiles[item.fromMemberId].photoUrl) || "";
+    const isAuthor = member && item.fromMemberId === member.id;
+    const isEditing = editingId === item.id;
+    return h("div",{key:item.id, className:"card-flat p-2.5 mb-2"},
+      h("div",{className:"flex items-start gap-2"},
+        h("div",{className:"flex-1 min-w-0"},
+          h("div",{className:"flex items-center gap-1.5 flex-wrap text-xs mb-1"},
+            h("span",{title:tm.label}, tm.icon),
+            h("span",{className:"ticker px-1.5 py-0.5 text-[10px]", style:{background:pm.colorBg, color:pm.colorText}}, pm.label)
+          ),
+          isEditing
+            ? h("textarea",{className:"input text-sm",rows:"3",value:editingBody,onChange:e=>setEditingBody(e.target.value)})
+            : h("div",{className:"text-sm whitespace-pre-wrap break-words"}, item.body || ""),
+          h("div",{className:"text-[10px] text-[var(--ink-soft)] mt-1.5 flex items-center gap-1.5 flex-wrap"},
+            authorPhoto && h("img",{src:authorPhoto,alt:"",className:"rounded-full",style:{width:14,height:14,objectFit:"cover"}}),
+            h("span",null, authorName),
+            h("span",null,"·"),
+            h("span",null, fmtFeedbackDate(item.createdAt))
+          )
+        ),
+        h("div",{className:"flex flex-col gap-1 shrink-0"},
+          h("button",{onClick:()=>move(item.id, -1),disabled:idx===0,className:"pill px-2 py-0.5 text-xs bg-white disabled:opacity-30",title:"Move up"},"↑"),
+          h("button",{onClick:()=>move(item.id, 1),disabled:idx===total-1,className:"pill px-2 py-0.5 text-xs bg-white disabled:opacity-30",title:"Move down"},"↓")
+        )
+      ),
+      h("div",{className:"mt-2 pt-2 border-t border-[var(--line)]/15 flex items-center gap-2 flex-wrap"},
+        h("select",{
+          value: item.priority || "medium",
+          onChange: e => updateFeedback(item.id, {priority: e.target.value}),
+          className:"input text-xs py-0.5 px-1",
+          style:{maxWidth:"100px"},
+          title:"Priority"
+        },
+          FEEDBACK_PRIORITIES.map(p => h("option",{key:p.id, value:p.id}, p.label))
+        ),
+        h("select",{
+          value: item.status || "backlog",
+          onChange: e => setStatus(item.id, e.target.value),
+          className:"input text-xs py-0.5 px-1",
+          style:{maxWidth:"120px"},
+          title:"Status"
+        },
+          FEEDBACK_STATUSES.map(s => h("option",{key:s.id, value:s.id}, s.label))
+        ),
+        isEditing
+          ? h(React.Fragment,null,
+              h("button",{onClick:saveEdit,className:"ticker text-[var(--berry)] hover:underline text-xs"},"Save"),
+              h("button",{onClick:cancelEdit,className:"ticker text-[var(--ink-soft)] hover:underline text-xs"},"Cancel")
+            )
+          : h(React.Fragment,null,
+              isAuthor && h("button",{onClick:()=>startEdit(item),className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)] text-xs ml-auto"},"Edit"),
+              isAuthor && h("button",{onClick:()=>deleteItem(item.id),className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)] text-xs"},"Delete")
+            )
+      )
+    );
+  };
+
+  return h("div",null,
+    // Header / add
+    h("div",{className:"flex items-baseline justify-between gap-2 flex-wrap mb-3"},
+      h("p",{className:"text-sm text-[var(--ink-soft)] italic"},"Comments, bugs, feature requests. Anyone can log, anyone can re-rank or move between columns."),
+      !adding && member && h("button",{onClick:()=>setAdding(true),className:"btn berry-bg px-3 py-1.5 text-sm font-semibold"},"+ New feedback"),
+      !member && h("p",{className:"text-xs italic text-[var(--ink-soft)]"},"Pick who you are at the top to add feedback.")
+    ),
+    // New item form
+    adding && h("div",{className:"card p-3 mb-3"},
+      h("div",{className:"flex flex-wrap gap-2 mb-2"},
+        h("div",null,
+          h("div",{className:"ticker text-[var(--ink-soft)] text-[10px] mb-1"},"Type"),
+          h("div",{className:"flex gap-1"},
+            FEEDBACK_TYPES.map(t => h("button",{key:t.id, onClick:()=>setDraftType(t.id), className:"pill px-2 py-1 text-xs " + (draftType===t.id?"berry-bg text-white":"bg-white")}, t.icon + " " + t.label))
+          )
+        ),
+        h("div",null,
+          h("div",{className:"ticker text-[var(--ink-soft)] text-[10px] mb-1"},"Priority"),
+          h("div",{className:"flex gap-1"},
+            FEEDBACK_PRIORITIES.map(p => h("button",{key:p.id, onClick:()=>setDraftPriority(p.id), className:"pill px-2 py-1 text-xs font-semibold " + (draftPriority===p.id?"text-white":""), style: draftPriority===p.id ? {background:p.colorText} : {background:p.colorBg, color:p.colorText}}, p.label))
+          )
+        )
+      ),
+      h("textarea",{className:"input text-sm",rows:"3",value:draftBody,onChange:e=>setDraftBody(e.target.value),placeholder:"What's on your mind? E.g. \"Reorder buttons in setlist detail are too small on iPad\""}),
+      h("div",{className:"mt-2 flex gap-2 justify-end"},
+        h("button",{onClick:()=>{setAdding(false); setDraftBody("");},className:"btn bg-white px-3 py-1.5 text-sm"},"Cancel"),
+        h("button",{onClick:addItem, disabled: !draftBody.trim(), className:"btn berry-bg px-4 py-1.5 text-sm font-semibold disabled:opacity-50"},"Log it")
+      )
+    ),
+    // Filters
+    items.length > 0 && h("div",{className:"flex flex-wrap items-center gap-2 mb-3"},
+      h("span",{className:"ticker text-[var(--ink-soft)]"},"Filter"),
+      h("select",{value:filterType,onChange:e=>setFilterType(e.target.value),className:"input text-xs py-0.5 px-1.5",style:{maxWidth:"110px"}},
+        h("option",{value:"all"},"All types"),
+        FEEDBACK_TYPES.map(t => h("option",{key:t.id, value:t.id}, t.icon + " " + t.label))
+      ),
+      h("select",{value:filterAuthor,onChange:e=>setFilterAuthor(e.target.value),className:"input text-xs py-0.5 px-1.5",style:{maxWidth:"120px"}},
+        h("option",{value:"all"},"Anyone"),
+        MEMBERS.map(m => h("option",{key:m.id, value:m.id}, m.name))
+      ),
+      (filterType !== "all" || filterAuthor !== "all") && h("button",{onClick:()=>{setFilterType("all"); setFilterAuthor("all");},className:"ticker text-[var(--berry)] hover:underline"},"Clear")
+    ),
+    // Three columns
+    items.length === 0
+      ? h("div",{className:"card p-6 text-center text-[var(--ink-soft)] italic"},"No feedback yet. Hit \"+ New feedback\" to log the first comment, bug, or feature request.")
+      : h("div",{className:"grid grid-cols-1 md:grid-cols-3 gap-3"},
+          FEEDBACK_STATUSES.map(s => {
+            const all = byStatus[s.id] || [];
+            const filtered = all.filter(passesFilter);
+            return h("div",{key:s.id, className:"card p-3"},
+              h("div",{className:"ticker text-[var(--berry)] flex items-baseline justify-between gap-2"},
+                h("span",null, s.label),
+                h("span",{className:"text-[var(--ink-soft)] text-[10px]"}, filtered.length + (all.length !== filtered.length ? ("/" + all.length) : ""))
+              ),
+              h("p",{className:"text-[10px] text-[var(--ink-soft)] italic mb-2"}, s.helper),
+              filtered.length === 0
+                ? h("div",{className:"text-xs text-[var(--ink-soft)] italic py-2"}, all.length === 0 ? "Empty." : "Nothing matches filter.")
+                : filtered.map((it) => {
+                    // Index within the filtered subset, which doesn't reflect global rank
+                    // when filters are active. Disable the move arrows in that case to
+                    // prevent confusing reorders.
+                    const filterActive = (filterType !== "all" || filterAuthor !== "all");
+                    const rawIdx = all.findIndex(x => x.id === it.id);
+                    return h("div",{key:it.id, className: filterActive ? "opacity-90" : ""},
+                      filterActive
+                        ? renderCardNoMove(it, memberProfiles, member, MEMBERS, updateFeedback, setStatus, startEdit, deleteItem, editingId, editingBody, setEditingBody, saveEdit, cancelEdit)
+                        : renderCard(it, rawIdx, all.length)
+                    );
+                  })
+            );
+          })
+        )
+  );
+};
+// When filters are active, show a card without working ↑/↓ buttons (since the index is
+// against the filtered list, not the real rank order). Hint to the user that's why.
+const renderCardNoMove = (item, memberProfiles, member, MEMBERS_ARR, updateFeedback, setStatus, startEdit, deleteItem, editingId, editingBody, setEditingBody, saveEdit, cancelEdit) => {
+  const tm = feedbackTypeMeta(item.type);
+  const pm = feedbackPriorityMeta(item.priority);
+  const author = MEMBERS_ARR.find(m => m.id === item.fromMemberId);
+  const authorName = author ? author.name : (item.fromMemberId || "(unknown)");
+  const authorPhoto = (memberProfiles && item.fromMemberId && memberProfiles[item.fromMemberId] && memberProfiles[item.fromMemberId].photoUrl) || "";
+  const isAuthor = member && item.fromMemberId === member.id;
+  const isEditing = editingId === item.id;
+  return h("div",{className:"card-flat p-2.5 mb-2"},
+    h("div",{className:"flex items-center gap-1.5 flex-wrap text-xs mb-1"},
+      h("span",{title:tm.label}, tm.icon),
+      h("span",{className:"ticker px-1.5 py-0.5 text-[10px]", style:{background:pm.colorBg, color:pm.colorText}}, pm.label),
+      h("span",{className:"ticker text-[var(--ink-soft)] text-[10px] ml-auto",title:"Reorder is disabled while filters are active"},"⇅ filter on")
+    ),
+    isEditing
+      ? h("textarea",{className:"input text-sm",rows:"3",value:editingBody,onChange:e=>setEditingBody(e.target.value)})
+      : h("div",{className:"text-sm whitespace-pre-wrap break-words"}, item.body || ""),
+    h("div",{className:"text-[10px] text-[var(--ink-soft)] mt-1.5 flex items-center gap-1.5 flex-wrap"},
+      authorPhoto && h("img",{src:authorPhoto,alt:"",className:"rounded-full",style:{width:14,height:14,objectFit:"cover"}}),
+      h("span",null, authorName),
+      h("span",null,"·"),
+      h("span",null, fmtFeedbackDate(item.createdAt))
+    ),
+    h("div",{className:"mt-2 pt-2 border-t border-[var(--line)]/15 flex items-center gap-2 flex-wrap"},
+      h("select",{
+        value: item.priority || "medium",
+        onChange: e => updateFeedback(item.id, {priority: e.target.value}),
+        className:"input text-xs py-0.5 px-1",
+        style:{maxWidth:"100px"}
+      },
+        FEEDBACK_PRIORITIES.map(p => h("option",{key:p.id, value:p.id}, p.label))
+      ),
+      h("select",{
+        value: item.status || "backlog",
+        onChange: e => setStatus(item.id, e.target.value),
+        className:"input text-xs py-0.5 px-1",
+        style:{maxWidth:"120px"}
+      },
+        FEEDBACK_STATUSES.map(s => h("option",{key:s.id, value:s.id}, s.label))
+      ),
+      isEditing
+        ? h(React.Fragment,null,
+            h("button",{onClick:saveEdit,className:"ticker text-[var(--berry)] hover:underline text-xs"},"Save"),
+            h("button",{onClick:cancelEdit,className:"ticker text-[var(--ink-soft)] hover:underline text-xs"},"Cancel")
+          )
+        : h(React.Fragment,null,
+            isAuthor && h("button",{onClick:()=>startEdit(item),className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)] text-xs ml-auto"},"Edit"),
+            isAuthor && h("button",{onClick:()=>deleteItem(item.id),className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)] text-xs"},"Delete")
+          )
+    )
+  );
+};
+// === END FEEDBACK BOARD ===
+
 // === ITERATION C.1: REHEARSAL RUN MODE ===
 // Full-page focused UI for running a rehearsal: step through agenda one song at a time,
 // mark Played / Skip, log unplanned songs, set practice statuses, take notes.
@@ -3979,6 +4389,7 @@ const App = () => {
   const practiceAvail = sync.state.practiceAvail || {};
   const memberProfiles = sync.state.memberProfiles || {};
   const settings = sync.state.settings || {};
+  const feedback = sync.state.feedback || {};
 
   // Iteration C.1: full-page takeover for the rehearsal runner.
   if (runRehearsalId && events[runRehearsalId] && events[runRehearsalId].type === "rehearsal") {
@@ -3999,7 +4410,7 @@ const App = () => {
         h("div",null,
           h(Wordmark, {className:"h-9 sm:h-14 md:h-16"})
         ),
-        h(MemberPicker,{value:member,onChange:setMemberId,profiles:memberProfiles})
+        h(MemberPicker,{value:member,onChange:setMemberId,profiles:memberProfiles,onSelfClick:()=>setShowSettings(true)})
       ),
       h("div",{className:"tab-nav-wrap mt-3 sm:mt-6"},
         h("nav",{className:"flex items-center border-y-2 border-[var(--line)] overflow-x-auto",style:{WebkitOverflowScrolling:"touch"}},
@@ -4009,7 +4420,8 @@ const App = () => {
             {id:"practice",label:"Planner"},
             {id:"songs",label:"Songs"},
             {id:"setlists",label:"Setlists"},
-            {id:"equipment",label:"Kit"}
+            {id:"equipment",label:"Kit"},
+            {id:"feedback",label:"Feedback"}
           ].map(t => h("button",{key:t.id,onClick:()=>setTab(t.id),className:"px-3 sm:px-4 py-2 sm:py-2.5 ticker whitespace-nowrap text-[10px] sm:text-xs " + (tab===t.id?"tab-active":"hover:bg-[var(--acid)]")}, t.label)),
           h("div",{className:"ml-auto pl-2 pr-1 shrink-0 flex items-center gap-1.5"},
             h("button",{onClick:()=>setShowSettings(true),className:"text-base px-1.5 py-0.5 hover:bg-[var(--acid)]/40 rounded",title:"Settings","aria-label":"Settings"},"⚙"),
@@ -4024,6 +4436,7 @@ const App = () => {
     tab==="songs" && h(SongsView,{songs:songs,events:events,member:member,mutate:sync.mutate,settings:settings}),
     tab==="setlists" && h(SetlistsView,{setlists:setlists,songs:songs,events:events,member:member,mutate:sync.mutate,settings:settings}),
     tab==="equipment" && h(EquipmentView,{equipment:equipment,wishlist:wishlist,member:member,mutate:sync.mutate}),
+    tab==="feedback" && h(FeedbackView,{feedback:feedback,member:member,memberProfiles:memberProfiles,mutate:sync.mutate}),
     h("footer",{className:"mt-12 pt-6 border-t border-[var(--line)]/30 text-xs text-[var(--ink-soft)] flex justify-between flex-wrap gap-2"},
       h("span",null,"Sourberry ", h("span",{className:"opacity-70"},"v"+APP_VERSION)),
       h("span",{className:"display-italic"},"made with bitter love")
