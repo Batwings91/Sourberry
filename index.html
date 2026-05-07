@@ -86,8 +86,16 @@
       /* Page break controls */
       .page-break-before { page-break-before: always; break-before: page; }
       .avoid-break { page-break-inside: avoid; break-inside: avoid; }
-      /* When Gig Mode is active, hide everything else and unfix the gig view. */
+      /* === Gig Mode print isolation ===
+         Belt-and-braces approach: when Gig Mode is mounted, both:
+         (a) hide every direct child of body that isn't .gig-print-root (works because
+             we now portal the gig view directly into <body>), AND
+         (b) use visibility:hidden on everything as a fallback, then restore it on
+             the gig view and its descendants. This works even if the portal fails. */
       body[data-gig-mode="1"] > *:not(.gig-print-root) { display: none !important; }
+      body[data-gig-mode="1"] * { visibility: hidden !important; }
+      body[data-gig-mode="1"] .gig-print-root,
+      body[data-gig-mode="1"] .gig-print-root * { visibility: visible !important; }
       body[data-gig-mode="1"] .gig-print-root {
         position: static !important;
         inset: auto !important;
@@ -126,7 +134,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.11.0";
+const APP_VERSION = "0.11.1";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 // Instruments for member profiles (multi-select). Order is the display order.
 // Icons are emoji — render natively on iOS/macOS/Android. Bass uses 🪕 (banjo) as the closest
@@ -2795,18 +2803,38 @@ const SongMultiPicker = ({songs, selected, onChange, label, helpText}) => {
   };
   return h("div",{className:"text-sm md:col-span-2"},
     h("div",{className:"ticker mb-1"}, label + (selected.length > 0 ? (" (" + selected.length + ")") : "")),
-    selected.length > 0 && h("div",{className:"flex flex-wrap gap-1.5 mb-2"},
-      selected.map(sid => {
+    selected.length > 0 && h("ol",{className:"mb-2 space-y-1",style:{listStyle:"none",paddingLeft:0}},
+      selected.map((sid, i) => {
         const s = songs && songs[sid];
         const onRemove = () => onChange(selected.filter(x => x !== sid));
-        if (!s) return h("span",{key:sid,className:"pill bg-white px-2 py-1 text-xs flex items-center gap-1 italic text-[var(--ink-soft)]"},
-          h("span",null,"(deleted)"),
-          h("button",{type:"button",onClick:onRemove,className:"text-[var(--berry)] font-bold","aria-label":"Remove"},"×")
-        );
-        return h("span",{key:sid,className:"pill bg-white px-2 py-1 text-xs flex items-center gap-1.5"},
-          h("span",null, s.title || "(untitled)"),
-          s.artist && h("span",{className:"text-[var(--ink-soft)] italic"}, "— " + s.artist),
-          h("button",{type:"button",onClick:onRemove,className:"text-[var(--berry)] font-bold ml-0.5","aria-label":"Remove"},"×")
+        const moveUp = () => {
+          if (i === 0) return;
+          const next = selected.slice();
+          next.splice(i - 1, 0, next.splice(i, 1)[0]);
+          onChange(next);
+        };
+        const moveDown = () => {
+          if (i === selected.length - 1) return;
+          const next = selected.slice();
+          next.splice(i + 1, 0, next.splice(i, 1)[0]);
+          onChange(next);
+        };
+        const inner = !s
+          ? h(React.Fragment,null,
+              h("span",{className:"flex-1 italic text-[var(--ink-soft)] truncate"},"(deleted)")
+            )
+          : h(React.Fragment,null,
+              h("span",{className:"flex-1 truncate"},
+                h("span",null, s.title || "(untitled)"),
+                s.artist && h("span",{className:"text-[var(--ink-soft)] italic"}, " — ", s.artist)
+              )
+            );
+        return h("li",{key:sid, className:"card-flat p-1.5 flex items-center gap-1.5 text-xs"},
+          h("span",{className:"text-[var(--ink-soft)] w-5 text-right shrink-0"}, (i+1) + "."),
+          inner,
+          h("button",{type:"button",onClick:moveUp,disabled:i===0,className:"pill px-1.5 py-0.5 text-xs bg-white disabled:opacity-30",title:"Move up","aria-label":"Move up"},"↑"),
+          h("button",{type:"button",onClick:moveDown,disabled:i===selected.length-1,className:"pill px-1.5 py-0.5 text-xs bg-white disabled:opacity-30",title:"Move down","aria-label":"Move down"},"↓"),
+          h("button",{type:"button",onClick:onRemove,className:"pill px-1.5 py-0.5 text-xs bg-white text-[var(--berry)] font-bold",title:"Remove","aria-label":"Remove"},"×")
         );
       })
     ),
@@ -2926,54 +2954,60 @@ const GigModeView = ({setlist, songs, events, onClose}) => {
     document.body.setAttribute("data-gig-mode", "1");
     return () => { document.body.removeAttribute("data-gig-mode"); };
   }, []);
-  return h("div",{ref:containerRef, className:"fixed inset-0 z-50 overflow-auto gig-print-root",style:{background:"var(--cream)",color:"var(--ink)"}},
-    h("div",{className:"max-w-5xl mx-auto p-4 sm:p-6"},
-      // Toolbar — small, doesn't compete with content. Hidden when printing.
-      h("div",{className:"no-print flex items-center gap-2 mb-3 flex-wrap"},
-        h("button",{onClick:onClose,className:"btn bg-white px-3 py-1.5 text-sm font-semibold"},"× Exit"),
-        h("button",{onClick:()=>{ try { window.print(); } catch(_){} },className:"btn bg-white px-3 py-1.5 text-sm"},"🖨 Print"),
-        h("div",{className:"flex items-center gap-1.5 ml-auto"},
-          h("label",{className:"flex items-center gap-1 text-xs"},
-            h("input",{type:"checkbox",checked:autoFit,onChange:e=>setAutoFit(e.target.checked)}),
-            h("span",null,"Auto-fit")
-          ),
-          !autoFit && h(React.Fragment,null,
-            h("button",{onClick:()=>setFontPx(p => Math.max(14, p - 2)),className:"pill bg-white px-2 py-0.5 text-xs"},"A−"),
-            h("span",{className:"text-xs w-10 text-center"}, fontPx + "px"),
-            h("button",{onClick:()=>setFontPx(p => Math.min(96, p + 2)),className:"pill bg-white px-2 py-0.5 text-xs"},"A+")
+  // Render the gig view via a portal directly into <body>. This makes .gig-print-root
+  // a direct child of body, so the print stylesheet's selector (which hides body's
+  // direct children that aren't .gig-print-root) actually matches.
+  return ReactDOM.createPortal(
+    h("div",{ref:containerRef, className:"fixed inset-0 z-50 overflow-auto gig-print-root",style:{background:"var(--cream)",color:"var(--ink)"}},
+      h("div",{className:"max-w-5xl mx-auto p-4 sm:p-6"},
+        // Toolbar — small, doesn't compete with content. Hidden when printing.
+        h("div",{className:"no-print flex items-center gap-2 mb-3 flex-wrap"},
+          h("button",{onClick:onClose,className:"btn bg-white px-3 py-1.5 text-sm font-semibold"},"× Exit"),
+          h("button",{onClick:()=>{ try { window.print(); } catch(_){} },className:"btn bg-white px-3 py-1.5 text-sm"},"🖨 Print"),
+          h("div",{className:"flex items-center gap-1.5 ml-auto"},
+            h("label",{className:"flex items-center gap-1 text-xs"},
+              h("input",{type:"checkbox",checked:autoFit,onChange:e=>setAutoFit(e.target.checked)}),
+              h("span",null,"Auto-fit")
+            ),
+            !autoFit && h(React.Fragment,null,
+              h("button",{onClick:()=>setFontPx(p => Math.max(14, p - 2)),className:"pill bg-white px-2 py-0.5 text-xs"},"A−"),
+              h("span",{className:"text-xs w-10 text-center"}, fontPx + "px"),
+              h("button",{onClick:()=>setFontPx(p => Math.min(96, p + 2)),className:"pill bg-white px-2 py-0.5 text-xs"},"A+")
+            )
           )
+        ),
+        // Title + meta
+        h("div",{className:"mb-2"},
+          h("h1",{className:"display leading-tight",style:{fontSize: Math.round(fontPx * 1.6) + "px"}}, setlist.name),
+          pinnedGig && h("div",{className:"text-[var(--ink-soft)] mt-1",style:{fontSize: Math.round(fontPx * 0.55) + "px"}},
+            fmtDate(pinnedGig.date), pinnedGig.title ? (" · " + pinnedGig.title) : "", pinnedGig.location ? (" · " + pinnedGig.location) : ""
+          )
+        ),
+        // Sets
+        h("div",{className:"mt-3"},
+          sets.length === 0 ? h("p",{className:"italic"},"Empty setlist.") : sets.map((set, si) => {
+            const songIds = set.songIds || [];
+            const setName = set.name || ("Set " + (si+1));
+            return h("div",{key:si, className:"mb-4"},
+              h("div",{className:"display border-b-2 border-[var(--berry)] pb-1 mb-1",style:{fontSize: Math.round(fontPx * 1.05) + "px",color:"var(--berry)"}}, setName),
+              songIds.length === 0
+                ? h("div",{className:"italic text-[var(--ink-soft)]",style:{fontSize: Math.round(fontPx * 0.7) + "px"}},"(no songs)")
+                : h("ol",{className:"list-decimal pl-8 sm:pl-12",style:{fontSize: fontPx + "px",lineHeight:1.4}},
+                    songIds.map((sid, i) => {
+                      const s = songs && songs[sid];
+                      if (!s) return h("li",{key:"d-"+i,className:"italic text-[var(--ink-soft)]"},"(deleted)");
+                      return h("li",{key:sid,className:"break-words"},
+                        h("span",{className:"font-semibold"}, s.title || "(untitled)"),
+                        s.artist && h("span",{className:"text-[var(--ink-soft)] italic ml-2",style:{fontSize:"0.75em"}}, "— " + s.artist)
+                      );
+                    })
+                  )
+            );
+          })
         )
-      ),
-      // Title + meta
-      h("div",{className:"mb-2"},
-        h("h1",{className:"display leading-tight",style:{fontSize: Math.round(fontPx * 1.6) + "px"}}, setlist.name),
-        pinnedGig && h("div",{className:"text-[var(--ink-soft)] mt-1",style:{fontSize: Math.round(fontPx * 0.55) + "px"}},
-          fmtDate(pinnedGig.date), pinnedGig.title ? (" · " + pinnedGig.title) : "", pinnedGig.location ? (" · " + pinnedGig.location) : ""
-        )
-      ),
-      // Sets
-      h("div",{className:"mt-3"},
-        sets.length === 0 ? h("p",{className:"italic"},"Empty setlist.") : sets.map((set, si) => {
-          const songIds = set.songIds || [];
-          const setName = set.name || ("Set " + (si+1));
-          return h("div",{key:si, className:"mb-4"},
-            h("div",{className:"display border-b-2 border-[var(--berry)] pb-1 mb-1",style:{fontSize: Math.round(fontPx * 1.05) + "px",color:"var(--berry)"}}, setName),
-            songIds.length === 0
-              ? h("div",{className:"italic text-[var(--ink-soft)]",style:{fontSize: Math.round(fontPx * 0.7) + "px"}},"(no songs)")
-              : h("ol",{className:"list-decimal pl-8 sm:pl-12",style:{fontSize: fontPx + "px",lineHeight:1.4}},
-                  songIds.map((sid, i) => {
-                    const s = songs && songs[sid];
-                    if (!s) return h("li",{key:"d-"+i,className:"italic text-[var(--ink-soft)]"},"(deleted)");
-                    return h("li",{key:sid,className:"break-words"},
-                      h("span",{className:"font-semibold"}, s.title || "(untitled)"),
-                      s.artist && h("span",{className:"text-[var(--ink-soft)] italic ml-2",style:{fontSize:"0.75em"}}, "— " + s.artist)
-                    );
-                  })
-                )
-          );
-        })
       )
-    )
+    ),
+    document.body
   );
 };
 // === END GIG MODE VIEW ===
@@ -4383,6 +4417,30 @@ const RehearsalRunMode = ({event, songs, member, memberProfiles, mutate, onClose
       return Math.min(i, agendaIds.length - 1);
     });
   };
+  // Reorder a song in the agenda. Updates the cursor so it keeps pointing at the
+  // same logical song (i.e. if you move the current song up, currentIdx follows it).
+  const moveAgendaItem = (idx, dir) => {
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= agendaIds.length) return;
+    updateEvent(ev => {
+      const cur = Array.isArray(ev.agendaSongIds) ? ev.agendaSongIds : [];
+      if (idx >= cur.length || newIdx >= cur.length) return null;
+      const next = cur.slice();
+      const [moved] = next.splice(idx, 1);
+      next.splice(newIdx, 0, moved);
+      return {agendaSongIds: next};
+    });
+    // Cursor follow logic:
+    //   - If we moved the cursor's own song, the cursor moves with it.
+    //   - If we moved a song from one side of the cursor to the other, cursor shifts by ±1.
+    //   - Otherwise, cursor stays put.
+    setCurrentIdx(i => {
+      if (i === idx) return newIdx;
+      if (dir === -1 && idx === i + 1) return i + 1;       // moved item just below cursor up past us
+      if (dir === 1 && idx === i - 1) return i - 1;        // moved item just above cursor down past us
+      return i;
+    });
+  };
   // Log a song as unplanned/just-played. Doesn't add it to the agenda.
   const onAddUnplanned = (sid) => {
     markPlayed(sid);
@@ -4500,7 +4558,7 @@ const RehearsalRunMode = ({event, songs, member, memberProfiles, mutate, onClose
     agendaIds.length > 0 && h("div",{className:"card p-3 mb-3"},
       h("div",{className:"flex items-center justify-between mb-2"},
         h("div",{className:"ticker text-[var(--berry)]"},"Agenda (", agendaIds.length, ")"),
-        h("span",{className:"ticker text-[var(--ink-soft)] text-[10px]"},"Tap a song to jump")
+        h("span",{className:"ticker text-[var(--ink-soft)] text-[10px]"},"Tap title to jump · ↑↓ to reorder")
       ),
       h("ol",{className:"space-y-1 text-sm",style:{listStyle:"none",paddingLeft:0}},
         agendaIds.map((sid, i) => {
@@ -4508,8 +4566,8 @@ const RehearsalRunMode = ({event, songs, member, memberProfiles, mutate, onClose
           const done = playedIds.includes(sid);
           const isCurrent = i === currentIdx && !isAtEnd;
           const titleText = s ? (s.title || "(untitled)") : "(deleted)";
-          return h("li",{key:"a-"+sid+"-"+i, className:"flex items-center gap-2 py-1 px-1 rounded " + (isCurrent ? "bg-[var(--berry)]/10" : "hover:bg-[var(--acid)]/30")},
-            h("span",{className:"text-[var(--ink-soft)] w-6 text-right shrink-0 text-xs"}, (i+1) + "."),
+          return h("li",{key:"a-"+sid+"-"+i, className:"flex items-center gap-1.5 py-1 px-1 rounded " + (isCurrent ? "bg-[var(--berry)]/10" : "hover:bg-[var(--acid)]/30")},
+            h("span",{className:"text-[var(--ink-soft)] w-5 text-right shrink-0 text-xs"}, (i+1) + "."),
             h("button",{
               onClick:()=>jumpTo(i),
               className:"flex-1 min-w-0 text-left truncate " + (done && !isCurrent ? "line-through text-[var(--ink-soft)]" : (isCurrent ? "font-semibold" : "")),
@@ -4517,6 +4575,8 @@ const RehearsalRunMode = ({event, songs, member, memberProfiles, mutate, onClose
             }, titleText),
             isCurrent && h("span",{className:"ticker text-[var(--berry)] text-[10px] shrink-0"},"NOW"),
             done && !isCurrent && h("span",{className:"text-[var(--good)] shrink-0"},"✓"),
+            h("button",{onClick:()=>moveAgendaItem(i, -1),disabled:i===0,className:"pill px-1.5 py-0.5 text-xs bg-white disabled:opacity-30 shrink-0",title:"Move up","aria-label":"Move up"},"↑"),
+            h("button",{onClick:()=>moveAgendaItem(i, 1),disabled:i===agendaIds.length-1,className:"pill px-1.5 py-0.5 text-xs bg-white disabled:opacity-30 shrink-0",title:"Move down","aria-label":"Move down"},"↓"),
             h("button",{onClick:()=>removeFromAgenda(sid),className:"text-[var(--ink-soft)] hover:text-[var(--berry)] shrink-0 px-1.5 py-0.5 text-xs",title:"Remove from agenda"},"×")
           );
         })
