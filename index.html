@@ -83,7 +83,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.1.0";
+const APP_VERSION = "0.2.0";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 const SONG_STATUSES = [
   {id:"suggested",label:"Suggested",desc:"In the voting pool"},
@@ -310,7 +310,7 @@ const buildEquipmentSeed = () => {
   });
   return eq;
 };
-const buildSeedState = () => ({schemaVersion: 9, events: buildEventsSeed(), songs: buildSongsSeed(), setlists: buildSetlistsSeed(), polls: {}, equipment: buildEquipmentSeed(), wishlist: {}, practiceAvail: {}, memberProfiles: {}});
+const buildSeedState = () => ({schemaVersion: 10, events: buildEventsSeed(), songs: buildSongsSeed(), setlists: buildSetlistsSeed(), polls: {}, equipment: buildEquipmentSeed(), wishlist: {}, practiceAvail: {}, memberProfiles: {}, updatedAt: 0, lastSavedBy: null});
 
 const migrate = data => {
   let migrated = false;
@@ -397,6 +397,14 @@ const migrate = data => {
       }
     });
     data.schemaVersion = 9; migrated = true;
+  }
+  if (data.schemaVersion < 10) {
+    // Iteration A.2: conflict detection. Stamp every state with the time
+    // it was last saved and who saved it. Old data has no history of saves,
+    // so initialise to "now" — first real save will overwrite.
+    if (typeof data.updatedAt !== "number") data.updatedAt = Date.now();
+    if (typeof data.lastSavedBy !== "string" && data.lastSavedBy !== null) data.lastSavedBy = null;
+    data.schemaVersion = 10; migrated = true;
   }
   return migrated;
 };
@@ -682,41 +690,86 @@ const getBinIdFromURL = () => new URLSearchParams(window.location.search).get("b
 const getStoredBinId = () => localStorage.getItem("sourberry.binId");
 const setStoredBinId = id => { if (id) localStorage.setItem("sourberry.binId", id); else localStorage.removeItem("sourberry.binId"); };
 const POLL_MS = 30000;
-const useSyncedState = binId => {
+const useSyncedState = (binId, memberId) => {
   const [state, setState] = useState(null);
   const [status, setStatus] = useState("loading");
   const [errorMsg, setErrorMsg] = useState("");
   const [errorStatus, setErrorStatus] = useState(null);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
+  // Iteration A.2: conflict detection.
+  // `conflict` is set when a save (or poll, while editing) discovers that
+  // the server is newer than our last-known state — i.e. someone else saved
+  // while we were editing. Resolution is via resolveConflict("keepMine"|"useTheirs").
+  const [conflict, setConflict] = useState(null);
   const stateRef = useRef(state); stateRef.current = state;
   const writeTimerRef = useRef(null);
   const writeInFlightRef = useRef(false);
   const pendingWriteRef = useRef(false);
-  const flushWrite = useCallback(async () => {
+  const conflictRef = useRef(null);
+  useEffect(() => { conflictRef.current = conflict; }, [conflict]);
+  const memberIdRef = useRef(memberId);
+  useEffect(() => { memberIdRef.current = memberId; }, [memberId]);
+  const flushWrite = useCallback(async (opts) => {
+    const force = !!(opts && opts.force);
     if (!binId || writeInFlightRef.current) return;
+    // Don't auto-flush if there's an unresolved conflict — user must choose.
+    if (!force && conflictRef.current) return;
     writeInFlightRef.current = true;
     pendingWriteRef.current = false;
     setStatus("saving");
     try {
-      await jbUpdateBin(binId, stateRef.current);
+      // Pre-flight conflict check (skipped on force-write).
+      if (!force) {
+        let serverData = null;
+        try { serverData = await jbReadBin(binId); }
+        catch (_) { /* if pre-flight fails, fall through and let the PUT surface the error */ }
+        if (serverData) {
+          const serverTs = (typeof serverData.updatedAt === "number") ? serverData.updatedAt : 0;
+          const localTs = (stateRef.current && typeof stateRef.current.updatedAt === "number") ? stateRef.current.updatedAt : 0;
+          if (serverTs > localTs) {
+            // Someone else saved after our last known state → CONFLICT.
+            try { migrate(serverData); } catch (_) {}
+            const c = {serverState: serverData, savedBy: serverData.lastSavedBy || null, savedAt: serverTs};
+            conflictRef.current = c;
+            setConflict(c);
+            setStatus("ok");
+            // Block polling from clobbering the user's local edits while they decide.
+            pendingWriteRef.current = true;
+            return;
+          }
+        }
+      }
+      // Stamp the state with save metadata before sending.
+      const ts = Date.now();
+      const stamped = Object.assign({}, stateRef.current, {
+        updatedAt: ts,
+        lastSavedBy: memberIdRef.current || null
+      });
+      stateRef.current = stamped;
+      setState(stamped);
+      await jbUpdateBin(binId, stamped);
       setStatus("ok"); setErrorMsg(""); setErrorStatus(null); setLastSyncedAt(Date.now());
+      // Successful write resolves any standing conflict.
+      conflictRef.current = null;
+      setConflict(null);
       // Iteration A.1: auto-snapshot after successful save (throttled internally).
       try { saveBackup(binId, stateRef.current); } catch (_) { /* never let backup errors break sync */ }
     } catch (e) {
       setStatus("error"); setErrorMsg(e.message); setErrorStatus(e.status || null);
     } finally {
       writeInFlightRef.current = false;
-      if (pendingWriteRef.current) setTimeout(flushWrite, 100);
+      // Auto-retry only if there's a queued mutation AND no active conflict.
+      if (pendingWriteRef.current && !conflictRef.current) setTimeout(() => flushWrite(), 100);
     }
   }, [binId]);
   const scheduleWrite = useCallback(() => {
     if (writeTimerRef.current) clearTimeout(writeTimerRef.current);
     if (writeInFlightRef.current) { pendingWriteRef.current = true; return; }
-    writeTimerRef.current = setTimeout(flushWrite, 600);
+    writeTimerRef.current = setTimeout(() => flushWrite(), 600);
   }, [flushWrite]);
   const mutate = useCallback(updater => {
     setState(prev => {
-      const next = updater(prev || {schemaVersion:9, events:{}, songs:{}, setlists:{}, polls:{}, equipment:{}, wishlist:{}, practiceAvail:{}, memberProfiles:{}});
+      const next = updater(prev || {schemaVersion:10, events:{}, songs:{}, setlists:{}, polls:{}, equipment:{}, wishlist:{}, practiceAvail:{}, memberProfiles:{}, updatedAt:0, lastSavedBy:null});
       stateRef.current = next;
       return next;
     });
@@ -724,9 +777,22 @@ const useSyncedState = binId => {
   }, [scheduleWrite]);
   const fetchOnce = useCallback(async () => {
     if (writeInFlightRef.current) return;
+    // Don't clobber local state while a conflict is unresolved.
+    if (conflictRef.current) return;
     try {
       let data = await jbReadBin(binId);
-      if (pendingWriteRef.current || writeTimerRef.current) return;
+      if (pendingWriteRef.current || writeTimerRef.current) {
+        // Local has unsaved edits — surface the conflict if server has moved on.
+        const serverTs = (typeof data.updatedAt === "number") ? data.updatedAt : 0;
+        const localTs = (stateRef.current && typeof stateRef.current.updatedAt === "number") ? stateRef.current.updatedAt : 0;
+        if (serverTs > localTs) {
+          try { migrate(data); } catch (_) {}
+          const c = {serverState: data, savedBy: data.lastSavedBy || null, savedAt: serverTs};
+          conflictRef.current = c;
+          setConflict(c);
+        }
+        return;
+      }
       const didMigrate = migrate(data);
       setState(data); stateRef.current = data;
       setStatus("ok"); setErrorMsg(""); setErrorStatus(null); setLastSyncedAt(Date.now());
@@ -738,9 +804,32 @@ const useSyncedState = binId => {
   const reloadFromServer = useCallback(async () => {
     if (writeTimerRef.current) { clearTimeout(writeTimerRef.current); writeTimerRef.current = null; }
     pendingWriteRef.current = false;
+    conflictRef.current = null;
+    setConflict(null);
     setStatus("loading");
     await fetchOnce();
   }, [fetchOnce]);
+  const resolveConflict = useCallback((choice) => {
+    const c = conflictRef.current;
+    if (!c) return;
+    if (choice === "keepMine") {
+      // Force-flush our local state, ignoring the server. This will overwrite
+      // the other person's save.
+      conflictRef.current = null;
+      setConflict(null);
+      // Fire-and-forget.
+      flushWrite({force: true});
+    } else if (choice === "useTheirs") {
+      // Discard our local edits, replace state with the server's data.
+      if (writeTimerRef.current) { clearTimeout(writeTimerRef.current); writeTimerRef.current = null; }
+      pendingWriteRef.current = false;
+      stateRef.current = c.serverState;
+      setState(c.serverState);
+      conflictRef.current = null;
+      setConflict(null);
+      setStatus("ok"); setErrorMsg(""); setErrorStatus(null); setLastSyncedAt(Date.now());
+    }
+  }, [flushWrite]);
   useEffect(() => {
     if (!binId) return;
     let cancelled = false;
@@ -752,7 +841,7 @@ const useSyncedState = binId => {
     document.addEventListener("visibilitychange", onVis);
     return () => { cancelled = true; if (pollTimer) clearTimeout(pollTimer); document.removeEventListener("visibilitychange", onVis); };
   }, [binId, fetchOnce]);
-  return {state, status, errorMsg, errorStatus, lastSyncedAt, mutate, refresh: fetchOnce, reloadFromServer};
+  return {state, status, errorMsg, errorStatus, lastSyncedAt, conflict, mutate, refresh: fetchOnce, reloadFromServer, resolveConflict};
 };
 
 const h = React.createElement;
@@ -993,6 +1082,49 @@ const BackupsSection = ({binId, state, onRestore}) => {
   );
 };
 // === END BackupsSection ===
+
+// === ITERATION A.2: ConflictBanner ===
+// Shown at the top of the app when a save (or poll while editing) finds
+// that the server has been updated by someone else. The user picks one:
+//   • Keep mine — overwrites the other person's save with our local edits.
+//   • Use theirs — discards our local edits and accepts the server's data.
+// There is no automatic merging — the warning + manual choice IS the safety.
+const fmtConflictAge = (ts) => {
+  const diff = Math.max(0, Date.now() - ts);
+  const sec = Math.round(diff / 1000);
+  if (sec < 5) return "just now";
+  if (sec < 60) return sec + "s ago";
+  const min = Math.round(sec / 60);
+  if (min < 60) return min + "m ago";
+  const hr = Math.round(min / 60);
+  return hr + "h ago";
+};
+const memberNameById = (id) => {
+  if (!id) return "Someone";
+  const m = MEMBERS.find(x => x.id === id);
+  return m ? m.name : "Someone";
+};
+const ConflictBanner = ({conflict, onResolve}) => {
+  if (!conflict) return null;
+  const who = memberNameById(conflict.savedBy);
+  const when = fmtConflictAge(conflict.savedAt);
+  return h("div",{className:"card p-3 sm:p-4 mb-3",style:{background:"#fef3c7",borderColor:"#fcd34d"}},
+    h("div",{className:"flex items-start gap-3 flex-wrap"},
+      h("div",{className:"flex-1 min-w-0"},
+        h("div",{className:"ticker text-[var(--berry)] mb-1"},"⚠ Heads up — someone else saved"),
+        h("div",{className:"text-sm font-semibold"}, who, " saved ", when, "."),
+        h("div",{className:"text-xs text-[var(--ink-soft)] mt-0.5"},
+          "If you ", h("span",{className:"font-semibold"},"Save anyway"), ", you'll overwrite their changes. If you ", h("span",{className:"font-semibold"},"Use theirs"), ", you'll discard your unsaved edits."
+        )
+      ),
+      h("div",{className:"flex gap-2 shrink-0 mt-1 flex-wrap"},
+        h("button",{onClick:()=>onResolve("useTheirs"),className:"btn bg-white px-3 py-1.5 text-xs font-semibold"},"Use theirs"),
+        h("button",{onClick:()=>onResolve("keepMine"),className:"btn berry-bg px-3 py-1.5 text-xs font-semibold"},"Save anyway")
+      )
+    )
+  );
+};
+// === END ConflictBanner ===
 
 const SettingsModal = ({memberProfiles, onClose, mutate, binId, state, onRestore}) => {
   const [busy, setBusy] = useState(null);
@@ -2792,7 +2924,7 @@ const App = () => {
   const [showSyncPanel, setShowSyncPanel] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   useEffect(() => { if (urlBin && urlBin !== storedBin) setStoredBinId(urlBin); }, [urlBin, storedBin]);
-  const sync = useSyncedState(binId);
+  const sync = useSyncedState(binId, memberId);
 
   if (!binId) return h(SetupScreen,{onCreated: id => { setStoredBinId(id); const url = new URL(window.location.href); url.searchParams.set("bin", id); window.history.replaceState({}, "", url.toString()); setBinId(id); setShowShare(true); }});
   if (showShare) return h(ShareScreen,{binId:binId,onContinue:()=>setShowShare(false)});
@@ -2823,6 +2955,7 @@ const App = () => {
   const memberProfiles = sync.state.memberProfiles || {};
 
   return h("div",{className:"max-w-5xl xl:max-w-6xl mx-auto px-3 sm:px-6 py-4 sm:py-6"},
+    sync.conflict && h(ConflictBanner,{conflict:sync.conflict,onResolve:sync.resolveConflict}),
     showSyncPanel && h(SyncPanel,{sync:sync,onClose:()=>setShowSyncPanel(false)}),
     showSettings && h(SettingsModal,{memberProfiles:memberProfiles, mutate:sync.mutate, onClose:()=>setShowSettings(false), binId:binId, state:sync.state, onRestore:(newState)=>sync.mutate(_prev=>newState)}),
     h("header",{className:"mb-4 sm:mb-6"},
