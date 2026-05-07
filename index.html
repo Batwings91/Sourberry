@@ -83,7 +83,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.5.0";
+const APP_VERSION = "0.6.0";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 const SONG_STATUSES = [
   {id:"suggested",label:"Suggested",desc:"In the voting pool"},
@@ -310,7 +310,7 @@ const buildEquipmentSeed = () => {
   });
   return eq;
 };
-const buildSeedState = () => ({schemaVersion: 10, events: buildEventsSeed(), songs: buildSongsSeed(), setlists: buildSetlistsSeed(), polls: {}, equipment: buildEquipmentSeed(), wishlist: {}, practiceAvail: {}, memberProfiles: {}, updatedAt: 0, lastSavedBy: null});
+const buildSeedState = () => ({schemaVersion: 11, events: buildEventsSeed(), songs: buildSongsSeed(), setlists: buildSetlistsSeed(), polls: {}, equipment: buildEquipmentSeed(), wishlist: {}, practiceAvail: {}, memberProfiles: {}, updatedAt: 0, lastSavedBy: null, settings: {}});
 
 const migrate = data => {
   let migrated = false;
@@ -405,6 +405,12 @@ const migrate = data => {
     if (typeof data.updatedAt !== "number") data.updatedAt = Date.now();
     if (typeof data.lastSavedBy !== "string" && data.lastSavedBy !== null) data.lastSavedBy = null;
     data.schemaVersion = 10; migrated = true;
+  }
+  if (data.schemaVersion < 11) {
+    // Iteration B.2: configurable thresholds (stale weeks, setup hours, break min)
+    // live in state.settings as a band-shared slice. Old data keeps the defaults.
+    if (!data.settings || typeof data.settings !== "object") data.settings = {};
+    data.schemaVersion = 11; migrated = true;
   }
   return migrated;
 };
@@ -617,12 +623,23 @@ const staleSongsForSetlist = (setlist, events, weeks) => {
     return !last || last < cutoffISO;
   });
 };
+// Iteration B.2: band-shared settings live in state.settings. Each consumer reads
+// via getSetting(settings, key) which falls back to the default if the band hasn't
+// customized it. Defaults must stay in sync with what the original hardcoded constants were.
+const SETTINGS_DEFAULTS = {
+  staleWeeks: 4,           // weeks before a setlist song is flagged "not rehearsed in N+ weeks"
+  setupPreferredHrs: 2,    // gig planner: preferred setup window before first downbeat
+  setupMinHrs: 1,          // gig planner: minimum acceptable setup window
+  breakDefaultMin: 20      // gig planner: default break length between sets
+};
+const getSetting = (settings, key) => {
+  const v = settings && settings[key];
+  return (typeof v === "number" && v > 0 && Number.isFinite(v)) ? v : SETTINGS_DEFAULTS[key];
+};
 // Iteration B.1: a song is "stale" if it hasn't been rehearsed in the last `weeks` weeks (or ever).
-// Used for the Repertoire stale filter — applies the same threshold as the gig un-rehearsed warning.
 // `lastRehearsed` is a YYYY-MM-DD string (or undefined for never-rehearsed).
-const STALE_WEEKS = 4; // Iteration B.2 will make this configurable
 const isStaleSong = (lastRehearsed, weeks) => {
-  const w = (weeks == null ? STALE_WEEKS : weeks);
+  const w = (weeks == null ? SETTINGS_DEFAULTS.staleWeeks : weeks);
   if (!lastRehearsed) return true; // never rehearsed → stale
   const cutoffISO = (new Date(Date.now() - w * 7 * 24 * 60 * 60 * 1000)).toISOString().slice(0,10);
   return lastRehearsed < cutoffISO;
@@ -632,9 +649,6 @@ const isStaleSong = (lastRehearsed, weeks) => {
 // Given a gig with start/end times and a setlist with set durations, derive a suggested
 // schedule: arrival window, set start/end times, breaks, and music end. Honest about
 // what's missing (e.g. some songs have no length) and warns if music end > gig end.
-const GIG_SETUP_PREFERRED_HRS = 2;
-const GIG_SETUP_MIN_HRS = 1;
-const GIG_BREAK_DEFAULT_MIN = 20;
 // Parse "HH:MM" (24h) into minutes-from-midnight, or null.
 const parseHHMM = (t) => {
   if (!t || typeof t !== "string") return null;
@@ -652,7 +666,11 @@ const fmtHHMM = (mins) => {
 };
 // Returns null if planner can't run; otherwise an object with the schedule + warnings.
 const computeGigSchedule = (event, setlist, songs, options) => {
-  const opts = Object.assign({preferredHrs: GIG_SETUP_PREFERRED_HRS, minHrs: GIG_SETUP_MIN_HRS, breakMin: GIG_BREAK_DEFAULT_MIN}, options || {});
+  const opts = Object.assign({
+    preferredHrs: SETTINGS_DEFAULTS.setupPreferredHrs,
+    minHrs: SETTINGS_DEFAULTS.setupMinHrs,
+    breakMin: SETTINGS_DEFAULTS.breakDefaultMin
+  }, options || {});
   if (!event || event.type !== "gig") return null;
   if (!setlist) return null;
   const startMin = parseHHMM(event.startTime);
@@ -692,6 +710,8 @@ const computeGigSchedule = (event, setlist, songs, options) => {
     overrunMin, // positive = over, negative = under, 0 = exact
     arrivalPreferred: startMin - opts.preferredHrs * 60,
     arrivalMinimum: startMin - opts.minHrs * 60,
+    preferredHrs: opts.preferredHrs,
+    minHrs: opts.minHrs,
     gigStartMin: startMin,
     gigEndMin: endMin,
     breakMin: opts.breakMin,
@@ -853,7 +873,7 @@ const useSyncedState = (binId, memberId) => {
   }, [flushWrite]);
   const mutate = useCallback(updater => {
     setState(prev => {
-      const next = updater(prev || {schemaVersion:10, events:{}, songs:{}, setlists:{}, polls:{}, equipment:{}, wishlist:{}, practiceAvail:{}, memberProfiles:{}, updatedAt:0, lastSavedBy:null});
+      const next = updater(prev || {schemaVersion:11, events:{}, songs:{}, setlists:{}, polls:{}, equipment:{}, wishlist:{}, practiceAvail:{}, memberProfiles:{}, updatedAt:0, lastSavedBy:null, settings:{}});
       stateRef.current = next;
       return next;
     });
@@ -1351,7 +1371,87 @@ const ConflictBanner = ({conflict, onResolve}) => {
 };
 // === END ConflictBanner ===
 
-const SettingsModal = ({memberProfiles, onClose, mutate, binId, state, onRestore}) => {
+// === ITERATION B.2: BandSettingsSection ===
+// Lives inside SettingsModal. Lets the band tweak shared thresholds. All values
+// are stored in state.settings so they sync across devices like other state.
+const SettingRow = ({label, description, settingKey, currentValue, defaultValue, unit, min, max, onSave}) => {
+  const [draft, setDraft] = useState(String(currentValue));
+  // If parent value changes (e.g. another member edited it), update local draft.
+  useEffect(() => { setDraft(String(currentValue)); }, [currentValue]);
+  const parsed = parseInt(draft, 10);
+  const isValid = !isNaN(parsed) && parsed >= min && parsed <= max;
+  const dirty = isValid && parsed !== currentValue;
+  const isDefault = currentValue === defaultValue;
+  return h("div",{className:"py-2 border-b border-[var(--line)]/10 last:border-0"},
+    h("div",{className:"text-sm font-semibold"}, label),
+    description && h("div",{className:"text-xs text-[var(--ink-soft)] mt-0.5"}, description),
+    h("div",{className:"flex items-center gap-2 mt-2 flex-wrap"},
+      h("input",{
+        type:"number", value:draft, min:min, max:max, step:"1",
+        onChange:e=>setDraft(e.target.value),
+        className:"input text-sm",
+        style:{width:"4.5rem"}
+      }),
+      h("span",{className:"text-xs text-[var(--ink-soft)]"}, unit),
+      !isValid && h("span",{className:"text-xs text-[var(--berry)]"}, "Must be " + min + "–" + max),
+      h("div",{className:"ml-auto flex items-center gap-2"},
+        isDefault && !dirty && h("span",{className:"text-xs italic text-[var(--ink-soft)]"},"default"),
+        dirty && h("button",{onClick:()=>onSave(parsed),className:"btn berry-bg px-3 py-1 text-xs font-semibold"},"Save"),
+        !dirty && !isDefault && h("button",{onClick:()=>onSave(defaultValue),className:"btn bg-white px-2 py-1 text-xs",title:"Reset to default ("+defaultValue+" "+unit+")"},"Reset")
+      )
+    )
+  );
+};
+const BandSettingsSection = ({settings, mutate}) => {
+  const onSave = (key, value) => {
+    mutate(prev => Object.assign({}, prev, {settings: Object.assign({}, prev.settings || {}, {[key]: value})}));
+  };
+  return h("div",{className:"mt-5 pt-4 border-t border-[var(--line)]/15"},
+    h("div",{className:"ticker text-[var(--berry)] mb-2"},"Band settings"),
+    h("p",{className:"text-xs text-[var(--ink-soft)] mb-3"},
+      "Shared with everyone in the band — changes sync automatically. Tune these to match how your band rehearses and plays."
+    ),
+    h(SettingRow, {
+      label:"Stale-song threshold",
+      description:"Songs in repertoire that haven't been played at a rehearsal for this many weeks get a ⚠ RUSTY badge. Same threshold gates the un-rehearsed warning on gigs.",
+      settingKey:"staleWeeks",
+      currentValue: getSetting(settings, "staleWeeks"),
+      defaultValue: SETTINGS_DEFAULTS.staleWeeks,
+      unit:"weeks", min:1, max:52,
+      onSave: (v) => onSave("staleWeeks", v)
+    }),
+    h(SettingRow, {
+      label:"Preferred setup time",
+      description:"How much time you'd ideally have at the venue before downbeat. Used in gig schedules: \"Arrive by HH:MM for full Nh setup\".",
+      settingKey:"setupPreferredHrs",
+      currentValue: getSetting(settings, "setupPreferredHrs"),
+      defaultValue: SETTINGS_DEFAULTS.setupPreferredHrs,
+      unit:"hours", min:1, max:8,
+      onSave: (v) => onSave("setupPreferredHrs", v)
+    }),
+    h(SettingRow, {
+      label:"Minimum setup time",
+      description:"The latest you'll accept arriving at the venue. Should be lower than preferred.",
+      settingKey:"setupMinHrs",
+      currentValue: getSetting(settings, "setupMinHrs"),
+      defaultValue: SETTINGS_DEFAULTS.setupMinHrs,
+      unit:"hours", min:1, max:8,
+      onSave: (v) => onSave("setupMinHrs", v)
+    }),
+    h(SettingRow, {
+      label:"Default break between sets",
+      description:"How long you typically break between sets. Used in the gig schedule planner.",
+      settingKey:"breakDefaultMin",
+      currentValue: getSetting(settings, "breakDefaultMin"),
+      defaultValue: SETTINGS_DEFAULTS.breakDefaultMin,
+      unit:"minutes", min:0, max:120,
+      onSave: (v) => onSave("breakDefaultMin", v)
+    })
+  );
+};
+// === END BandSettingsSection ===
+
+const SettingsModal = ({memberProfiles, onClose, mutate, binId, state, onRestore, settings}) => {
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState("");
   // When set, opens the PhotoCropper for the given member with the chosen file's data URL.
@@ -1416,6 +1516,7 @@ const SettingsModal = ({memberProfiles, onClose, mutate, binId, state, onRestore
         })
       ),
       error && h("div",{className:"mt-3 text-sm text-[var(--berry)]"}, error),
+      h(BandSettingsSection, {settings: settings, mutate: mutate}),
       binId && h(BackupsSection, {binId: binId, state: state, onRestore: onRestore})
     )
   );
@@ -1589,7 +1690,7 @@ const EventForm = ({initial, onSave, onCancel, onDelete, locationSuggestions, so
   );
 };
 
-const EventCard = ({ev, member, songs, events, pinnedSetlist, onEdit, onSetAvailability, onDelete}) => {
+const EventCard = ({ev, member, songs, events, pinnedSetlist, onEdit, onSetAvailability, onDelete, settings}) => {
   const owner = MEMBERS.find(m => m.id === ev.bookingOwner);
   const yesCount = MEMBERS.filter(m => ev.availability && ev.availability[m.id] === "yes").length;
   const isRehearsal = ev.type === "rehearsal";
@@ -1601,8 +1702,10 @@ const EventCard = ({ev, member, songs, events, pinnedSetlist, onEdit, onSetAvail
   const playedIds = isRehearsal && Array.isArray(ev.playedSongIds) ? ev.playedSongIds : [];
   const agendaPlayedCount = agendaIds.filter(id => playedIds.includes(id)).length;
   const extraPlayed = playedIds.filter(id => !agendaIds.includes(id));
+  // Iteration B.2: read configurable thresholds from band-shared settings.
+  const staleWeeks = getSetting(settings, "staleWeeks");
   // Gig: un-rehearsed warning (only for upcoming gigs with a pinned setlist)
-  const stale = (!past && ev.type === "gig" && pinnedSetlist && events) ? staleSongsForSetlist(pinnedSetlist, events, 4) : [];
+  const stale = (!past && ev.type === "gig" && pinnedSetlist && events) ? staleSongsForSetlist(pinnedSetlist, events, staleWeeks) : [];
   const songName = id => {
     const s = songs && songs[id];
     return s ? (s.title || "(untitled)") : "(deleted)";
@@ -1630,13 +1733,17 @@ const EventCard = ({ev, member, songs, events, pinnedSetlist, onEdit, onSetAvail
         ),
         // Gig: un-rehearsed warning
         stale.length > 0 && h("div",{className:"mt-2 card-flat p-2 text-sm",style:{background:"#fef3c7",borderColor:"#fcd34d"}},
-          h("div",{className:"font-semibold text-[var(--ink)]"},"⚠️ " + stale.length + " setlist song" + (stale.length===1?"":"s") + " not rehearsed in 4+ weeks"),
+          h("div",{className:"font-semibold text-[var(--ink)]"},"⚠️ " + stale.length + " setlist song" + (stale.length===1?"":"s") + " not rehearsed in " + staleWeeks + "+ weeks"),
           h("div",{className:"text-xs text-[var(--ink-soft)] mt-0.5 truncate"}, stale.slice(0,5).map(songName).join(", ") + (stale.length > 5 ? (" + " + (stale.length - 5) + " more") : ""))
         ),
         // Gig: timing planner
         (() => {
           if (past || ev.type !== "gig" || !pinnedSetlist) return null;
-          const sched = computeGigSchedule(ev, pinnedSetlist, songs);
+          const sched = computeGigSchedule(ev, pinnedSetlist, songs, {
+            preferredHrs: getSetting(settings, "setupPreferredHrs"),
+            minHrs: getSetting(settings, "setupMinHrs"),
+            breakMin: getSetting(settings, "breakDefaultMin")
+          });
           if (!sched) return null;
           const overrun = sched.overrunMin;
           const overrunBadge = overrun > 0
@@ -1653,8 +1760,8 @@ const EventCard = ({ev, member, songs, events, pinnedSetlist, onEdit, onSetAvail
             h("div",{className:"mt-2 card-flat p-2"},
               h("div",{className:"text-xs text-[var(--ink-soft)] mb-2"},
                 "Arrive by ", h("span",{className:"font-semibold text-[var(--ink)]"}, fmtHHMM(sched.arrivalPreferred)),
-                " for full ", GIG_SETUP_PREFERRED_HRS, "h setup, or ", h("span",{className:"font-semibold text-[var(--ink)]"}, fmtHHMM(sched.arrivalMinimum)),
-                " minimum (", GIG_SETUP_MIN_HRS, "h)."
+                " for full ", sched.preferredHrs, "h setup, or ", h("span",{className:"font-semibold text-[var(--ink)]"}, fmtHHMM(sched.arrivalMinimum)),
+                " minimum (", sched.minHrs, "h)."
               ),
               h("ul",{className:"text-sm space-y-0.5 font-mono"},
                 sched.schedule.map((row, i) => {
@@ -1746,7 +1853,7 @@ const EventCard = ({ev, member, songs, events, pinnedSetlist, onEdit, onSetAvail
   );
 };
 
-const TypedScheduleView = ({events, songs, setlists, member, mutate, eventType}) => {
+const TypedScheduleView = ({events, songs, setlists, member, mutate, eventType, settings}) => {
   const [editingId, setEditingId] = useState(null);
   const [adding, setAdding] = useState(false);
   const [showPast, setShowPast] = useState(false);
@@ -1809,7 +1916,7 @@ const TypedScheduleView = ({events, songs, setlists, member, mutate, eventType})
     h("div",{className:"space-y-3"},
       list.map(ev => editingId===ev.id
         ? h(EventForm,{key:ev.id, initial:ev, onSave: f => updateEvent(ev.id, f), onCancel:()=>setEditingId(null), onDelete:()=>deleteEvent(ev.id), locationSuggestions:locationSuggestions, songs:songs})
-        : h(EventCard,{key:ev.id, ev:ev, member:member, songs:songs, events:events, pinnedSetlist: setlistByGig[ev.id], onEdit:()=>{setEditingId(ev.id); setAdding(false);}, onSetAvailability:setAvailability, onDelete:()=>{ if(confirm("Delete this past event?")) deleteEvent(ev.id); }})
+        : h(EventCard,{key:ev.id, ev:ev, member:member, songs:songs, events:events, pinnedSetlist: setlistByGig[ev.id], settings: settings, onEdit:()=>{setEditingId(ev.id); setAdding(false);}, onSetAvailability:setAvailability, onDelete:()=>{ if(confirm("Delete this past event?")) deleteEvent(ev.id); }})
       )
     )
   );
@@ -1991,7 +2098,7 @@ const SongCard = ({song, member, onEdit, onVote, onSetStatus, onSetPractice, onP
       song.coverArtUrl && h("img",{src: song.coverArtUrl, alt:"", className:"shrink-0 rounded-sm border border-[var(--line)]/30", style:{width:28,height:28,objectFit:"cover"}, onError:e=>{e.target.style.display="none";}}),
       h("div",{className:"flex-1 min-w-0 flex items-baseline gap-2 flex-wrap"},
         fresh && h("span",{className:"ticker berry-bg px-1.5 py-0.5 text-[9px] shrink-0"},"NEW"),
-        isStale && h("span",{className:"ticker px-1.5 py-0.5 text-[9px] shrink-0",style:{background:"#fcd34d",color:"#78350f"},title:"Not rehearsed in " + STALE_WEEKS + "+ weeks"},"⚠ RUSTY"),
+        isStale && h("span",{className:"ticker px-1.5 py-0.5 text-[9px] shrink-0",style:{background:"#fcd34d",color:"#78350f"},title:"Hasn't been played at a rehearsal recently"},"⚠ RUSTY"),
         showStatus && h("span",{className:"ticker bg-white border border-[var(--line)]/40 px-1.5 py-0.5 text-[9px] shrink-0 text-[var(--ink-soft)]"}, ((SONG_STATUSES.find(x => x.id === song.status) || {}).label || song.status || "?")),
         h("span",{className:"font-semibold truncate"}, song.title || "(untitled)"),
         song.artist && h("span",{className:"text-xs text-[var(--ink-soft)] italic truncate"},"— " + song.artist),
@@ -2056,8 +2163,10 @@ const SongCard = ({song, member, onEdit, onVote, onSetStatus, onSetPractice, onP
   );
 };
 
-const SongsView = ({songs, events, member, mutate}) => {
+const SongsView = ({songs, events, member, mutate, settings}) => {
   const lastRehearsedMap = useMemo(() => buildLastRehearsedMap(events), [events]);
+  // Iteration B.2: configurable stale-weeks threshold from band settings.
+  const staleWeeks = getSetting(settings, "staleWeeks");
   const [editingId, setEditingId] = useState(null);
   const [adding, setAdding] = useState(false);
   const [view, setView] = useState("repertoire");
@@ -2087,7 +2196,7 @@ const SongsView = ({songs, events, member, mutate}) => {
   const all = songsList(songs);
   const counts = {}; SONG_STATUSES.forEach(s => { counts[s.id] = all.filter(x => x.status === s.id).length; });
   // Iteration B.1: how many repertoire songs are stale (never or 4+ weeks since last rehearsed).
-  const repertoireStaleCount = useMemo(() => all.filter(s => s.status === "repertoire" && isStaleSong(lastRehearsedMap[s.id])).length, [all, lastRehearsedMap]);
+  const repertoireStaleCount = useMemo(() => all.filter(s => s.status === "repertoire" && isStaleSong(lastRehearsedMap[s.id], staleWeeks)).length, [all, lastRehearsedMap, staleWeeks]);
   // Candidates for bulk fill (default mode: only songs with at least one missing core field).
   const bulkCandidatesMissing = all.filter(s => s.title && s.artist && (!s.lengthSec || !s.coverArtUrl || !s.album || !s.iTunesUrl));
   // Candidates when re-fetching all: every song that has enough info to look up.
@@ -2111,7 +2220,7 @@ const SongsView = ({songs, events, member, mutate}) => {
   const filtered = list.filter(s => {
     if (!songMatchesQuery(s, query)) return false;
     // Iteration B.1: when on Repertoire with staleOnly, hide non-stale songs.
-    if (view === "repertoire" && staleOnly && !isStaleSong(lastRehearsedMap[s.id])) return false;
+    if (view === "repertoire" && staleOnly && !isStaleSong(lastRehearsedMap[s.id], staleWeeks)) return false;
     return true;
   });
 
@@ -2429,7 +2538,7 @@ const SongsView = ({songs, events, member, mutate}) => {
           onClick:()=>setStaleOnly(v => !v),
           className:"pill px-2.5 py-0.5 text-xs font-semibold " + (staleOnly ? "text-white" : "bg-white"),
           style: staleOnly ? {background:"#b45309"} : {},
-          title: "Show only songs not rehearsed in " + STALE_WEEKS + "+ weeks"
+          title: "Show only songs not rehearsed in " + staleWeeks + "+ weeks"
         }, (staleOnly ? "✓ " : "") + "⚠ Stale only", repertoireStaleCount > 0 && h("span",{className:"ml-1 opacity-70"}, "(" + repertoireStaleCount + ")")),
         repertoireStaleCount === 0 && !staleOnly && h("span",{className:"text-xs text-[var(--ink-soft)] italic"},"No stale songs — nothing's been gathering dust.")
       ),
@@ -2454,7 +2563,7 @@ const SongsView = ({songs, events, member, mutate}) => {
     h("div",{className:"space-y-1.5"},
       filtered.map(s => editingId===s.id
         ? h(SongForm,{key:s.id, initial:s, onSave: f => { updateSong(s.id, f); setEditingId(null); }, onCancel: () => setEditingId(null), onDelete: () => deleteSong(s.id)})
-        : h(SongCard,{key:s.id, song:s, member:member, onEdit: () => { setEditingId(s.id); setAdding(false); }, onVote: voteSong, onSetStatus: setStatus, onSetPractice: setPractice, onPromote: promoteSong, showStatus: view === "all", lastRehearsed: lastRehearsedMap[s.id], isStale: s.status === "repertoire" && isStaleSong(lastRehearsedMap[s.id])})
+        : h(SongCard,{key:s.id, song:s, member:member, onEdit: () => { setEditingId(s.id); setAdding(false); }, onVote: voteSong, onSetStatus: setStatus, onSetPractice: setPractice, onPromote: promoteSong, showStatus: view === "all", lastRehearsed: lastRehearsedMap[s.id], isStale: s.status === "repertoire" && isStaleSong(lastRehearsedMap[s.id], staleWeeks)})
       )
     )
   );
@@ -2526,7 +2635,7 @@ const SongPicker = ({songs, excludeIds, onPick, onClose}) => {
   );
 };
 
-const SetlistDetail = ({setlist, songs, events, member, mutate, onBack, onUpdate, onDelete, onDuplicate}) => {
+const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack, onUpdate, onDelete, onDuplicate}) => {
   const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState(setlist.name);
   const [editingSetIdx, setEditingSetIdx] = useState(null);
@@ -2732,10 +2841,11 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, onBack, onUpdate
         if (!setlist.gigEventId || !events) return null;
         const pinnedGig = events[setlist.gigEventId];
         if (!pinnedGig || isPast(pinnedGig.date)) return null;
-        const stale = staleSongsForSetlist(setlist, events, 4);
+        const staleWeeks = getSetting(settings, "staleWeeks");
+        const stale = staleSongsForSetlist(setlist, events, staleWeeks);
         if (stale.length === 0) return null;
         return h("div",{className:"mt-3 card-flat p-2 text-sm",style:{background:"#fef3c7",borderColor:"#fcd34d"}},
-          h("div",{className:"font-semibold"},"⚠️ " + stale.length + " song" + (stale.length===1?"":"s") + " not rehearsed in 4+ weeks"),
+          h("div",{className:"font-semibold"},"⚠️ " + stale.length + " song" + (stale.length===1?"":"s") + " not rehearsed in " + staleWeeks + "+ weeks"),
           h("div",{className:"text-xs text-[var(--ink-soft)] mt-0.5"}, "Worth scheduling before " + fmtDate(pinnedGig.date) + ".")
         );
       })(),
@@ -2881,7 +2991,7 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, onBack, onUpdate
   );
 };
 
-const SetlistsView = ({setlists, songs, events, member, mutate}) => {
+const SetlistsView = ({setlists, songs, events, member, mutate, settings}) => {
   const [openId, setOpenId] = useState(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -2903,7 +3013,7 @@ const SetlistsView = ({setlists, songs, events, member, mutate}) => {
     setOpenId(newSlId);
   };
   if (openId && setlists && setlists[openId]) {
-    return h(SetlistDetail,{setlist: Object.assign({id:openId}, setlists[openId]), songs:songs, events:events, member:member, mutate:mutate, onBack:()=>setOpenId(null), onUpdate: data => updateSetlist(openId, data), onDelete: () => deleteSetlist(openId), onDuplicate: () => duplicateSetlist(openId)});
+    return h(SetlistDetail,{setlist: Object.assign({id:openId}, setlists[openId]), songs:songs, events:events, member:member, mutate:mutate, settings:settings, onBack:()=>setOpenId(null), onUpdate: data => updateSetlist(openId, data), onDelete: () => deleteSetlist(openId), onDuplicate: () => duplicateSetlist(openId)});
   }
   return h("div",null,
     h("div",{className:"flex items-center justify-between mb-4 flex-wrap gap-2"},
@@ -3517,11 +3627,12 @@ const App = () => {
   const wishlist = sync.state.wishlist || {};
   const practiceAvail = sync.state.practiceAvail || {};
   const memberProfiles = sync.state.memberProfiles || {};
+  const settings = sync.state.settings || {};
 
   return h("div",{className:"max-w-5xl xl:max-w-6xl mx-auto px-3 sm:px-6 py-4 sm:py-6"},
     sync.conflict && h(ConflictBanner,{conflict:sync.conflict,onResolve:sync.resolveConflict}),
     showSyncPanel && h(SyncPanel,{sync:sync,onClose:()=>setShowSyncPanel(false)}),
-    showSettings && h(SettingsModal,{memberProfiles:memberProfiles, mutate:sync.mutate, onClose:()=>setShowSettings(false), binId:binId, state:sync.state, onRestore:(newState)=>sync.mutate(_prev=>newState)}),
+    showSettings && h(SettingsModal,{memberProfiles:memberProfiles, mutate:sync.mutate, onClose:()=>setShowSettings(false), binId:binId, state:sync.state, settings:settings, onRestore:(newState)=>sync.mutate(_prev=>newState)}),
     h("header",{className:"mb-4 sm:mb-6"},
       h("div",{className:"flex items-center justify-between gap-3 mb-2 sm:mb-0 sm:items-end sm:flex-wrap"},
         h("div",null,
@@ -3546,11 +3657,11 @@ const App = () => {
         )
       )
     ),
-    tab==="gigs" && h(TypedScheduleView,{events:events,songs:songs,setlists:setlists,member:member,mutate:sync.mutate,eventType:"gig"}),
-    tab==="rehearsals" && h(TypedScheduleView,{events:events,songs:songs,setlists:setlists,member:member,mutate:sync.mutate,eventType:"rehearsal"}),
+    tab==="gigs" && h(TypedScheduleView,{events:events,songs:songs,setlists:setlists,member:member,mutate:sync.mutate,eventType:"gig",settings:settings}),
+    tab==="rehearsals" && h(TypedScheduleView,{events:events,songs:songs,setlists:setlists,member:member,mutate:sync.mutate,eventType:"rehearsal",settings:settings}),
     tab==="practice" && h(PracticeView,{practiceAvail:practiceAvail,events:events,member:member,mutate:sync.mutate,onGoToSchedule:()=>setTab("rehearsals")}),
-    tab==="songs" && h(SongsView,{songs:songs,events:events,member:member,mutate:sync.mutate}),
-    tab==="setlists" && h(SetlistsView,{setlists:setlists,songs:songs,events:events,member:member,mutate:sync.mutate}),
+    tab==="songs" && h(SongsView,{songs:songs,events:events,member:member,mutate:sync.mutate,settings:settings}),
+    tab==="setlists" && h(SetlistsView,{setlists:setlists,songs:songs,events:events,member:member,mutate:sync.mutate,settings:settings}),
     tab==="equipment" && h(EquipmentView,{equipment:equipment,wishlist:wishlist,member:member,mutate:sync.mutate}),
     h("footer",{className:"mt-12 pt-6 border-t border-[var(--line)]/30 text-xs text-[var(--ink-soft)] flex justify-between flex-wrap gap-2"},
       h("span",null,"Sourberry ", h("span",{className:"opacity-70"},"v"+APP_VERSION)),
