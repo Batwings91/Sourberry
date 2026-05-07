@@ -87,18 +87,18 @@
       .page-break-before { page-break-before: always; break-before: page; }
       .avoid-break { page-break-inside: avoid; break-inside: avoid; }
       /* === Gig Mode print isolation ===
-         Belt-and-braces approach: when Gig Mode is mounted, both:
-         (a) hide every direct child of body that isn't .gig-print-root (works because
-             we now portal the gig view directly into <body>), AND
-         (b) use visibility:hidden on everything as a fallback, then restore it on
-             the gig view and its descendants. This works even if the portal fails. */
-      body[data-gig-mode="1"] > *:not(.gig-print-root) { display: none !important; }
+         When Gig Mode is mounted, body gets data-gig-mode="1". For print:
+         - visibility:hidden on everything in body
+         - visibility:visible on .gig-print-root and its descendants
+         - flatten .gig-print-root from a fixed overlay to a normal block so it
+           paginates normally instead of clipping at the viewport.
+         This works regardless of where in the DOM tree .gig-print-root sits. */
       body[data-gig-mode="1"] * { visibility: hidden !important; }
       body[data-gig-mode="1"] .gig-print-root,
       body[data-gig-mode="1"] .gig-print-root * { visibility: visible !important; }
       body[data-gig-mode="1"] .gig-print-root {
         position: static !important;
-        inset: auto !important;
+        top: auto !important; left: auto !important; right: auto !important; bottom: auto !important;
         z-index: auto !important;
         overflow: visible !important;
         background: #fff !important;
@@ -134,7 +134,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.12.0";
+const APP_VERSION = "0.12.1";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 // Instruments for member profiles (multi-select). Order is the display order.
 // Icons are emoji — render natively on iOS/macOS/Android. Bass uses 🪕 (banjo) as the closest
@@ -3067,60 +3067,68 @@ const GigModeView = ({setlist, songs, events, onClose}) => {
     document.body.setAttribute("data-gig-mode", "1");
     return () => { document.body.removeAttribute("data-gig-mode"); };
   }, []);
-  // Render the gig view via a portal directly into <body>. This makes .gig-print-root
-  // a direct child of body, so the print stylesheet's selector (which hides body's
-  // direct children that aren't .gig-print-root) actually matches.
-  return ReactDOM.createPortal(
-    h("div",{ref:containerRef, className:"fixed inset-0 z-50 overflow-auto gig-print-root",style:{background:"var(--cream)",color:"var(--ink)"}},
-      h("div",{className:"max-w-5xl mx-auto p-4 sm:p-6"},
-        // Toolbar — small, doesn't compete with content. Hidden when printing.
-        h("div",{className:"no-print flex items-center gap-2 mb-3 flex-wrap"},
-          h("button",{onClick:onClose,className:"btn bg-white px-3 py-1.5 text-sm font-semibold"},"× Exit"),
-          h("button",{onClick:()=>{ try { window.print(); } catch(_){} },className:"btn bg-white px-3 py-1.5 text-sm"},"🖨 Print"),
-          h("div",{className:"flex items-center gap-1.5 ml-auto"},
-            h("label",{className:"flex items-center gap-1 text-xs"},
-              h("input",{type:"checkbox",checked:autoFit,onChange:e=>setAutoFit(e.target.checked)}),
-              h("span",null,"Auto-fit")
-            ),
-            !autoFit && h(React.Fragment,null,
-              h("button",{onClick:()=>setFontPx(p => Math.max(14, p - 2)),className:"pill bg-white px-2 py-0.5 text-xs"},"A−"),
-              h("span",{className:"text-xs w-10 text-center"}, fontPx + "px"),
-              h("button",{onClick:()=>setFontPx(p => Math.min(96, p + 2)),className:"pill bg-white px-2 py-0.5 text-xs"},"A+")
-            )
+  // Render the gig view as a fixed overlay in the regular tree (no portal).
+  // The previous portal approach broke on-screen rendering on iPad Safari.
+  return h("div",{
+    ref:containerRef,
+    className:"gig-print-root",
+    style:{
+      position:"fixed",
+      top:0, left:0, right:0, bottom:0,
+      zIndex:9999,
+      overflow:"auto",
+      background:"var(--cream)",
+      color:"var(--ink)",
+      WebkitOverflowScrolling:"touch"
+    }
+  },
+    h("div",{className:"max-w-5xl mx-auto p-4 sm:p-6"},
+      // Toolbar — small, doesn't compete with content. Hidden when printing.
+      h("div",{className:"no-print flex items-center gap-2 mb-3 flex-wrap"},
+        h("button",{onClick:onClose,className:"btn bg-white px-3 py-1.5 text-sm font-semibold"},"× Exit"),
+        h("button",{onClick:()=>{ try { window.print(); } catch(_){} },className:"btn bg-white px-3 py-1.5 text-sm"},"🖨 Print"),
+        h("div",{className:"flex items-center gap-1.5 ml-auto"},
+          h("label",{className:"flex items-center gap-1 text-xs"},
+            h("input",{type:"checkbox",checked:autoFit,onChange:e=>setAutoFit(e.target.checked)}),
+            h("span",null,"Auto-fit")
+          ),
+          !autoFit && h(React.Fragment,null,
+            h("button",{onClick:()=>setFontPx(p => Math.max(14, p - 2)),className:"pill bg-white px-2 py-0.5 text-xs"},"A−"),
+            h("span",{className:"text-xs w-10 text-center"}, fontPx + "px"),
+            h("button",{onClick:()=>setFontPx(p => Math.min(96, p + 2)),className:"pill bg-white px-2 py-0.5 text-xs"},"A+")
           )
-        ),
-        // Title + meta
-        h("div",{className:"mb-2"},
-          h("h1",{className:"display leading-tight",style:{fontSize: Math.round(fontPx * 1.6) + "px"}}, setlist.name),
-          pinnedGig && h("div",{className:"text-[var(--ink-soft)] mt-1",style:{fontSize: Math.round(fontPx * 0.55) + "px"}},
-            fmtDate(pinnedGig.date), pinnedGig.title ? (" · " + pinnedGig.title) : "", pinnedGig.location ? (" · " + pinnedGig.location) : ""
-          )
-        ),
-        // Sets
-        h("div",{className:"mt-3"},
-          sets.length === 0 ? h("p",{className:"italic"},"Empty setlist.") : sets.map((set, si) => {
-            const songIds = set.songIds || [];
-            const setName = set.name || ("Set " + (si+1));
-            return h("div",{key:si, className:"mb-4"},
-              h("div",{className:"display border-b-2 border-[var(--berry)] pb-1 mb-1",style:{fontSize: Math.round(fontPx * 1.05) + "px",color:"var(--berry)"}}, setName),
-              songIds.length === 0
-                ? h("div",{className:"italic text-[var(--ink-soft)]",style:{fontSize: Math.round(fontPx * 0.7) + "px"}},"(no songs)")
-                : h("ol",{className:"list-decimal pl-8 sm:pl-12",style:{fontSize: fontPx + "px",lineHeight:1.4}},
-                    songIds.map((sid, i) => {
-                      const s = songs && songs[sid];
-                      if (!s) return h("li",{key:"d-"+i,className:"italic text-[var(--ink-soft)]"},"(deleted)");
-                      return h("li",{key:sid,className:"break-words"},
-                        h("span",{className:"font-semibold"}, s.title || "(untitled)"),
-                        s.artist && h("span",{className:"text-[var(--ink-soft)] italic ml-2",style:{fontSize:"0.75em"}}, "— " + s.artist)
-                      );
-                    })
-                  )
-            );
-          })
         )
+      ),
+      // Title + meta
+      h("div",{className:"mb-2"},
+        h("h1",{className:"display leading-tight",style:{fontSize: Math.round(fontPx * 1.6) + "px"}}, setlist.name),
+        pinnedGig && h("div",{className:"text-[var(--ink-soft)] mt-1",style:{fontSize: Math.round(fontPx * 0.55) + "px"}},
+          fmtDate(pinnedGig.date), pinnedGig.title ? (" · " + pinnedGig.title) : "", pinnedGig.location ? (" · " + pinnedGig.location) : ""
+        )
+      ),
+      // Sets
+      h("div",{className:"mt-3"},
+        sets.length === 0 ? h("p",{className:"italic"},"Empty setlist.") : sets.map((set, si) => {
+          const songIds = set.songIds || [];
+          const setName = set.name || ("Set " + (si+1));
+          return h("div",{key:si, className:"mb-4"},
+            h("div",{className:"display border-b-2 border-[var(--berry)] pb-1 mb-1",style:{fontSize: Math.round(fontPx * 1.05) + "px",color:"var(--berry)"}}, setName),
+            songIds.length === 0
+              ? h("div",{className:"italic text-[var(--ink-soft)]",style:{fontSize: Math.round(fontPx * 0.7) + "px"}},"(no songs)")
+              : h("ol",{className:"list-decimal pl-8 sm:pl-12",style:{fontSize: fontPx + "px",lineHeight:1.4}},
+                  songIds.map((sid, i) => {
+                    const s = songs && songs[sid];
+                    if (!s) return h("li",{key:"d-"+i,className:"italic text-[var(--ink-soft)]"},"(deleted)");
+                    return h("li",{key:sid,className:"break-words"},
+                      h("span",{className:"font-semibold"}, s.title || "(untitled)"),
+                      s.artist && h("span",{className:"text-[var(--ink-soft)] italic ml-2",style:{fontSize:"0.75em"}}, "— " + s.artist)
+                    );
+                  })
+                )
+          );
+        })
       )
-    ),
-    document.body
+    )
   );
 };
 // === END GIG MODE VIEW ===
