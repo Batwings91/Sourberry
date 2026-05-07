@@ -83,7 +83,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.2.0";
+const APP_VERSION = "0.2.1";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 const SONG_STATUSES = [
   {id:"suggested",label:"Suggested",desc:"In the voting pool"},
@@ -2924,7 +2924,7 @@ const App = () => {
   const [showSyncPanel, setShowSyncPanel] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   useEffect(() => { if (urlBin && urlBin !== storedBin) setStoredBinId(urlBin); }, [urlBin, storedBin]);
-  const sync = useSyncedState(binId, memberId);
+  const sync = useSyncedState(binId, member && member.id);
 
   if (!binId) return h(SetupScreen,{onCreated: id => { setStoredBinId(id); const url = new URL(window.location.href); url.searchParams.set("bin", id); window.history.replaceState({}, "", url.toString()); setBinId(id); setShowShare(true); }});
   if (showShare) return h(ShareScreen,{binId:binId,onContinue:()=>setShowShare(false)});
