@@ -214,7 +214,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.20.0";
+const APP_VERSION = "0.20.1";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 // Instruments for member profiles (multi-select). Order is the display order.
 // Icons are emoji — render natively on iOS/macOS/Android. Bass uses 🪕 (banjo) as the closest
@@ -5570,6 +5570,17 @@ const App = () => {
   useEffect(() => { if (urlBin && urlBin !== storedBin) setStoredBinId(urlBin); }, [urlBin, storedBin]);
   const sync = useSyncedState(binId, member && member.id);
 
+  // v0.20.1 (hotfix): forceSnapshot MUST be declared before any conditional early-returns
+  // below (!binId, showShare, !sync.state, !member). React's Rules of Hooks require hooks
+  // to be called in the same order every render — putting useCallback after an early return
+  // (as v0.20.0 did) means the hook is sometimes skipped and React unmounts the tree.
+  // Symptom was: "Loading the band's data…" rendered, then the next render (with sync.state
+  // populated) hit the misordered hook and produced a blank page. References sync.state in
+  // the closure, which is fine because we don't access fields directly here.
+  const forceSnapshot = useCallback(() => {
+    try { saveBackup(binId, sync.state, {force: true}); } catch (_) {}
+  }, [binId, sync.state]);
+
   if (!binId) return h(SetupScreen,{onCreated: id => { setStoredBinId(id); const url = new URL(window.location.href); url.searchParams.set("bin", id); window.history.replaceState({}, "", url.toString()); setBinId(id); setShowShare(true); }});
   if (showShare) return h(ShareScreen,{binId:binId,onContinue:()=>setShowShare(false)});
 
@@ -5599,14 +5610,6 @@ const App = () => {
   const memberProfiles = sync.state.memberProfiles || {};
   const settings = sync.state.settings || {};
   const feedback = sync.state.feedback || {};
-
-  // v0.20.0: force-snapshot helper for high-risk destructive ops (bulk delete past events,
-  // delete setlist, clear all my marks). Bypasses the 2-minute auto-snapshot throttle so that
-  // even if the throttled snapshot just fired, the destructive action still gets its own
-  // safety point. Silent failure — backup errors must never block the action itself.
-  const forceSnapshot = useCallback(() => {
-    try { saveBackup(binId, sync.state, {force: true}); } catch (_) {}
-  }, [binId, sync.state]);
 
   // "Who are you?" gate. If a fresh visitor opens the URL on a new device, member
   // identity is null (each device has its own localStorage). Without this gate, the
