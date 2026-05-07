@@ -307,7 +307,7 @@ const buildEquipmentSeed = () => {
   });
   return eq;
 };
-const buildSeedState = () => ({schemaVersion: 8, events: buildEventsSeed(), songs: buildSongsSeed(), setlists: buildSetlistsSeed(), polls: {}, equipment: buildEquipmentSeed(), wishlist: {}, practiceAvail: {}});
+const buildSeedState = () => ({schemaVersion: 9, events: buildEventsSeed(), songs: buildSongsSeed(), setlists: buildSetlistsSeed(), polls: {}, equipment: buildEquipmentSeed(), wishlist: {}, practiceAvail: {}, memberProfiles: {}});
 
 const migrate = data => {
   let migrated = false;
@@ -382,6 +382,18 @@ const migrate = data => {
       delete sl.songIds;
     });
     data.schemaVersion = 8; migrated = true;
+  }
+  if (data.schemaVersion < 9) {
+    if (!data.memberProfiles || typeof data.memberProfiles !== "object") data.memberProfiles = {};
+    Object.keys(data.events || {}).forEach(id => {
+      const e = data.events[id];
+      if (e.type === "rehearsal") {
+        if (!Array.isArray(e.agendaSongIds)) e.agendaSongIds = [];
+        if (!Array.isArray(e.playedSongIds)) e.playedSongIds = [];
+        if (e.rehearsalNotes === undefined) e.rehearsalNotes = "";
+      }
+    });
+    data.schemaVersion = 9; migrated = true;
   }
   return migrated;
 };
@@ -471,6 +483,30 @@ const setlistAllSongIds = (sl) => {
   const ids = [];
   (sl.sets || []).forEach(set => (set.songIds || []).forEach(id => ids.push(id)));
   return ids;
+};
+// Build a map of songId -> ISO date string of the most recent rehearsal where it was marked played.
+const buildLastRehearsedMap = (events) => {
+  const map = {};
+  Object.values(events || {}).forEach(e => {
+    if (e.type !== "rehearsal" || !Array.isArray(e.playedSongIds)) return;
+    const d = e.date;
+    if (!d) return;
+    e.playedSongIds.forEach(sid => {
+      if (!map[sid] || d > map[sid]) map[sid] = d;
+    });
+  });
+  return map;
+};
+// Returns list of song ids in a setlist that haven't been rehearsed in the last `weeks` weeks (or never).
+const staleSongsForSetlist = (setlist, events, weeks) => {
+  if (!setlist) return [];
+  const w = (weeks == null ? 4 : weeks);
+  const cutoffISO = (new Date(Date.now() - w * 7 * 24 * 60 * 60 * 1000)).toISOString().slice(0,10);
+  const map = buildLastRehearsedMap(events);
+  return setlistAllSongIds(setlist).filter(sid => {
+    const last = map[sid];
+    return !last || last < cutoffISO;
+  });
 };
 const setlistTotals = (sl, songs) => sumLengths(setlistAllSongIds(sl), songs);
 const setlistSongCount = (sl) => setlistAllSongIds(sl).length;
@@ -577,7 +613,7 @@ const useSyncedState = binId => {
   }, [flushWrite]);
   const mutate = useCallback(updater => {
     setState(prev => {
-      const next = updater(prev || {schemaVersion:8, events:{}, songs:{}, setlists:{}, polls:{}, equipment:{}, wishlist:{}, practiceAvail:{}});
+      const next = updater(prev || {schemaVersion:9, events:{}, songs:{}, setlists:{}, polls:{}, equipment:{}, wishlist:{}, practiceAvail:{}, memberProfiles:{}});
       stateRef.current = next;
       return next;
     });
@@ -699,14 +735,108 @@ const StatusDot = ({status}) => {
   if (!map[status]) return h("span",{className:"inline-block w-3 h-3 rounded-full border border-[var(--line)] bg-white"});
   return h("span",{className:"inline-block w-3 h-3 rounded-full border border-[var(--line)]",style:{background: map[status]}});
 };
-const MemberPicker = ({value, onChange}) => h("div",{className:"flex items-center gap-1.5 sm:gap-2 shrink-0"},
+// Resize uploaded photo to a 200x200 center-cropped JPEG data URL (~10-30KB)
+const processProfileImage = file => new Promise((resolve, reject) => {
+  if (!file) return reject(new Error("No file selected"));
+  if (!file.type || !file.type.startsWith("image/")) return reject(new Error("That's not an image file"));
+  if (file.size > 10*1024*1024) return reject(new Error("Image too large (max 10MB)"));
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const target = 200;
+        const canvas = document.createElement("canvas");
+        canvas.width = target; canvas.height = target;
+        const ctx = canvas.getContext("2d");
+        const size = Math.min(img.width, img.height);
+        const sx = Math.floor((img.width - size) / 2);
+        const sy = Math.floor((img.height - size) / 2);
+        ctx.drawImage(img, sx, sy, size, size, 0, 0, target, target);
+        resolve(canvas.toDataURL("image/jpeg", 0.7));
+      } catch(e) { reject(new Error("Couldn't process image")); }
+    };
+    img.onerror = () => reject(new Error("Couldn't load image"));
+    img.src = ev.target.result;
+  };
+  reader.onerror = () => reject(new Error("Couldn't read file"));
+  reader.readAsDataURL(file);
+});
+
+const SettingsModal = ({memberProfiles, onClose, mutate}) => {
+  const [busy, setBusy] = useState(null);
+  const [error, setError] = useState("");
+  const onUpload = async (memberId, file) => {
+    setError(""); setBusy(memberId);
+    try {
+      const dataUrl = await processProfileImage(file);
+      mutate(prev => {
+        const profiles = Object.assign({}, prev.memberProfiles || {});
+        profiles[memberId] = Object.assign({}, profiles[memberId] || {}, {photoUrl: dataUrl});
+        return Object.assign({}, prev, {memberProfiles: profiles});
+      });
+    } catch (e) {
+      setError(e.message || "Upload failed");
+    } finally {
+      setBusy(null);
+    }
+  };
+  const onRemove = (memberId) => {
+    mutate(prev => {
+      const profiles = Object.assign({}, prev.memberProfiles || {});
+      profiles[memberId] = Object.assign({}, profiles[memberId] || {}, {photoUrl: ""});
+      return Object.assign({}, prev, {memberProfiles: profiles});
+    });
+  };
+  return h("div",{className:"modal-bg",onClick:onClose},
+    h("div",{className:"card p-5 max-w-md w-full",onClick:e=>e.stopPropagation()},
+      h("div",{className:"flex items-center justify-between mb-3"},
+        h("h3",{className:"display text-2xl"},"Settings"),
+        h("button",{onClick:onClose,className:"ticker text-[var(--ink-soft)]"},"Close ✕")
+      ),
+      h("div",{className:"mb-2"},
+        h("div",{className:"ticker text-[var(--berry)] mb-2"},"Profile photos"),
+        h("p",{className:"text-xs text-[var(--ink-soft)] mb-3"},"Visible to everyone in the band. Photos are auto-cropped to a square, resized to 200×200, and compressed to keep things lightweight.")
+      ),
+      h("div",{className:"space-y-1"},
+        MEMBERS.map(m => {
+          const photo = (memberProfiles && memberProfiles[m.id] && memberProfiles[m.id].photoUrl) || "";
+          const isBusy = busy === m.id;
+          return h("div",{key:m.id,className:"flex items-center gap-3 py-2 border-b border-[var(--line)]/15 last:border-0"},
+            h("div",{className:"shrink-0 rounded-full border border-[var(--line)]/40 overflow-hidden bg-white flex items-center justify-center",style:{width:48,height:48}},
+              photo ? h("img",{src:photo,alt:m.name,className:"w-full h-full object-cover"}) : h("span",{className:"display text-xl text-[var(--ink-soft)]"}, m.name[0])
+            ),
+            h("div",{className:"flex-1 min-w-0"}, h("div",{className:"font-semibold"}, m.name)),
+            h("div",{className:"flex gap-2 shrink-0"},
+              h("label",{className:"btn bg-white px-3 py-1.5 text-xs font-semibold cursor-pointer"},
+                isBusy ? "Uploading…" : (photo ? "Change" : "Upload"),
+                h("input",{type:"file",accept:"image/*",className:"hidden",disabled:isBusy,onChange:e=>{ const f = e.target.files && e.target.files[0]; if (f) onUpload(m.id, f); e.target.value = ""; }})
+              ),
+              photo && h("button",{onClick:()=>onRemove(m.id),className:"btn bg-white px-2 py-1.5 text-xs text-[var(--berry)]",title:"Remove photo"},"×")
+            )
+          );
+        })
+      ),
+      error && h("div",{className:"mt-3 text-sm text-[var(--berry)]"}, error),
+      h("div",{className:"mt-4 pt-3 border-t border-[var(--line)]/15 text-xs text-[var(--ink-soft)] italic"},"More settings coming. For now, this is just photos.")
+    )
+  );
+};
+
+const MemberPicker = ({value, onChange, profiles}) => h("div",{className:"flex items-center gap-1.5 sm:gap-2 shrink-0"},
   h("span",{className:"ticker text-[var(--ink-soft)] hidden sm:inline"},"I am"),
   h("div",{className:"flex gap-1 sm:gap-1.5 flex-wrap"},
     MEMBERS.map(m => {
       const active = value && value.id === m.id;
-      return h("button",{key:m.id,onClick:()=>onChange(m.id),className:"pill px-2 sm:px-3 py-1 text-xs sm:text-sm font-semibold transition-all " + (active?"berry-bg":"bg-white hover:bg-[var(--acid)]")},
-        h("span",{className:"sm:hidden"}, active?m.name:m.name[0]),
-        h("span",{className:"hidden sm:inline"}, m.name)
+      const photo = (profiles && profiles[m.id] && profiles[m.id].photoUrl) || "";
+      return h("button",{key:m.id,onClick:()=>onChange(m.id),className:"pill flex items-center gap-1.5 px-2 sm:px-3 py-1 text-xs sm:text-sm font-semibold transition-all " + (active?"berry-bg":"bg-white hover:bg-[var(--acid)]")},
+        photo && h("img",{src:photo,alt:"",className:"rounded-full border border-white/40 object-cover shrink-0",style:{width:20,height:20}}),
+        photo
+          ? h("span",null, m.name)
+          : h(React.Fragment,null,
+              h("span",{className:"sm:hidden"}, active?m.name:m.name[0]),
+              h("span",{className:"hidden sm:inline"}, m.name)
+            )
       );
     })
   )
@@ -793,7 +923,7 @@ const AvailabilityButtons = ({ev, member, onSet}) => {
 };
 const blankEvent = (type) => ({date: todayISO(), startTime:"18:00", endTime:"21:00", type: type||"rehearsal", venueType:"in-person-studio", location:"", bookingOwner:"", confirmed:false, status:"proposed", title:"", comments:"", recordingUrl:"", gigNotes:"", actualSetlistId:null});
 
-const EventForm = ({initial, onSave, onCancel, onDelete, locationSuggestions}) => {
+const EventForm = ({initial, onSave, onCancel, onDelete, locationSuggestions, songs}) => {
   const [f, setF] = useState(initial || blankEvent());
   const set = (k, v) => setF(prev => Object.assign({}, prev, {[k]: v}));
   const isRehearsal = f.type === "rehearsal";
@@ -832,6 +962,22 @@ const EventForm = ({initial, onSave, onCancel, onDelete, locationSuggestions}) =
       ),
       h("label",{className:"text-sm md:col-span-2"}, h("div",{className:"ticker mb-1"},"Comments"),
         h("textarea",{className:"input",rows:"2",value:f.comments,onChange:e=>set("comments",e.target.value)})),
+      isRehearsal && songs && h(SongMultiPicker,{
+        songs: songs,
+        selected: Array.isArray(f.agendaSongIds) ? f.agendaSongIds : [],
+        onChange: v => set("agendaSongIds", v),
+        label: "Agenda — songs to work on",
+        helpText: "Plan ahead. Edit on the day if needed."
+      }),
+      isRehearsal && songs && h(SongMultiPicker,{
+        songs: songs,
+        selected: Array.isArray(f.playedSongIds) ? f.playedSongIds : [],
+        onChange: v => set("playedSongIds", v),
+        label: "Played — songs you actually ran",
+        helpText: "Tick these off during or after rehearsal. Drives the 'last rehearsed' tracker."
+      }),
+      isRehearsal && h("label",{className:"text-sm md:col-span-2"}, h("div",{className:"ticker mb-1"},"Rehearsal notes (during / after)"),
+        h("textarea",{className:"input",rows:"3",value:f.rehearsalNotes||"",onChange:e=>set("rehearsalNotes",e.target.value),placeholder:"What went well, what to fix, ideas to try next time…"})),
       f.type === "gig" && h("label",{className:"text-sm md:col-span-2"}, h("div",{className:"ticker mb-1"},"Recording URL"),
         h("input",{className:"input",type:"url",value:f.recordingUrl||"",onChange:e=>set("recordingUrl",e.target.value),placeholder:"https://… (YouTube, Drive, Dropbox, etc.)"})),
       f.type === "gig" && h("label",{className:"text-sm md:col-span-2"}, h("div",{className:"ticker mb-1"},"Gig notes (post-gig)"),
@@ -845,13 +991,24 @@ const EventForm = ({initial, onSave, onCancel, onDelete, locationSuggestions}) =
   );
 };
 
-const EventCard = ({ev, member, onEdit, onSetAvailability, onDelete}) => {
+const EventCard = ({ev, member, songs, events, pinnedSetlist, onEdit, onSetAvailability, onDelete}) => {
   const owner = MEMBERS.find(m => m.id === ev.bookingOwner);
   const yesCount = MEMBERS.filter(m => ev.availability && ev.availability[m.id] === "yes").length;
   const isRehearsal = ev.type === "rehearsal";
   const past = isPast(ev.date);
   const d = new Date(ev.date + "T00:00:00");
   const yr = d.getFullYear();
+  // Rehearsal summary
+  const agendaIds = isRehearsal && Array.isArray(ev.agendaSongIds) ? ev.agendaSongIds : [];
+  const playedIds = isRehearsal && Array.isArray(ev.playedSongIds) ? ev.playedSongIds : [];
+  const agendaPlayedCount = agendaIds.filter(id => playedIds.includes(id)).length;
+  const extraPlayed = playedIds.filter(id => !agendaIds.includes(id));
+  // Gig: un-rehearsed warning (only for upcoming gigs with a pinned setlist)
+  const stale = (!past && ev.type === "gig" && pinnedSetlist && events) ? staleSongsForSetlist(pinnedSetlist, events, 4) : [];
+  const songName = id => {
+    const s = songs && songs[id];
+    return s ? (s.title || "(untitled)") : "(deleted)";
+  };
   return h("div",{className:"card p-3 sm:p-4 md:p-5 " + (past?"opacity-90":"")},
     h("div",{className:"flex items-start gap-3 sm:gap-4"},
       h("div",{className:"shrink-0 text-center min-w-[56px] sm:min-w-[68px]"},
@@ -871,6 +1028,44 @@ const EventCard = ({ev, member, onEdit, onSetAvailability, onDelete}) => {
         h("div",{className:"text-sm mt-1 text-[var(--ink-soft)]"}, ev.startTime + "–" + ev.endTime + (ev.location ? " · " + ev.location : "") + (owner ? " · booking: " + owner.name : "")),
         ev.type === "gig" && ev.recordingUrl && h("div",{className:"mt-2"},
           h("a",{href:ev.recordingUrl,target:"_blank",rel:"noopener",className:"ticker text-[var(--berry)] underline"},"Recording ↗")
+        ),
+        // Gig: un-rehearsed warning
+        stale.length > 0 && h("div",{className:"mt-2 card-flat p-2 text-sm",style:{background:"#fef3c7",borderColor:"#fcd34d"}},
+          h("div",{className:"font-semibold text-[var(--ink)]"},"⚠️ " + stale.length + " setlist song" + (stale.length===1?"":"s") + " not rehearsed in 4+ weeks"),
+          h("div",{className:"text-xs text-[var(--ink-soft)] mt-0.5 truncate"}, stale.slice(0,5).map(songName).join(", ") + (stale.length > 5 ? (" + " + (stale.length - 5) + " more") : ""))
+        ),
+        // Rehearsal summary (agenda / played / notes)
+        isRehearsal && (agendaIds.length > 0 || playedIds.length > 0 || ev.rehearsalNotes) && h("details",{className:"mt-2 text-sm",open: !past && agendaIds.length > 0},
+          h("summary",{className:"ticker text-[var(--berry)] hover:underline"},
+            "Rehearsal plan ▾  ",
+            h("span",{className:"text-[var(--ink-soft)]"},
+              agendaIds.length > 0 ? ("agenda " + agendaPlayedCount + "/" + agendaIds.length) : (playedIds.length > 0 ? ("played " + playedIds.length) : "")
+            )
+          ),
+          h("div",{className:"mt-2 space-y-2"},
+            agendaIds.length > 0 && h("div",null,
+              h("div",{className:"ticker text-[var(--ink-soft)]"},"Agenda"),
+              h("ul",{className:"list-none mt-1 text-sm"},
+                agendaIds.map(sid => h("li",{key:"a-"+sid,className:"flex items-center gap-2"},
+                  h("span",{style:{color: playedIds.includes(sid) ? "var(--good)" : "var(--ink-soft)"}}, playedIds.includes(sid) ? "✓" : "○"),
+                  h("span",{className: playedIds.includes(sid) ? "" : "text-[var(--ink-soft)]"}, songName(sid))
+                ))
+              )
+            ),
+            extraPlayed.length > 0 && h("div",null,
+              h("div",{className:"ticker text-[var(--ink-soft)]"},"Also played (off-plan)"),
+              h("ul",{className:"list-none mt-1 text-sm"},
+                extraPlayed.map(sid => h("li",{key:"e-"+sid,className:"flex items-center gap-2"},
+                  h("span",{style:{color:"var(--good)"}}, "+"),
+                  h("span",null, songName(sid))
+                ))
+              )
+            ),
+            ev.rehearsalNotes && h("div",null,
+              h("div",{className:"ticker text-[var(--ink-soft)]"},"Notes"),
+              h("p",{className:"mt-1 italic text-[var(--ink-soft)] whitespace-pre-wrap"}, ev.rehearsalNotes)
+            )
+          )
         ),
         ev.comments && h("details",{className:"mt-2 text-sm"},
           h("summary",{className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)]"},"Notes ▾"),
@@ -899,7 +1094,7 @@ const EventCard = ({ev, member, onEdit, onSetAvailability, onDelete}) => {
   );
 };
 
-const TypedScheduleView = ({events, member, mutate, eventType}) => {
+const TypedScheduleView = ({events, songs, setlists, member, mutate, eventType}) => {
   const [editingId, setEditingId] = useState(null);
   const [adding, setAdding] = useState(false);
   const [showPast, setShowPast] = useState(false);
@@ -908,6 +1103,14 @@ const TypedScheduleView = ({events, member, mutate, eventType}) => {
   const past = all.filter(e => isPast(e.date)).reverse();
   const list = showPast ? past : upcoming;
   const locationSuggestions = uniqueLocations(events);
+  // For gigs: precompute pinned setlists keyed by gigEventId so EventCard can warn about un-rehearsed songs.
+  const setlistByGig = useMemo(() => {
+    const out = {};
+    Object.entries(setlists || {}).forEach(([id, sl]) => {
+      if (sl && sl.gigEventId) out[sl.gigEventId] = Object.assign({id}, sl);
+    });
+    return out;
+  }, [setlists]);
   const setAvailability = (eid, mid, val) => mutate(prev => {
     const events = Object.assign({}, prev.events||{});
     const ev = Object.assign({}, events[eid]||{});
@@ -946,15 +1149,15 @@ const TypedScheduleView = ({events, member, mutate, eventType}) => {
       h("span",{className:"text-sm text-[var(--ink-soft)]"},"Tidy up: " + past.length + " past " + eventType + (past.length===1?"":"s") + "."),
       h("button",{onClick:clearAllPast,className:"btn bg-white px-3 py-1.5 text-sm text-[var(--berry)]"},"Delete all past")
     ),
-    adding && h(EventForm,{initial: blankEvent(eventType), onSave:createEvent, onCancel:()=>setAdding(false), locationSuggestions:locationSuggestions}),
+    adding && h(EventForm,{initial: blankEvent(eventType), onSave:createEvent, onCancel:()=>setAdding(false), locationSuggestions:locationSuggestions, songs:songs}),
     list.length===0 && !adding && h("div",{className:"card p-6 text-center"},
       h("p",{className:"display text-xl"}, showPast ? ("No past " + eventType + "s.") : ("No " + eventType + "s in the diary yet.")),
       !showPast && h("p",{className:"text-sm mt-2 text-[var(--ink-soft)]"},"Tap \"" + addLabel + "\" to add one.")
     ),
     h("div",{className:"space-y-3"},
       list.map(ev => editingId===ev.id
-        ? h(EventForm,{key:ev.id, initial:ev, onSave: f => updateEvent(ev.id, f), onCancel:()=>setEditingId(null), onDelete:()=>deleteEvent(ev.id), locationSuggestions:locationSuggestions})
-        : h(EventCard,{key:ev.id, ev:ev, member:member, onEdit:()=>{setEditingId(ev.id); setAdding(false);}, onSetAvailability:setAvailability, onDelete:()=>{ if(confirm("Delete this past event?")) deleteEvent(ev.id); }})
+        ? h(EventForm,{key:ev.id, initial:ev, onSave: f => updateEvent(ev.id, f), onCancel:()=>setEditingId(null), onDelete:()=>deleteEvent(ev.id), locationSuggestions:locationSuggestions, songs:songs})
+        : h(EventCard,{key:ev.id, ev:ev, member:member, songs:songs, events:events, pinnedSetlist: setlistByGig[ev.id], onEdit:()=>{setEditingId(ev.id); setAdding(false);}, onSetAvailability:setAvailability, onDelete:()=>{ if(confirm("Delete this past event?")) deleteEvent(ev.id); }})
       )
     )
   );
@@ -1099,7 +1302,7 @@ const cyclePractice = current => {
 };
 
 // v8: Compact-by-default SongCard with tap-to-expand
-const SongCard = ({song, member, onEdit, onVote, onSetStatus, onSetPractice, onPromote}) => {
+const SongCard = ({song, member, onEdit, onVote, onSetStatus, onSetPractice, onPromote, showStatus, lastRehearsed}) => {
   const [expanded, setExpanded] = useState(false);
   const showVotes = song.status === "suggested";
   const showPractice = ["shortlist","learning","repertoire"].includes(song.status);
@@ -1136,6 +1339,7 @@ const SongCard = ({song, member, onEdit, onVote, onSetStatus, onSetPractice, onP
       song.coverArtUrl && h("img",{src: song.coverArtUrl, alt:"", className:"shrink-0 rounded-sm border border-[var(--line)]/30", style:{width:28,height:28,objectFit:"cover"}, onError:e=>{e.target.style.display="none";}}),
       h("div",{className:"flex-1 min-w-0 flex items-baseline gap-2 flex-wrap"},
         fresh && h("span",{className:"ticker berry-bg px-1.5 py-0.5 text-[9px] shrink-0"},"NEW"),
+        showStatus && h("span",{className:"ticker bg-white border border-[var(--line)]/40 px-1.5 py-0.5 text-[9px] shrink-0 text-[var(--ink-soft)]"}, ((SONG_STATUSES.find(x => x.id === song.status) || {}).label || song.status || "?")),
         h("span",{className:"font-semibold truncate"}, song.title || "(untitled)"),
         song.artist && h("span",{className:"text-xs text-[var(--ink-soft)] italic truncate"},"— " + song.artist),
         lengthLabel && h("span",{className:"ticker text-[var(--ink-soft)] shrink-0"}, lengthLabel)
@@ -1153,6 +1357,9 @@ const SongCard = ({song, member, onEdit, onVote, onSetStatus, onSetPractice, onP
             [song.album, song.year, lengthLabel].filter(Boolean).join(" · ")
           )
         )
+      ),
+      lastRehearsed && h("div",{className:"text-xs text-[var(--ink-soft)]"},
+        h("span",{className:"ticker"},"Last rehearsed: "), fmtDate(lastRehearsed)
       ),
       // Music links + meta + edit (always visible)
       h("div",{className:"flex items-start justify-between gap-2 flex-wrap"},
@@ -1196,7 +1403,8 @@ const SongCard = ({song, member, onEdit, onVote, onSetStatus, onSetPractice, onP
   );
 };
 
-const SongsView = ({songs, member, mutate}) => {
+const SongsView = ({songs, events, member, mutate}) => {
+  const lastRehearsedMap = useMemo(() => buildLastRehearsedMap(events), [events]);
   const [editingId, setEditingId] = useState(null);
   const [adding, setAdding] = useState(false);
   const [view, setView] = useState("repertoire");
@@ -1212,7 +1420,7 @@ const SongsView = ({songs, member, mutate}) => {
   // Candidates for bulk fill: have title+artist, are missing core metadata
   const bulkCandidates = all.filter(s => s.title && s.artist && (!s.lengthSec || !s.coverArtUrl || !s.album || !s.iTunesUrl));
 
-  const list = all.filter(s => s.status === view);
+  const list = view === "all" ? all.slice() : all.filter(s => s.status === view);
   list.sort((a, b) => {
     if (sortMode === "newest") return (b.createdAt||0) - (a.createdAt||0);
     if (sortMode === "title") return (a.title||"").localeCompare(b.title||"");
@@ -1326,6 +1534,9 @@ const SongsView = ({songs, member, mutate}) => {
 
     // Status pills
     h("div",{className:"flex gap-2 overflow-x-auto pb-1 mb-3"},
+      h("button",{key:"all",onClick:()=>setView("all"),
+        className:"pill px-3 py-1.5 text-sm font-semibold whitespace-nowrap shrink-0 " + (view==="all"?"berry-bg text-white":"bg-white hover:bg-[var(--acid)]")},
+        "All ", h("span",{className:"opacity-70 ml-1"}, all.length)),
       SONG_STATUSES.map(s => h("button",{key:s.id, onClick:()=>setView(s.id),
         className:"pill px-3 py-1.5 text-sm font-semibold whitespace-nowrap shrink-0 " + (view===s.id?"berry-bg text-white":"bg-white hover:bg-[var(--acid)]")},
         s.label, " ", h("span",{className:"opacity-70 ml-1"}, counts[s.id]),
@@ -1334,14 +1545,14 @@ const SongsView = ({songs, member, mutate}) => {
     ),
     // Search + add
     h("div",{className:"flex items-center justify-between gap-2 mb-3 flex-wrap"},
-      h("input",{className:"input flex-1",value:query,onChange:e=>setQuery(e.target.value),placeholder:"Search " + (currentStatus ? currentStatus.label.toLowerCase() : "") + "…"}),
+      h("input",{className:"input flex-1",value:query,onChange:e=>setQuery(e.target.value),placeholder:"Search " + (view==="all" ? "all songs" : (currentStatus ? currentStatus.label.toLowerCase() : "")) + "…"}),
       h("button",{onClick:()=>{setAdding(true); setEditingId(null);},className:"btn berry-bg px-4 py-2 text-sm font-semibold whitespace-nowrap"},"+ Add song")
     ),
     // Description + sort + bulk fill
     h("div",{className:"card p-3 mb-4 text-sm"},
       h("div",{className:"flex items-baseline gap-2 flex-wrap"},
-        h("span",{className:"ticker text-[var(--berry)]"}, currentStatus && currentStatus.label),
-        h("span",{className:"text-[var(--ink-soft)]"}, currentStatus && currentStatus.desc)
+        h("span",{className:"ticker text-[var(--berry)]"}, view==="all" ? "All" : (currentStatus && currentStatus.label)),
+        h("span",{className:"text-[var(--ink-soft)]"}, view==="all" ? "Searches every song regardless of status" : (currentStatus && currentStatus.desc))
       ),
       h("div",{className:"flex items-center gap-1.5 mt-2 flex-wrap"},
         h("span",{className:"ticker text-[var(--ink-soft)]"},"Sort"),
@@ -1361,9 +1572,41 @@ const SongsView = ({songs, member, mutate}) => {
     h("div",{className:"space-y-1.5"},
       filtered.map(s => editingId===s.id
         ? h(SongForm,{key:s.id, initial:s, onSave: f => { updateSong(s.id, f); setEditingId(null); }, onCancel: () => setEditingId(null), onDelete: () => deleteSong(s.id)})
-        : h(SongCard,{key:s.id, song:s, member:member, onEdit: () => { setEditingId(s.id); setAdding(false); }, onVote: voteSong, onSetStatus: setStatus, onSetPractice: setPractice, onPromote: promoteSong})
+        : h(SongCard,{key:s.id, song:s, member:member, onEdit: () => { setEditingId(s.id); setAdding(false); }, onVote: voteSong, onSetStatus: setStatus, onSetPractice: setPractice, onPromote: promoteSong, showStatus: view === "all", lastRehearsed: lastRehearsedMap[s.id]})
       )
     )
+  );
+};
+
+// Inline multi-select picker: chip list of selected songs + native dropdown to add more.
+const SongMultiPicker = ({songs, selected, onChange, label, helpText}) => {
+  const all = songsList(songs);
+  const sortedRemaining = all.filter(s => !selected.includes(s.id))
+    .sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+  return h("div",{className:"text-sm md:col-span-2"},
+    h("div",{className:"ticker mb-1"}, label + (selected.length > 0 ? (" (" + selected.length + ")") : "")),
+    selected.length > 0 && h("div",{className:"flex flex-wrap gap-1.5 mb-2"},
+      selected.map(sid => {
+        const s = songs && songs[sid];
+        const onRemove = () => onChange(selected.filter(x => x !== sid));
+        if (!s) return h("span",{key:sid,className:"pill bg-white px-2 py-1 text-xs flex items-center gap-1 italic text-[var(--ink-soft)]"},
+          h("span",null,"(deleted)"),
+          h("button",{type:"button",onClick:onRemove,className:"text-[var(--berry)] font-bold","aria-label":"Remove"},"×")
+        );
+        return h("span",{key:sid,className:"pill bg-white px-2 py-1 text-xs flex items-center gap-1.5"},
+          h("span",null, s.title || "(untitled)"),
+          s.artist && h("span",{className:"text-[var(--ink-soft)] italic"}, "— " + s.artist),
+          h("button",{type:"button",onClick:onRemove,className:"text-[var(--berry)] font-bold ml-0.5","aria-label":"Remove"},"×")
+        );
+      })
+    ),
+    sortedRemaining.length > 0
+      ? h("select",{className:"input text-sm",value:"",onChange:e => { const v = e.target.value; if (v) onChange(selected.concat([v])); e.target.value = ""; }},
+          h("option",{value:""}, "+ Add a song…"),
+          sortedRemaining.map(s => h("option",{key:s.id,value:s.id}, (s.title || "(untitled)") + (s.artist ? (" — " + s.artist) : "")))
+        )
+      : h("div",{className:"text-xs italic text-[var(--ink-soft)]"},"No more songs to add."),
+    helpText && h("div",{className:"text-xs text-[var(--ink-soft)] italic mt-1"}, helpText)
   );
 };
 
@@ -1401,7 +1644,7 @@ const SongPicker = ({songs, excludeIds, onPick, onClose}) => {
   );
 };
 
-const SetlistDetail = ({setlist, songs, events, member, onBack, onUpdate, onDelete, onDuplicate}) => {
+const SetlistDetail = ({setlist, songs, events, member, mutate, onBack, onUpdate, onDelete, onDuplicate}) => {
   const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState(setlist.name);
   const [editingSetIdx, setEditingSetIdx] = useState(null);
@@ -1476,31 +1719,66 @@ const SetlistDetail = ({setlist, songs, events, member, onBack, onUpdate, onDele
     ? (picker.kind === "soundcheck" ? (soundcheckId ? [soundcheckId] : []) : setlistAllSongIds(setlist))
     : [];
 
+  const [editingSongId, setEditingSongId] = useState(null);
+  const lastRehearsedMap = useMemo(() => buildLastRehearsedMap(events), [events]);
+  const updateSongData = useCallback((id, data) => mutate(prev => Object.assign({}, prev, {songs: Object.assign({}, prev.songs||{}, {[id]: Object.assign({}, (prev.songs && prev.songs[id])||{}, data)})})), [mutate]);
+  const setSongStatusInline = (id, status) => updateSongData(id, {status});
+  const voteSongInline = (id, mid, val) => mutate(prev => {
+    const sg = Object.assign({}, prev.songs||{});
+    const s = Object.assign({}, sg[id]||{});
+    const v = Object.assign({}, s.votes||{});
+    if (!val) delete v[mid]; else v[mid] = val;
+    s.votes = v; sg[id] = s;
+    return Object.assign({}, prev, {songs: sg});
+  });
+  const setPracticeInline = (id, mid, val) => mutate(prev => {
+    const sg = Object.assign({}, prev.songs||{});
+    const s = Object.assign({}, sg[id]||{});
+    const p = Object.assign({}, s.practice||{});
+    if (!val) delete p[mid]; else p[mid] = val;
+    s.practice = p; sg[id] = s;
+    return Object.assign({}, prev, {songs: sg});
+  });
+  const promoteSongInline = (id) => updateSongData(id, {status:"shortlist", votes:{}});
+  const deleteSongInline = (id) => {
+    if (!confirm("Delete this song from the library? It will be removed from this setlist and any others.")) return;
+    mutate(prev => { const sg = Object.assign({}, prev.songs||{}); delete sg[id]; return Object.assign({}, prev, {songs: sg}); });
+    setEditingSongId(null);
+  };
+
   const renderSongRow = (sid, setIdx, songIdx, isLast) => {
     const s = songs && songs[sid];
     if (!s) return h("li",{key:sid+"-"+songIdx,className:"card-flat p-3 text-sm italic text-[var(--ink-soft)]"},
       "(deleted song) ",
       h("button",{onClick:()=>removeSongFromSet(setIdx, songIdx),className:"text-[var(--berry)] underline ml-2"},"remove")
     );
-    return h("li",{key:sid+"-"+songIdx,className:"card-flat p-3"},
-      h("div",{className:"flex items-start gap-3"},
-        h("div",{className:"display text-xl text-[var(--berry)] shrink-0 w-8"}, (songIdx+1) + "."),
-        s.coverArtUrl && h("img",{src:s.coverArtUrl, alt:"", className:"shrink-0 rounded border border-[var(--line)]/30", style:{width:40,height:40,objectFit:"cover"}, onError:e=>{e.target.style.display="none";}}),
+    if (editingSongId === sid) {
+      return h("li",{key:sid+"-"+songIdx,className:"flex items-start gap-2"},
+        h("div",{className:"display text-xl text-[var(--berry)] shrink-0 w-8 pt-3"}, (songIdx+1) + "."),
         h("div",{className:"flex-1 min-w-0"},
-          h("div",{className:"display text-base leading-tight"}, s.title),
-          s.artist && h("div",{className:"text-xs text-[var(--ink-soft)] italic"}, s.artist),
-          h("div",{className:"mt-1.5 flex items-center gap-1.5 flex-wrap"},
-            h("span",{className:"ticker text-[var(--ink-soft)]"}, (SONG_STATUSES.find(x=>x.id===s.status)||{}).label),
-            formatDuration(s.lengthSec) && h("span",{className:"ticker text-[var(--ink-soft)]"}, "· " + formatDuration(s.lengthSec)),
-            h("span",{className:"ticker text-[var(--ink-soft)]"},"·"),
-            MEMBERS.map(m => h(PracticeChip,{key:m.id, initial:m.name[0], state: s.practice && s.practice[m.id], isMe: false}))
-          )
-        ),
-        h("div",{className:"flex flex-col gap-1 shrink-0"},
-          h("button",{onClick:()=>moveSongInSet(setIdx, songIdx, -1),disabled:songIdx===0,className:"pill px-2 py-0.5 text-xs bg-white disabled:opacity-30"},"↑"),
-          h("button",{onClick:()=>moveSongInSet(setIdx, songIdx, 1),disabled:isLast,className:"pill px-2 py-0.5 text-xs bg-white disabled:opacity-30"},"↓"),
-          h("button",{onClick:()=>removeSongFromSet(setIdx, songIdx),className:"pill px-2 py-0.5 text-xs bg-white text-[var(--berry)]"},"×")
+          h(SongForm,{initial: s, onSave: f => { updateSongData(sid, f); setEditingSongId(null); }, onCancel: () => setEditingSongId(null), onDelete: () => deleteSongInline(sid)})
         )
+      );
+    }
+    return h("li",{key:sid+"-"+songIdx,className:"flex items-start gap-2"},
+      h("div",{className:"display text-xl text-[var(--berry)] shrink-0 w-8 pt-3"}, (songIdx+1) + "."),
+      h("div",{className:"flex-1 min-w-0"},
+        h(SongCard,{
+          song: Object.assign({id:sid}, s),
+          member: member,
+          onEdit: () => setEditingSongId(sid),
+          onVote: voteSongInline,
+          onSetStatus: setSongStatusInline,
+          onSetPractice: setPracticeInline,
+          onPromote: promoteSongInline,
+          showStatus: true,
+          lastRehearsed: lastRehearsedMap[sid]
+        })
+      ),
+      h("div",{className:"flex flex-col gap-1 shrink-0 pt-3"},
+        h("button",{onClick:()=>moveSongInSet(setIdx, songIdx, -1),disabled:songIdx===0,className:"pill px-2 py-0.5 text-xs bg-white disabled:opacity-30",title:"Move up"},"↑"),
+        h("button",{onClick:()=>moveSongInSet(setIdx, songIdx, 1),disabled:isLast,className:"pill px-2 py-0.5 text-xs bg-white disabled:opacity-30",title:"Move down"},"↓"),
+        h("button",{onClick:()=>removeSongFromSet(setIdx, songIdx),className:"pill px-2 py-0.5 text-xs bg-white text-[var(--berry)]",title:"Remove from setlist"},"×")
       )
     );
   };
@@ -1522,6 +1800,17 @@ const SetlistDetail = ({setlist, songs, events, member, onBack, onUpdate, onDele
           h("option",{value:""},"— none —"),
           gigOptions.map(g => h("option",{key:g.id,value:g.id}, fmtDate(g.date) + " · " + (g.title || "Gig"))))
       ),
+      (() => {
+        if (!setlist.gigEventId || !events) return null;
+        const pinnedGig = events[setlist.gigEventId];
+        if (!pinnedGig || isPast(pinnedGig.date)) return null;
+        const stale = staleSongsForSetlist(setlist, events, 4);
+        if (stale.length === 0) return null;
+        return h("div",{className:"mt-3 card-flat p-2 text-sm",style:{background:"#fef3c7",borderColor:"#fcd34d"}},
+          h("div",{className:"font-semibold"},"⚠️ " + stale.length + " song" + (stale.length===1?"":"s") + " not rehearsed in 4+ weeks"),
+          h("div",{className:"text-xs text-[var(--ink-soft)] mt-0.5"}, "Worth scheduling before " + fmtDate(pinnedGig.date) + ".")
+        );
+      })(),
       h("details",{className:"block mt-3"},
         h("summary",{className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)]"},"Notes ▾"),
         h("textarea",{className:"input text-sm mt-2",rows:"2",value:setlist.notes||"",onChange:e=>onUpdate({notes:e.target.value}),placeholder:"e.g. running order tweaks, key changes…"})
@@ -1597,18 +1886,30 @@ const SetlistDetail = ({setlist, songs, events, member, onBack, onUpdate, onDele
             "(deleted song) ",
             h("button",{onClick:clearSoundcheck,className:"text-[var(--berry)] underline ml-2"},"remove")
           );
-          return h("div",{className:"card-flat p-3"},
-            h("div",{className:"flex items-center gap-3"},
-              s.coverArtUrl && h("img",{src:s.coverArtUrl, alt:"", className:"shrink-0 rounded border border-[var(--line)]/30", style:{width:40,height:40,objectFit:"cover"}, onError:e=>{e.target.style.display="none";}}),
+          if (editingSongId === soundcheckId) {
+            return h("div",{className:"flex items-start gap-2"},
               h("div",{className:"flex-1 min-w-0"},
-                h("div",{className:"display text-base leading-tight"}, s.title),
-                s.artist && h("div",{className:"text-xs text-[var(--ink-soft)] italic"}, s.artist),
-                formatDuration(s.lengthSec) && h("div",{className:"ticker text-[var(--ink-soft)] mt-0.5"}, formatDuration(s.lengthSec))
-              ),
-              h("div",{className:"flex gap-1 shrink-0"},
-                h("button",{onClick:()=>setPicker({kind:"soundcheck"}),className:"pill px-2.5 py-1 text-xs bg-white"},"Change"),
-                h("button",{onClick:clearSoundcheck,className:"pill px-2.5 py-1 text-xs bg-white text-[var(--berry)]"},"×")
+                h(SongForm,{initial: s, onSave: f => { updateSongData(soundcheckId, f); setEditingSongId(null); }, onCancel: () => setEditingSongId(null), onDelete: () => deleteSongInline(soundcheckId)})
               )
+            );
+          }
+          return h("div",{className:"flex items-start gap-2"},
+            h("div",{className:"flex-1 min-w-0"},
+              h(SongCard,{
+                song: Object.assign({id:soundcheckId}, s),
+                member: member,
+                onEdit: () => setEditingSongId(soundcheckId),
+                onVote: voteSongInline,
+                onSetStatus: setSongStatusInline,
+                onSetPractice: setPracticeInline,
+                onPromote: promoteSongInline,
+                showStatus: true,
+                lastRehearsed: lastRehearsedMap[soundcheckId]
+              })
+            ),
+            h("div",{className:"flex flex-col gap-1 shrink-0 pt-3"},
+              h("button",{onClick:()=>setPicker({kind:"soundcheck"}),className:"pill px-2 py-0.5 text-xs bg-white whitespace-nowrap",title:"Change soundcheck song"},"⇄"),
+              h("button",{onClick:clearSoundcheck,className:"pill px-2 py-0.5 text-xs bg-white text-[var(--berry)]",title:"Clear soundcheck"},"×")
             )
           );
         })()
@@ -1674,7 +1975,7 @@ const SetlistsView = ({setlists, songs, events, member, mutate}) => {
     setOpenId(newSlId);
   };
   if (openId && setlists && setlists[openId]) {
-    return h(SetlistDetail,{setlist: Object.assign({id:openId}, setlists[openId]), songs:songs, events:events, member:member, onBack:()=>setOpenId(null), onUpdate: data => updateSetlist(openId, data), onDelete: () => deleteSetlist(openId), onDuplicate: () => duplicateSetlist(openId)});
+    return h(SetlistDetail,{setlist: Object.assign({id:openId}, setlists[openId]), songs:songs, events:events, member:member, mutate:mutate, onBack:()=>setOpenId(null), onUpdate: data => updateSetlist(openId, data), onDelete: () => deleteSetlist(openId), onDuplicate: () => duplicateSetlist(openId)});
   }
   return h("div",null,
     h("div",{className:"flex items-center justify-between mb-4 flex-wrap gap-2"},
@@ -2257,6 +2558,7 @@ const App = () => {
   const [member, setMemberId] = useMemberIdentity();
   const [tab, setTab] = useState("gigs");
   const [showSyncPanel, setShowSyncPanel] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   useEffect(() => { if (urlBin && urlBin !== storedBin) setStoredBinId(urlBin); }, [urlBin, storedBin]);
   const sync = useSyncedState(binId);
 
@@ -2286,16 +2588,17 @@ const App = () => {
   const equipment = sync.state.equipment || {};
   const wishlist = sync.state.wishlist || {};
   const practiceAvail = sync.state.practiceAvail || {};
+  const memberProfiles = sync.state.memberProfiles || {};
 
   return h("div",{className:"max-w-5xl xl:max-w-6xl mx-auto px-3 sm:px-6 py-4 sm:py-6"},
     showSyncPanel && h(SyncPanel,{sync:sync,onClose:()=>setShowSyncPanel(false)}),
+    showSettings && h(SettingsModal,{memberProfiles:memberProfiles, mutate:sync.mutate, onClose:()=>setShowSettings(false)}),
     h("header",{className:"mb-4 sm:mb-6"},
       h("div",{className:"flex items-center justify-between gap-3 mb-2 sm:mb-0 sm:items-end sm:flex-wrap"},
         h("div",null,
-          h("div",{className:"ticker text-[var(--berry)] text-[10px] sm:text-xs hidden sm:block"},"Band ops · est. for fun"),
           h(Wordmark, {className:"h-9 sm:h-14 md:h-16"})
         ),
-        h(MemberPicker,{value:member,onChange:setMemberId})
+        h(MemberPicker,{value:member,onChange:setMemberId,profiles:memberProfiles})
       ),
       h("div",{className:"tab-nav-wrap mt-3 sm:mt-6"},
         h("nav",{className:"flex items-center border-y-2 border-[var(--line)] overflow-x-auto",style:{WebkitOverflowScrolling:"touch"}},
@@ -2307,20 +2610,21 @@ const App = () => {
             {id:"setlists",label:"Setlists"},
             {id:"equipment",label:"Kit"}
           ].map(t => h("button",{key:t.id,onClick:()=>setTab(t.id),className:"px-3 sm:px-4 py-2 sm:py-2.5 ticker whitespace-nowrap text-[10px] sm:text-xs " + (tab===t.id?"tab-active":"hover:bg-[var(--acid)]")}, t.label)),
-          h("div",{className:"ml-auto pl-2 pr-1 shrink-0"},
+          h("div",{className:"ml-auto pl-2 pr-1 shrink-0 flex items-center gap-1.5"},
+            h("button",{onClick:()=>setShowSettings(true),className:"text-base px-1.5 py-0.5 hover:bg-[var(--acid)]/40 rounded",title:"Settings","aria-label":"Settings"},"⚙"),
             h(SyncBadge,{sync:sync,onOpen:()=>setShowSyncPanel(true)})
           )
         )
       )
     ),
-    tab==="gigs" && h(TypedScheduleView,{events:events,member:member,mutate:sync.mutate,eventType:"gig"}),
-    tab==="rehearsals" && h(TypedScheduleView,{events:events,member:member,mutate:sync.mutate,eventType:"rehearsal"}),
+    tab==="gigs" && h(TypedScheduleView,{events:events,songs:songs,setlists:setlists,member:member,mutate:sync.mutate,eventType:"gig"}),
+    tab==="rehearsals" && h(TypedScheduleView,{events:events,songs:songs,setlists:setlists,member:member,mutate:sync.mutate,eventType:"rehearsal"}),
     tab==="practice" && h(PracticeView,{practiceAvail:practiceAvail,events:events,member:member,mutate:sync.mutate,onGoToSchedule:()=>setTab("rehearsals")}),
-    tab==="songs" && h(SongsView,{songs:songs,member:member,mutate:sync.mutate}),
+    tab==="songs" && h(SongsView,{songs:songs,events:events,member:member,mutate:sync.mutate}),
     tab==="setlists" && h(SetlistsView,{setlists:setlists,songs:songs,events:events,member:member,mutate:sync.mutate}),
     tab==="equipment" && h(EquipmentView,{equipment:equipment,wishlist:wishlist,member:member,mutate:sync.mutate}),
     h("footer",{className:"mt-12 pt-6 border-t border-[var(--line)]/30 text-xs text-[var(--ink-soft)] flex justify-between flex-wrap gap-2"},
-      h("span",null,"Sourberry · keep the cover band tight"),
+      h("span",null,"Sourberry"),
       h("span",{className:"display-italic"},"made with bitter love")
     )
   );
