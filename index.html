@@ -68,6 +68,31 @@
     .modal-bg { position: fixed; inset: 0; background: rgba(26,10,20,0.5); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 1rem; }
     .blink { animation: blink 1.4s ease-in-out infinite; }
     @keyframes blink { 50% { opacity: 0.5; } }
+    /* === PRINT STYLES — used by the setlist export view === */
+    /* On-screen, the export view looks like a print preview. When actually printing,
+       hide all the on-screen chrome and use a clean white background. */
+    @media print {
+      body { background: #fff !important; background-image: none !important; color: #000 !important; }
+      .no-print { display: none !important; }
+      .print-only { display: block !important; }
+      .print-page { padding: 0 !important; max-width: none !important; box-shadow: none !important; border: none !important; }
+      .card, .card-flat { box-shadow: none !important; border: 1px solid #ccc !important; background: #fff !important; }
+      a { color: inherit !important; text-decoration: none !important; }
+      /* Page break controls */
+      .page-break-before { page-break-before: always; break-before: page; }
+      .avoid-break { page-break-inside: avoid; break-inside: avoid; }
+      /* Iteration D.1: when GigModeView prints, override its on-screen styling for paper.
+         GigModeView uses inline font sizes for the on-stage display, but those are too
+         large for an A4 sheet. Force a sensible printable size instead. */
+      .gig-print-root h1 { font-size: 22pt !important; }
+      .gig-print-root h2,
+      .gig-print-root .display { font-size: 14pt !important; color: #000 !important; border-color: #000 !important; }
+      .gig-print-root ol { font-size: 11pt !important; line-height: 1.45 !important; }
+      .gig-print-root ol li span.font-semibold { font-weight: 700 !important; }
+      .gig-print-root .text-\\[var\\(--ink-soft\\)\\] { color: #555 !important; }
+    }
+    @page { margin: 12mm; }
+    .print-only { display: none; }
   </style>
 
 </head>
@@ -83,18 +108,21 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.9.0";
+const APP_VERSION = "0.10.1";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 // Instruments for member profiles (multi-select). Order is the display order.
+// Icons are emoji — render natively on iOS/macOS/Android. Bass uses 🪕 (banjo) as the closest
+// distinct emoji from 🎸 (guitar); not perfect but better than identical icons for both.
 const INSTRUMENTS = [
-  {id:"vocals", label:"Vocals"},
-  {id:"guitar", label:"Guitar"},
-  {id:"bass", label:"Bass"},
-  {id:"drums", label:"Drums"},
-  {id:"keys", label:"Keys"},
-  {id:"percussion", label:"Percussion"},
-  {id:"other", label:"Other"}
+  {id:"vocals", label:"Vocals", icon:"🎤"},
+  {id:"guitar", label:"Guitar", icon:"🎸"},
+  {id:"bass", label:"Bass", icon:"🪕"},
+  {id:"drums", label:"Drums", icon:"🥁"},
+  {id:"keys", label:"Keys", icon:"🎹"},
+  {id:"percussion", label:"Percussion", icon:"🪘"},
+  {id:"other", label:"Other", icon:"🎵"}
 ];
+const instrumentMeta = (id) => INSTRUMENTS.find(i => i.id === id);
 const SONG_STATUSES = [
   {id:"suggested",label:"Suggested",desc:"In the voting pool"},
   {id:"shortlist",label:"Shortlist",desc:"Agreed, not yet started"},
@@ -1491,9 +1519,12 @@ const MemberInstrumentsSection = ({memberProfiles, mutate}) => {
               return h("button",{
                 key:inst.id,
                 onClick:()=>toggleInstrument(m.id, inst.id),
-                className:"pill px-2.5 py-1 text-xs font-semibold " + (on ? "berry-bg text-white" : "bg-white"),
+                className:"pill px-2.5 py-1 text-xs font-semibold flex items-center gap-1 " + (on ? "berry-bg text-white" : "bg-white"),
                 title: on ? ("Tap to remove " + inst.label) : ("Tap to add " + inst.label)
-              }, (on ? "✓ " : "") + inst.label);
+              },
+                h("span",{"aria-hidden":"true"}, inst.icon),
+                h("span",null, (on ? "✓ " : "") + inst.label)
+              );
             })
           )
         );
@@ -1562,7 +1593,24 @@ const SettingsModal = ({memberProfiles, onClose, mutate, binId, state, onRestore
             h("div",{className:"shrink-0 rounded-full border border-[var(--line)]/40 overflow-hidden bg-white flex items-center justify-center",style:{width:48,height:48}},
               photo ? h("img",{src:photo,alt:m.name,className:"w-full h-full object-cover"}) : h("span",{className:"display text-xl text-[var(--ink-soft)]"}, m.name[0])
             ),
-            h("div",{className:"flex-1 min-w-0"}, h("div",{className:"font-semibold"}, m.name)),
+            h("div",{className:"flex-1 min-w-0"},
+              h("div",{className:"font-semibold"}, m.name),
+              (() => {
+                const profile = memberProfiles && memberProfiles[m.id];
+                const insts = (profile && Array.isArray(profile.instruments)) ? profile.instruments : [];
+                if (insts.length === 0) return null;
+                return h("div",{className:"text-xs text-[var(--ink-soft)] mt-0.5"},
+                  insts.map(id => {
+                    const meta = instrumentMeta(id);
+                    if (!meta) return null;
+                    return h("span",{key:id,className:"inline-block mr-1.5",title:meta.label},
+                      h("span",{"aria-hidden":"true"}, meta.icon), " ",
+                      h("span",null, meta.label)
+                    );
+                  })
+                );
+              })()
+            ),
             h("div",{className:"flex gap-2 shrink-0"},
               h("label",{className:"btn bg-white px-3 py-1.5 text-xs font-semibold cursor-pointer"},
                 isBusy ? "Uploading…" : (photo ? "Change" : "Upload"),
@@ -1588,6 +1636,9 @@ const MemberPicker = ({value, onChange, profiles, onSelfClick}) => h("div",{clas
     MEMBERS.map(m => {
       const active = value && value.id === m.id;
       const photo = (profiles && profiles[m.id] && profiles[m.id].photoUrl) || "";
+      const insts = (profiles && profiles[m.id] && Array.isArray(profiles[m.id].instruments)) ? profiles[m.id].instruments : [];
+      const visibleInsts = insts.slice(0, 2);
+      const moreInsts = Math.max(0, insts.length - visibleInsts.length);
       // Tapping the active tile (your own name) opens Settings instead of being a no-op.
       const handleClick = () => {
         if (active && onSelfClick) onSelfClick();
@@ -1606,6 +1657,10 @@ const MemberPicker = ({value, onChange, profiles, onSelfClick}) => h("div",{clas
               h("span",{className:"sm:hidden"}, active?m.name:m.name[0]),
               h("span",{className:"hidden sm:inline"}, m.name)
             ),
+        visibleInsts.length > 0 && h("span",{className:"hidden sm:inline-flex items-center gap-0.5 ml-0.5","aria-hidden":"true",title:insts.map(id=>(instrumentMeta(id)||{}).label).filter(Boolean).join(", ")},
+          visibleInsts.map(id => h("span",{key:id,className:"text-[11px]"}, (instrumentMeta(id)||{}).icon || "")),
+          moreInsts > 0 && h("span",{className:"text-[10px] opacity-70"}, "+" + moreInsts)
+        ),
         active && onSelfClick && h("span",{className:"opacity-60 ml-0.5","aria-hidden":"true"},"⚙")
       );
     })
@@ -2772,6 +2827,93 @@ const SongPicker = ({songs, excludeIds, onPick, onClose}) => {
   );
 };
 
+// === ITERATION D.1: GIG MODE VIEW ===
+// Full-screen, large-type setlist display for use during the show. Auto-fits all the songs
+// to one screen by default; manual font slider as escape hatch. Hides everything else.
+const GigModeView = ({setlist, songs, events, onClose}) => {
+  const [fontPx, setFontPx] = useState(28);
+  const [autoFit, setAutoFit] = useState(true);
+  const containerRef = useRef(null);
+  const sets = setlist.sets || [];
+  const pinnedGig = setlist.gigEventId && events ? events[setlist.gigEventId] : null;
+  // Auto-fit: estimate font size from row count and viewport height. Not pixel-perfect
+  // (we can't measure mid-render), but good enough for typical 4-set / 30-song setlists.
+  useEffect(() => {
+    if (!autoFit) return;
+    const fit = () => {
+      const vh = window.innerHeight - 60; // toolbar + small margin
+      // Rough px-per-row including line-height ≈ size * 1.4. Title takes ~size * 1.8.
+      // Each set adds a header at size * 1.05.
+      const songRows = sets.reduce((acc, s) => acc + (s.songIds || []).length, 0);
+      const setHeaders = sets.length;
+      // size * 1.4 * songRows + size * 1.05 * setHeaders + size * 1.8 (title) ≤ vh
+      const denom = 1.4 * songRows + 1.05 * setHeaders + 1.8 + 1.0; // +1 for the meta line
+      const target = Math.floor(vh / Math.max(denom, 5));
+      setFontPx(Math.max(16, Math.min(64, target)));
+    };
+    fit();
+    const onResize = () => fit();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [autoFit, sets]);
+  // ESC to exit
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return h("div",{ref:containerRef, className:"fixed inset-0 z-50 overflow-auto gig-print-root",style:{background:"var(--cream)",color:"var(--ink)"}},
+    h("div",{className:"max-w-5xl mx-auto p-4 sm:p-6"},
+      // Toolbar — small, doesn't compete with content. Hidden when printing.
+      h("div",{className:"no-print flex items-center gap-2 mb-3 flex-wrap"},
+        h("button",{onClick:onClose,className:"btn bg-white px-3 py-1.5 text-sm font-semibold"},"× Exit"),
+        h("button",{onClick:()=>{ try { window.print(); } catch(_){} },className:"btn bg-white px-3 py-1.5 text-sm"},"🖨 Print"),
+        h("div",{className:"flex items-center gap-1.5 ml-auto"},
+          h("label",{className:"flex items-center gap-1 text-xs"},
+            h("input",{type:"checkbox",checked:autoFit,onChange:e=>setAutoFit(e.target.checked)}),
+            h("span",null,"Auto-fit")
+          ),
+          !autoFit && h(React.Fragment,null,
+            h("button",{onClick:()=>setFontPx(p => Math.max(14, p - 2)),className:"pill bg-white px-2 py-0.5 text-xs"},"A−"),
+            h("span",{className:"text-xs w-10 text-center"}, fontPx + "px"),
+            h("button",{onClick:()=>setFontPx(p => Math.min(96, p + 2)),className:"pill bg-white px-2 py-0.5 text-xs"},"A+")
+          )
+        )
+      ),
+      // Title + meta
+      h("div",{className:"mb-2"},
+        h("h1",{className:"display leading-tight",style:{fontSize: Math.round(fontPx * 1.6) + "px"}}, setlist.name),
+        pinnedGig && h("div",{className:"text-[var(--ink-soft)] mt-1",style:{fontSize: Math.round(fontPx * 0.55) + "px"}},
+          fmtDate(pinnedGig.date), pinnedGig.title ? (" · " + pinnedGig.title) : "", pinnedGig.location ? (" · " + pinnedGig.location) : ""
+        )
+      ),
+      // Sets
+      h("div",{className:"mt-3"},
+        sets.length === 0 ? h("p",{className:"italic"},"Empty setlist.") : sets.map((set, si) => {
+          const songIds = set.songIds || [];
+          const setName = set.name || ("Set " + (si+1));
+          return h("div",{key:si, className:"mb-4"},
+            h("div",{className:"display border-b-2 border-[var(--berry)] pb-1 mb-1",style:{fontSize: Math.round(fontPx * 1.05) + "px",color:"var(--berry)"}}, setName),
+            songIds.length === 0
+              ? h("div",{className:"italic text-[var(--ink-soft)]",style:{fontSize: Math.round(fontPx * 0.7) + "px"}},"(no songs)")
+              : h("ol",{className:"list-decimal pl-8 sm:pl-12",style:{fontSize: fontPx + "px",lineHeight:1.4}},
+                  songIds.map((sid, i) => {
+                    const s = songs && songs[sid];
+                    if (!s) return h("li",{key:"d-"+i,className:"italic text-[var(--ink-soft)]"},"(deleted)");
+                    return h("li",{key:sid,className:"break-words"},
+                      h("span",{className:"font-semibold"}, s.title || "(untitled)"),
+                      s.artist && h("span",{className:"text-[var(--ink-soft)] italic ml-2",style:{fontSize:"0.75em"}}, "— " + s.artist)
+                    );
+                  })
+                )
+          );
+        })
+      )
+    )
+  );
+};
+// === END GIG MODE VIEW ===
+
 const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack, onUpdate, onDelete, onDuplicate}) => {
   const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState(setlist.name);
@@ -2779,6 +2921,8 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack
   const [editingSetName, setEditingSetName] = useState("");
   const [picker, setPicker] = useState(null); // null | {kind:"set", index:n} | {kind:"soundcheck"}
   const [viewMode, setViewMode] = useState("detailed");
+  // Iteration D.1: full-screen gig mode for use during the show. Big readable type.
+  const [gigMode, setGigMode] = useState(false);
   const sets = setlist.sets || [];
   const soundcheckId = setlist.soundcheckSongId || null;
   const gigOptions = eventsList(events).filter(e => e.type === "gig");
@@ -2956,6 +3100,11 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack
     );
   };
 
+  // Iteration D.1: Gig mode — full-screen, big readable setlist for use during the show.
+  if (gigMode) {
+    return h(GigModeView, {setlist: setlist, songs: songs, events: events, onClose: () => setGigMode(false)});
+  }
+
   return h("div",null,
     h("button",{onClick:onBack,className:"ticker text-[var(--berry)] mb-3"},"← Back to setlists"),
     h("div",{className:"card p-3 sm:p-4 mb-4"},
@@ -2994,7 +3143,8 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack
         h("div",{className:"flex gap-1"},
           h("button",{onClick:()=>setViewMode("detailed"),className:"pill px-2.5 py-1 text-xs font-semibold " + (viewMode==="detailed"?"berry-bg text-white":"bg-white")},"Detailed"),
           h("button",{onClick:()=>setViewMode("summary"),className:"pill px-2.5 py-1 text-xs font-semibold " + (viewMode==="summary"?"berry-bg text-white":"bg-white")},"Summary")),
-        onDuplicate && h("button",{onClick:onDuplicate,className:"btn bg-white px-3 py-2 text-sm sm:ml-auto"},"Duplicate"),
+        totalSongs > 0 && h("button",{onClick:()=>setGigMode(true),className:"btn berry-bg px-3 py-2 text-sm font-semibold sm:ml-auto",title:"Full-screen, big-type setlist for the stage. Includes Print / Save as PDF."},"▶ Gig mode / Print"),
+        onDuplicate && h("button",{onClick:onDuplicate,className:"btn bg-white px-3 py-2 text-sm"},"Duplicate"),
         h("button",{onClick:()=>{ if (confirm("Delete setlist \"" + setlist.name + "\"?")) onDelete(); },className:"btn bg-white px-3 py-2 text-sm text-[var(--berry)]"},"Delete")
       )
     ),
@@ -4424,7 +4574,7 @@ const App = () => {
             {id:"feedback",label:"Feedback"}
           ].map(t => h("button",{key:t.id,onClick:()=>setTab(t.id),className:"px-3 sm:px-4 py-2 sm:py-2.5 ticker whitespace-nowrap text-[10px] sm:text-xs " + (tab===t.id?"tab-active":"hover:bg-[var(--acid)]")}, t.label)),
           h("div",{className:"ml-auto pl-2 pr-1 shrink-0 flex items-center gap-1.5"},
-            h("button",{onClick:()=>setShowSettings(true),className:"text-base px-1.5 py-0.5 hover:bg-[var(--acid)]/40 rounded",title:"Settings","aria-label":"Settings"},"⚙"),
+            !member && h("button",{onClick:()=>setShowSettings(true),className:"text-base px-1.5 py-0.5 hover:bg-[var(--acid)]/40 rounded",title:"Settings","aria-label":"Settings"},"⚙"),
             h(SyncBadge,{sync:sync,onOpen:()=>setShowSyncPanel(true)})
           )
         )
