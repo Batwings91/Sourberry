@@ -69,14 +69,11 @@
     .blink { animation: blink 1.4s ease-in-out infinite; }
     @keyframes blink { 50% { opacity: 0.5; } }
     /* === PRINT STYLES === */
-    /* When printing from Gig Mode, the trick is:
-       - Gig Mode is a fixed-position overlay (z-index 50) — the rest of the app
-         is still in the DOM behind it. By default print would render BOTH layers
-         on top of each other, which is what produced the garbled output.
-       - Solution: when Gig Mode is mounted, the app marks <body data-gig-mode="1">.
-         The print stylesheet then hides everything in body except .gig-print-root,
-         and flattens .gig-print-root to a normal flow block (no fixed positioning,
-         no overlay). */
+    /* Gig Mode is a full-page route (App early-returns the GigModeView), so when
+       the user prints, only Gig Mode is in the DOM. Print rules just need to:
+       - strip dotted backgrounds and dark colours for paper
+       - hide screen-only chrome (toolbar, .no-print)
+       - shrink Gig Mode's huge inline font sizes to A4-friendly values */
     @media print {
       body { background: #fff !important; background-image: none !important; color: #000 !important; }
       .no-print { display: none !important; }
@@ -87,26 +84,11 @@
       .page-break-before { page-break-before: always; break-before: page; }
       .avoid-break { page-break-inside: avoid; break-inside: avoid; }
       /* === Gig Mode print isolation ===
-         When Gig Mode is mounted, body gets data-gig-mode="1". For print:
-         - visibility:hidden on everything in body
-         - visibility:visible on .gig-print-root and its descendants
-         - flatten .gig-print-root from a fixed overlay to a normal block so it
-           paginates normally instead of clipping at the viewport.
-         This works regardless of where in the DOM tree .gig-print-root sits. */
-      body[data-gig-mode="1"] * { visibility: hidden !important; }
-      body[data-gig-mode="1"] .gig-print-root,
-      body[data-gig-mode="1"] .gig-print-root * { visibility: visible !important; }
-      body[data-gig-mode="1"] .gig-print-root {
-        position: static !important;
-        top: auto !important; left: auto !important; right: auto !important; bottom: auto !important;
-        z-index: auto !important;
-        overflow: visible !important;
-        background: #fff !important;
-        color: #000 !important;
-        height: auto !important;
-        width: auto !important;
-      }
-      /* Override Gig Mode's inline font sizes for paper. */
+         Gig Mode is now a full-page route (App early-returns it), so there's no
+         "underneath" — it's the only thing rendering. Print just needs to:
+         (a) strip backgrounds/colours for paper
+         (b) override Gig Mode's inline display font sizes for A4-friendly type. */
+      .gig-print-root { background: #fff !important; color: #000 !important; }
       .gig-print-root h1 { font-size: 22pt !important; color: #000 !important; }
       .gig-print-root h2,
       .gig-print-root .display { font-size: 14pt !important; color: #000 !important; border-color: #000 !important; }
@@ -134,7 +116,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.12.1";
+const APP_VERSION = "0.13.0";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 // Instruments for member profiles (multi-select). Order is the display order.
 // Icons are emoji — render natively on iOS/macOS/Android. Bass uses 🪕 (banjo) as the closest
@@ -2109,8 +2091,8 @@ const EventCard = ({ev, member, memberProfiles, songs, events, pinnedSetlist, on
                 if (ics) downloadICS(("sourberry-" + (ev.type||"event") + "-" + (ev.date||"") + ".ics"), ics);
               },
               className:"ticker text-[var(--berry)] hover:underline",
-              title:"Download .ics — opens in Calendar app"
-            },"📅 Add to calendar"),
+              title:"Download .ics — opens in your device's Calendar app"
+            },"📅 Add to my local calendar"),
             ev.location && h("a",{
               href: mapsUrlFor(ev.location),
               target:"_blank",
@@ -3061,25 +3043,16 @@ const GigModeView = ({setlist, songs, events, onClose}) => {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
-  // While mounted, tag the body so the @media print rules can find us and hide
-  // everything else. Removed on unmount so normal printing isn't affected.
-  useEffect(() => {
-    document.body.setAttribute("data-gig-mode", "1");
-    return () => { document.body.removeAttribute("data-gig-mode"); };
-  }, []);
-  // Render the gig view as a fixed overlay in the regular tree (no portal).
-  // The previous portal approach broke on-screen rendering on iPad Safari.
+  // Iteration D.1 (rebuild): Gig Mode is now a full-page route at App level —
+  // App early-returns this component, so there is no underlying app to bleed through.
+  // Plain block layout, no fixed-position overlay needed.
   return h("div",{
     ref:containerRef,
     className:"gig-print-root",
     style:{
-      position:"fixed",
-      top:0, left:0, right:0, bottom:0,
-      zIndex:9999,
-      overflow:"auto",
+      minHeight:"100vh",
       background:"var(--cream)",
-      color:"var(--ink)",
-      WebkitOverflowScrolling:"touch"
+      color:"var(--ink)"
     }
   },
     h("div",{className:"max-w-5xl mx-auto p-4 sm:p-6"},
@@ -3133,15 +3106,13 @@ const GigModeView = ({setlist, songs, events, onClose}) => {
 };
 // === END GIG MODE VIEW ===
 
-const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack, onUpdate, onDelete, onDuplicate}) => {
+const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack, onUpdate, onDelete, onDuplicate, onStartGigMode}) => {
   const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState(setlist.name);
   const [editingSetIdx, setEditingSetIdx] = useState(null);
   const [editingSetName, setEditingSetName] = useState("");
   const [picker, setPicker] = useState(null); // null | {kind:"set", index:n} | {kind:"soundcheck"}
   const [viewMode, setViewMode] = useState("detailed");
-  // Iteration D.1: full-screen gig mode for use during the show. Big readable type.
-  const [gigMode, setGigMode] = useState(false);
   const sets = setlist.sets || [];
   const soundcheckId = setlist.soundcheckSongId || null;
   const gigOptions = eventsList(events).filter(e => e.type === "gig");
@@ -3319,11 +3290,6 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack
     );
   };
 
-  // Iteration D.1: Gig mode — full-screen, big readable setlist for use during the show.
-  if (gigMode) {
-    return h(GigModeView, {setlist: setlist, songs: songs, events: events, onClose: () => setGigMode(false)});
-  }
-
   return h("div",null,
     h("button",{onClick:onBack,className:"ticker text-[var(--berry)] mb-3"},"← Back to setlists"),
     h("div",{className:"card p-3 sm:p-4 mb-4"},
@@ -3362,7 +3328,7 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack
         h("div",{className:"flex gap-1"},
           h("button",{onClick:()=>setViewMode("detailed"),className:"pill px-2.5 py-1 text-xs font-semibold " + (viewMode==="detailed"?"berry-bg text-white":"bg-white")},"Detailed"),
           h("button",{onClick:()=>setViewMode("summary"),className:"pill px-2.5 py-1 text-xs font-semibold " + (viewMode==="summary"?"berry-bg text-white":"bg-white")},"Summary")),
-        totalSongs > 0 && h("button",{onClick:()=>setGigMode(true),className:"btn berry-bg px-3 py-2 text-sm font-semibold sm:ml-auto",title:"Full-screen, big-type setlist for the stage. Includes Print / Save as PDF."},"▶ Gig mode / Print"),
+        totalSongs > 0 && onStartGigMode && h("button",{onClick:onStartGigMode,className:"btn berry-bg px-3 py-2 text-sm font-semibold sm:ml-auto",title:"Full-screen, big-type setlist for the stage. Includes Print / Save as PDF."},"▶ Gig mode / Print"),
         onDuplicate && h("button",{onClick:onDuplicate,className:"btn bg-white px-3 py-2 text-sm"},"Duplicate"),
         h("button",{onClick:()=>{ if (confirm("Delete setlist \"" + setlist.name + "\"?")) onDelete(); },className:"btn bg-white px-3 py-2 text-sm text-[var(--berry)]"},"Delete")
       )
@@ -3497,7 +3463,7 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack
   );
 };
 
-const SetlistsView = ({setlists, songs, events, member, mutate, settings}) => {
+const SetlistsView = ({setlists, songs, events, member, mutate, settings, onStartGigMode}) => {
   const [openId, setOpenId] = useState(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -3519,7 +3485,7 @@ const SetlistsView = ({setlists, songs, events, member, mutate, settings}) => {
     setOpenId(newSlId);
   };
   if (openId && setlists && setlists[openId]) {
-    return h(SetlistDetail,{setlist: Object.assign({id:openId}, setlists[openId]), songs:songs, events:events, member:member, mutate:mutate, settings:settings, onBack:()=>setOpenId(null), onUpdate: data => updateSetlist(openId, data), onDelete: () => deleteSetlist(openId), onDuplicate: () => duplicateSetlist(openId)});
+    return h(SetlistDetail,{setlist: Object.assign({id:openId}, setlists[openId]), songs:songs, events:events, member:member, mutate:mutate, settings:settings, onBack:()=>setOpenId(null), onUpdate: data => updateSetlist(openId, data), onDelete: () => deleteSetlist(openId), onDuplicate: () => duplicateSetlist(openId), onStartGigMode: onStartGigMode ? () => onStartGigMode(openId) : null});
   }
   return h("div",null,
     h("div",{className:"flex items-center justify-between mb-4 flex-wrap gap-2"},
@@ -4720,7 +4686,7 @@ const RehearsalRunMode = ({event, songs, member, memberProfiles, mutate, onClose
           return h("li",{key:"x-"+sid,className:"flex items-center gap-2 py-1"},
             h("span",{className:"text-[var(--good)] shrink-0"},"✓"),
             h("span",{className:"flex-1 min-w-0 truncate"}, s ? (s.title || "(untitled)") : "(deleted)"),
-            h("button",{onClick:()=>unmarkPlayed(sid),className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)] shrink-0"},"undo")
+            h("button",{onClick:()=>unmarkPlayed(sid),className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)] shrink-0",title:"Remove from played list"},"delete")
           );
         })
       )
@@ -4760,6 +4726,10 @@ const App = () => {
   const [showSettings, setShowSettings] = useState(false);
   // Iteration C.1: when set, App takes over with the focused Run Rehearsal page.
   const [runRehearsalId, setRunRehearsalId] = useState(null);
+  // Iteration D.1 (rebuild): when set, App takes over with the full-screen Gig Mode.
+  // Lifted from SetlistDetail to App so Gig Mode is a full-page route, not an overlay.
+  // Overlay approach kept rendering the App underneath which broke print and on-screen.
+  const [gigSetlistId, setGigSetlistId] = useState(null);
   useEffect(() => { if (urlBin && urlBin !== storedBin) setStoredBinId(urlBin); }, [urlBin, storedBin]);
   const sync = useSyncedState(binId, member && member.id);
 
@@ -4802,6 +4772,14 @@ const App = () => {
   if (runRehearsalId && (!events[runRehearsalId] || events[runRehearsalId].type !== "rehearsal")) {
     setRunRehearsalId(null);
   }
+  // Iteration D.1: full-page route for Gig Mode (replaces the App content while active).
+  if (gigSetlistId && setlists[gigSetlistId]) {
+    const sl = Object.assign({id: gigSetlistId}, setlists[gigSetlistId]);
+    return h(GigModeView, {setlist: sl, songs: songs, events: events, onClose: () => setGigSetlistId(null)});
+  }
+  if (gigSetlistId && !setlists[gigSetlistId]) {
+    setGigSetlistId(null);
+  }
 
   return h("div",{className:"max-w-5xl xl:max-w-6xl mx-auto px-3 sm:px-6 py-4 sm:py-6"},
     sync.conflict && h(ConflictBanner,{conflict:sync.conflict,onResolve:sync.resolveConflict}),
@@ -4836,7 +4814,7 @@ const App = () => {
     tab==="rehearsals" && h(TypedScheduleView,{events:events,songs:songs,setlists:setlists,member:member,memberProfiles:memberProfiles,mutate:sync.mutate,eventType:"rehearsal",settings:settings,onStartRehearsal: (id) => setRunRehearsalId(id)}),
     tab==="practice" && h(PracticeView,{practiceAvail:practiceAvail,events:events,member:member,mutate:sync.mutate,onGoToSchedule:()=>setTab("rehearsals")}),
     tab==="songs" && h(SongsView,{songs:songs,events:events,member:member,memberProfiles:memberProfiles,mutate:sync.mutate,settings:settings}),
-    tab==="setlists" && h(SetlistsView,{setlists:setlists,songs:songs,events:events,member:member,mutate:sync.mutate,settings:settings}),
+    tab==="setlists" && h(SetlistsView,{setlists:setlists,songs:songs,events:events,member:member,mutate:sync.mutate,settings:settings,onStartGigMode:(id)=>setGigSetlistId(id)}),
     tab==="equipment" && h(EquipmentView,{equipment:equipment,wishlist:wishlist,member:member,memberProfiles:memberProfiles,mutate:sync.mutate}),
     tab==="feedback" && h(FeedbackView,{feedback:feedback,member:member,memberProfiles:memberProfiles,mutate:sync.mutate}),
     h("footer",{className:"mt-12 pt-6 border-t border-[var(--line)]/30 text-xs text-[var(--ink-soft)] flex justify-between flex-wrap gap-2"},
