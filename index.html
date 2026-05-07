@@ -83,7 +83,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.7.0";
+const APP_VERSION = "0.8.1";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 const SONG_STATUSES = [
   {id:"suggested",label:"Suggested",desc:"In the voting pool"},
@@ -2582,6 +2582,40 @@ const SongMultiPicker = ({songs, selected, onChange, label, helpText}) => {
   const all = songsList(songs);
   const sortedRemaining = all.filter(s => !selected.includes(s.id))
     .sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+  // Iteration C.2: search-as-you-type instead of native select dropdown.
+  // Native <select> on iOS becomes a wheel picker — unusable for >20 songs.
+  const [query, setQuery] = useState("");
+  const [focused, setFocused] = useState(false);
+  // C.2 polish: keyboard navigation in the dropdown (ArrowUp/Down/Enter/Escape).
+  // Useful with iPad bluetooth keyboards.
+  const [highlightIdx, setHighlightIdx] = useState(0);
+  useEffect(() => { setHighlightIdx(0); }, [query]);
+  const matches = sortedRemaining.filter(s => songMatchesQuery(s, query));
+  const visible = matches.slice(0, 8); // cap to keep UI tight
+  const showResults = focused && (query.length > 0 || matches.length > 0);
+  const addSong = (sid) => {
+    onChange(selected.concat([sid]));
+    setQuery("");
+    setHighlightIdx(0);
+  };
+  const onKeyDown = (e) => {
+    if (e.key === "Escape") {
+      if (query) { e.preventDefault(); setQuery(""); }
+      return;
+    }
+    if (visible.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlightIdx(i => Math.min(i + 1, visible.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightIdx(i => Math.max(0, i - 1));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const target = visible[Math.max(0, Math.min(highlightIdx, visible.length - 1))];
+      if (target) addSong(target.id);
+    }
+  };
   return h("div",{className:"text-sm md:col-span-2"},
     h("div",{className:"ticker mb-1"}, label + (selected.length > 0 ? (" (" + selected.length + ")") : "")),
     selected.length > 0 && h("div",{className:"flex flex-wrap gap-1.5 mb-2"},
@@ -2600,9 +2634,40 @@ const SongMultiPicker = ({songs, selected, onChange, label, helpText}) => {
       })
     ),
     sortedRemaining.length > 0
-      ? h("select",{className:"input text-sm",value:"",onChange:e => { const v = e.target.value; if (v) onChange(selected.concat([v])); e.target.value = ""; }},
-          h("option",{value:""}, "+ Add a song…"),
-          sortedRemaining.map(s => h("option",{key:s.id,value:s.id}, (s.title || "(untitled)") + (s.artist ? (" — " + s.artist) : "")))
+      ? h("div",{className:"relative"},
+          h("input",{
+            type:"text",
+            className:"input text-sm",
+            value: query,
+            placeholder: "Search to add a song… (" + sortedRemaining.length + " available)",
+            onChange: e => setQuery(e.target.value),
+            onFocus: () => setFocused(true),
+            onKeyDown: onKeyDown,
+            // Delay blur so a tap on a result registers as click first.
+            onBlur: () => setTimeout(() => setFocused(false), 150)
+          }),
+          showResults && h("div",{className:"absolute left-0 right-0 mt-1 card bg-white shadow-md z-10 max-h-64 overflow-y-auto",style:{borderColor:"var(--line)"}},
+            visible.length === 0
+              ? h("div",{className:"p-2 text-xs italic text-[var(--ink-soft)]"}, "No matches.")
+              : visible.map((s, i) => h("button",{
+                  key: s.id,
+                  type: "button",
+                  // onMouseDown fires before onBlur, so the result tap doesn't lose focus first.
+                  onMouseDown: e => { e.preventDefault(); addSong(s.id); },
+                  onClick: e => e.preventDefault(),
+                  onMouseEnter: () => setHighlightIdx(i),
+                  className: "w-full text-left px-2.5 py-2 border-b border-[var(--line)]/10 last:border-0 " + (i === highlightIdx ? "bg-[var(--acid)]/40" : "hover:bg-[var(--acid)]/30")
+                },
+                  h("div",{className:"flex items-baseline gap-2"},
+                    h("span",{className:"font-semibold truncate"}, s.title || "(untitled)"),
+                    s.artist && h("span",{className:"text-xs text-[var(--ink-soft)] italic truncate"}, "— " + s.artist),
+                    h("span",{className:"ticker text-[var(--ink-soft)] text-[10px] ml-auto shrink-0"}, ((SONG_STATUSES.find(x => x.id === s.status) || {}).label || s.status || ""))
+                  )
+                )),
+            matches.length > visible.length && h("div",{className:"p-2 text-xs italic text-[var(--ink-soft)] border-t border-[var(--line)]/10"},
+              "+ ", matches.length - visible.length, " more — keep typing to narrow"
+            )
+          )
         )
       : h("div",{className:"text-xs italic text-[var(--ink-soft)]"},"No more songs to add."),
     helpText && h("div",{className:"text-xs text-[var(--ink-soft)] italic mt-1"}, helpText)
@@ -3613,7 +3678,8 @@ const RehearsalRunMode = ({event, songs, member, mutate, onClose}) => {
     return i >= 0 ? i : agendaIds.length;
   })();
   const [currentIdx, setCurrentIdx] = useState(initialIdx);
-  const [pickerOpen, setPickerOpen] = useState(false);
+  // pickerMode: null when picker closed, "agenda" to add to agenda, "played" to log unplanned/played
+  const [pickerMode, setPickerMode] = useState(null);
   // Notes are debounced so typing doesn't fire mutate every keystroke.
   const [notesDraft, setNotesDraft] = useState(event.rehearsalNotes || "");
   const notesTimerRef = useRef(null);
@@ -3647,16 +3713,60 @@ const RehearsalRunMode = ({event, songs, member, mutate, onClose}) => {
       return {playedSongIds: cur.filter(x => x !== sid)};
     });
   };
-  const advance = () => setCurrentIdx(i => Math.min(i + 1, agendaIds.length));
+  const advance = () => {
+    // Find the next un-played agenda item from currentIdx+1; otherwise land at end.
+    setCurrentIdx(i => {
+      for (let j = i + 1; j < agendaIds.length; j++) {
+        if (!playedIds.includes(agendaIds[j])) return j;
+      }
+      return agendaIds.length;
+    });
+  };
   const goBack = () => setCurrentIdx(i => Math.max(0, i - 1));
+  const jumpTo = (idx) => {
+    if (idx < 0 || idx > agendaIds.length) return;
+    setCurrentIdx(idx);
+  };
   const onPlayed = () => {
     const sid = agendaIds[currentIdx];
     if (sid) markPlayed(sid);
     advance();
   };
+  // Add a song to the agenda (planning to play it). Appended at the end.
+  const addToAgenda = (sid) => {
+    updateEvent(ev => {
+      const cur = Array.isArray(ev.agendaSongIds) ? ev.agendaSongIds : [];
+      if (cur.includes(sid)) return null;
+      return {agendaSongIds: cur.concat([sid])};
+    });
+    setPickerMode(null);
+  };
+  // Remove a song from the agenda. Doesn't touch playedSongIds.
+  const removeFromAgenda = (sid) => {
+    updateEvent(ev => {
+      const cur = Array.isArray(ev.agendaSongIds) ? ev.agendaSongIds : [];
+      const next = cur.filter(x => x !== sid);
+      return {agendaSongIds: next};
+    });
+    // If we removed something at or before the cursor, the cursor index moves implicitly:
+    // the items array got shorter, so React will see the new length next render. Adjust to
+    // keep pointing at "the same logical position" — clamp to new length.
+    setCurrentIdx(i => {
+      const removedIdx = agendaIds.indexOf(sid);
+      if (removedIdx < 0) return i;
+      if (removedIdx < i) return Math.max(0, i - 1);
+      // Removing the active item: stay at same numeric index (which now points at what was the next song)
+      return Math.min(i, agendaIds.length - 1);
+    });
+  };
+  // Log a song as unplanned/just-played. Doesn't add it to the agenda.
   const onAddUnplanned = (sid) => {
     markPlayed(sid);
-    setPickerOpen(false);
+    setPickerMode(null);
+  };
+  const onPickerSelect = (sid) => {
+    if (pickerMode === "agenda") addToAgenda(sid);
+    else if (pickerMode === "played") onAddUnplanned(sid);
   };
   const setMyPractice = (sid, val) => {
     if (!member) return;
@@ -3755,43 +3865,59 @@ const RehearsalRunMode = ({event, songs, member, mutate, onClose}) => {
                 h("button",{onClick:advance,className:"btn berry-bg px-3 py-2.5 text-sm font-semibold col-span-2"},"Skip ahead →")
               )
             ),
-    // Add unplanned song
-    pickerOpen
-      ? h(SongPicker, {songs:songs, excludeIds:playedIds, onPick:onAddUnplanned, onClose:()=>setPickerOpen(false)})
-      : h("button",{onClick:()=>setPickerOpen(true),className:"btn bg-white px-3 py-2 text-sm font-semibold w-full mb-3"},"+ Add unplanned song"),
-    // Up next preview (collapsed)
-    !isAtEnd && agendaIds.length > 1 && currentIdx + 1 < agendaIds.length && h("details",{className:"card p-3 mb-3"},
-      h("summary",{className:"ticker text-[var(--berry)] cursor-pointer"},"Up next ▾"),
-      h("ol",{className:"mt-2 space-y-1 text-sm",style:{listStyle:"none",paddingLeft:0}},
-        agendaIds.slice(currentIdx+1).map((sid, i) => {
+    // Picker (opened either to add to agenda or log unplanned)
+    pickerMode && h(SongPicker, {
+      songs: songs,
+      excludeIds: pickerMode === "agenda" ? agendaIds : playedIds,
+      onPick: onPickerSelect,
+      onClose: () => setPickerMode(null)
+    }),
+    // Agenda (consolidated): all items, tappable to jump, × to remove.
+    agendaIds.length > 0 && h("div",{className:"card p-3 mb-3"},
+      h("div",{className:"flex items-center justify-between mb-2"},
+        h("div",{className:"ticker text-[var(--berry)]"},"Agenda (", agendaIds.length, ")"),
+        !pickerMode && h("button",{onClick:()=>setPickerMode("agenda"),className:"ticker text-[var(--berry)] hover:underline"},"+ Add to agenda")
+      ),
+      h("ol",{className:"space-y-1 text-sm",style:{listStyle:"none",paddingLeft:0}},
+        agendaIds.map((sid, i) => {
           const s = songs && songs[sid];
           const done = playedIds.includes(sid);
-          return h("li",{key:"up-"+sid+"-"+i, className:"flex items-center gap-2"},
-            h("span",{className:"text-[var(--ink-soft)] w-7 text-right shrink-0"}, (currentIdx + i + 2) + "."),
-            h("span",{className: done ? "line-through text-[var(--ink-soft)] flex-1 truncate" : "flex-1 truncate"}, s ? (s.title || "(untitled)") : "(deleted)"),
-            done && h("span",{className:"ticker text-[var(--good)]"},"✓")
+          const isCurrent = i === currentIdx && !isAtEnd;
+          const titleText = s ? (s.title || "(untitled)") : "(deleted)";
+          return h("li",{key:"a-"+sid+"-"+i, className:"flex items-center gap-2 py-1 px-1 rounded " + (isCurrent ? "bg-[var(--berry)]/10" : "hover:bg-[var(--acid)]/30")},
+            h("span",{className:"text-[var(--ink-soft)] w-6 text-right shrink-0 text-xs"}, (i+1) + "."),
+            h("button",{
+              onClick:()=>jumpTo(i),
+              className:"flex-1 min-w-0 text-left truncate " + (done && !isCurrent ? "line-through text-[var(--ink-soft)]" : (isCurrent ? "font-semibold" : "")),
+              title: isCurrent ? "Currently on this song" : (done ? "Played — tap to revisit" : "Tap to jump here")
+            }, titleText),
+            isCurrent && h("span",{className:"ticker text-[var(--berry)] text-[10px] shrink-0"},"NOW"),
+            done && !isCurrent && h("span",{className:"text-[var(--good)] shrink-0"},"✓"),
+            h("button",{onClick:()=>removeFromAgenda(sid),className:"text-[var(--ink-soft)] hover:text-[var(--berry)] shrink-0 px-1.5 py-0.5 text-xs",title:"Remove from agenda"},"×")
           );
         })
       )
     ),
-    // Played so far (collapsed)
-    playedIds.length > 0 && h("details",{className:"card p-3 mb-3"},
-      h("summary",{className:"ticker text-[var(--berry)] cursor-pointer"},"Played so far (", playedIds.length, ") ▾"),
-      h("ul",{className:"mt-2 space-y-1 text-sm",style:{listStyle:"none",paddingLeft:0}},
-        playedIds.map(sid => {
+    // No agenda yet — CTA
+    agendaIds.length === 0 && !pickerMode && h("div",{className:"card p-3 mb-3"},
+      h("button",{onClick:()=>setPickerMode("agenda"),className:"btn bg-white px-3 py-2 text-sm font-semibold w-full"},"+ Add to agenda")
+    ),
+    // Unplanned songs played (separate list — these aren't in the agenda)
+    extraPlayed.length > 0 && h("div",{className:"card p-3 mb-3"},
+      h("div",{className:"ticker text-[var(--berry)] mb-2"},"Played off-plan (", extraPlayed.length, ")"),
+      h("ul",{className:"space-y-1 text-sm",style:{listStyle:"none",paddingLeft:0}},
+        extraPlayed.map(sid => {
           const s = songs && songs[sid];
-          const isExtra = !agendaIds.includes(sid);
-          return h("li",{key:"p-"+sid,className:"flex items-center gap-2"},
-            h("span",{className:"text-[var(--good)]"},"✓"),
-            h("span",{className:"flex-1 min-w-0 truncate"},
-              s ? (s.title || "(untitled)") : "(deleted)",
-              isExtra && h("span",{className:"ml-1 ticker text-[var(--ink-soft)] text-[10px]"},"unplanned")
-            ),
+          return h("li",{key:"x-"+sid,className:"flex items-center gap-2 py-1"},
+            h("span",{className:"text-[var(--good)] shrink-0"},"✓"),
+            h("span",{className:"flex-1 min-w-0 truncate"}, s ? (s.title || "(untitled)") : "(deleted)"),
             h("button",{onClick:()=>unmarkPlayed(sid),className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)] shrink-0"},"undo")
           );
         })
       )
     ),
+    // Log unplanned button — different from "+ Add to agenda" because this marks a song as already-played
+    !pickerMode && h("button",{onClick:()=>setPickerMode("played"),className:"btn bg-white px-3 py-2 text-sm font-semibold w-full mb-3"},"+ Log a song we just played (not in agenda)"),
     // Notes
     h("div",{className:"card p-3 mb-3"},
       h("div",{className:"ticker text-[var(--berry)] mb-1"},"Rehearsal notes"),
