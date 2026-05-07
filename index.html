@@ -295,7 +295,7 @@ const buildSetlistsSeed = () => {
   const setlists = {};
   SEED_SETLISTS.forEach((sl, i) => {
     const id = "seed_sl_" + i + "_" + Math.random().toString(36).slice(2,7);
-    setlists[id] = {name: sl.name, notes: sl.notes, songIds: sl.songRefs.map(r => songId(r[0], r[1])), gigEventId: null, createdAt: Date.now()+i};
+    setlists[id] = {name: sl.name, notes: sl.notes, sets: [{name: "Set 1", songIds: sl.songRefs.map(r => songId(r[0], r[1]))}], soundcheckSongId: null, gigEventId: null, createdAt: Date.now()+i};
   });
   return setlists;
 };
@@ -307,7 +307,7 @@ const buildEquipmentSeed = () => {
   });
   return eq;
 };
-const buildSeedState = () => ({schemaVersion: 7, events: buildEventsSeed(), songs: buildSongsSeed(), setlists: buildSetlistsSeed(), polls: {}, equipment: buildEquipmentSeed(), wishlist: {}, practiceAvail: {}});
+const buildSeedState = () => ({schemaVersion: 8, events: buildEventsSeed(), songs: buildSongsSeed(), setlists: buildSetlistsSeed(), polls: {}, equipment: buildEquipmentSeed(), wishlist: {}, practiceAvail: {}});
 
 const migrate = data => {
   let migrated = false;
@@ -370,6 +370,18 @@ const migrate = data => {
       if (e.actualSetlistId === undefined) e.actualSetlistId = null;
     });
     data.schemaVersion = 7; migrated = true;
+  }
+  if (data.schemaVersion < 8) {
+    Object.keys(data.setlists || {}).forEach(id => {
+      const sl = data.setlists[id];
+      if (!Array.isArray(sl.sets)) {
+        const oldIds = Array.isArray(sl.songIds) ? sl.songIds.slice() : [];
+        sl.sets = [{name: "Set 1", songIds: oldIds}];
+      }
+      if (sl.soundcheckSongId === undefined) sl.soundcheckSongId = null;
+      delete sl.songIds;
+    });
+    data.schemaVersion = 8; migrated = true;
   }
   return migrated;
 };
@@ -455,8 +467,68 @@ const sumLengths = (songIds, songs) => {
   });
   return {total, missing};
 };
+const setlistAllSongIds = (sl) => {
+  const ids = [];
+  (sl.sets || []).forEach(set => (set.songIds || []).forEach(id => ids.push(id)));
+  return ids;
+};
+const setlistTotals = (sl, songs) => sumLengths(setlistAllSongIds(sl), songs);
+const setlistSongCount = (sl) => setlistAllSongIds(sl).length;
 const appleMusicLinkFor = (song) => song.iTunesUrl || ("https://music.apple.com/search?term=" + encodeURIComponent(((song.artist||"") + " " + (song.title||"")).trim()));
 const spotifyLinkFor = (song) => song.spotifyUrl || ("https://open.spotify.com/search/" + encodeURIComponent(((song.artist||"") + " " + (song.title||"")).trim()));
+
+
+// ---- iTunes Search API via JSONP (no auth, sidesteps occasional CORS issues)
+const jsonpFetch = (url, timeoutMs) => new Promise((resolve, reject) => {
+  const cbName = "_jsonp_" + Math.random().toString(36).slice(2) + "_" + Date.now();
+  let timer = null;
+  let script = null;
+  const cleanup = () => {
+    try { delete window[cbName]; } catch(_) { window[cbName] = undefined; }
+    if (script && script.parentNode) script.parentNode.removeChild(script);
+    if (timer) clearTimeout(timer);
+  };
+  window[cbName] = (data) => { cleanup(); resolve(data); };
+  script = document.createElement("script");
+  script.onerror = () => { cleanup(); reject(new Error("Network error")); };
+  script.src = url + (url.indexOf("?") >= 0 ? "&" : "?") + "callback=" + cbName;
+  timer = setTimeout(() => { cleanup(); reject(new Error("Timed out")); }, timeoutMs || 8000);
+  document.body.appendChild(script);
+});
+const itunesSearch = async (query, limit) => {
+  const q = (query || "").trim();
+  if (!q) return [];
+  const url = "https://itunes.apple.com/search?term=" + encodeURIComponent(q) + "&entity=song&limit=" + (limit || 5);
+  const data = await jsonpFetch(url);
+  return (data.results || []).map(r => ({
+    title: r.trackName || "",
+    artist: r.artistName || "",
+    album: r.collectionName || "",
+    year: r.releaseDate ? String(r.releaseDate).slice(0,4) : "",
+    lengthSec: r.trackTimeMillis ? Math.round(r.trackTimeMillis / 1000) : null,
+    coverArtUrl: r.artworkUrl100 ? r.artworkUrl100.replace("100x100", "600x600") : "",
+    iTunesUrl: r.trackViewUrl || "",
+    previewUrl: r.previewUrl || ""
+  }));
+};
+const normalizeForMatch = s => (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "");
+const normalizeArtistForMatch = s => {
+  let n = normalizeForMatch(s);
+  if (n.startsWith("the")) n = n.slice(3);
+  if (n.endsWith("the")) n = n.slice(0, -3);
+  return n;
+};
+const titleMatches = (a, b) => {
+  const n1 = normalizeForMatch(a), n2 = normalizeForMatch(b);
+  if (!n1 || !n2) return false;
+  return n1 === n2;
+};
+const artistMatches = (a, b) => {
+  const n1 = normalizeArtistForMatch(a), n2 = normalizeArtistForMatch(b);
+  if (!n1 || !n2) return false;
+  return n1 === n2 || n1.includes(n2) || n2.includes(n1);
+};
+const confidenceMatch = (song, result) => titleMatches(song.title, result.title) && artistMatches(song.artist, result.artist);
 
 const uniqueLocations = events => {
   const set = new Set();
@@ -505,7 +577,7 @@ const useSyncedState = binId => {
   }, [flushWrite]);
   const mutate = useCallback(updater => {
     setState(prev => {
-      const next = updater(prev || {schemaVersion:7, events:{}, songs:{}, setlists:{}, polls:{}, equipment:{}, wishlist:{}, practiceAvail:{}});
+      const next = updater(prev || {schemaVersion:8, events:{}, songs:{}, setlists:{}, polls:{}, equipment:{}, wishlist:{}, practiceAvail:{}});
       stateRef.current = next;
       return next;
     });
@@ -889,10 +961,16 @@ const TypedScheduleView = ({events, member, mutate, eventType}) => {
 };
 
 const blankSong = () => ({title:"", artist:"", status:"suggested", jamtrax:false, proposer:"", lessonUrl:"", comments:"", votes:{}, practice:{}, lengthSec:null, album:"", year:"", coverArtUrl:"", iTunesUrl:"", spotifyUrl:""});
+
 const SongForm = ({initial, onSave, onCancel, onDelete}) => {
   const [f, setF] = useState(initial || blankSong());
   const [durationText, setDurationText] = useState(formatDuration((initial || blankSong()).lengthSec));
   const [durationError, setDurationError] = useState("");
+  const [lookupOpen, setLookupOpen] = useState(false);
+  const [lookupQuery, setLookupQuery] = useState("");
+  const [lookupBusy, setLookupBusy] = useState(false);
+  const [lookupResults, setLookupResults] = useState([]);
+  const [lookupError, setLookupError] = useState("");
   const set = (k,v) => setF(prev => Object.assign({}, prev, {[k]:v}));
   const handleSave = () => {
     const trimmed = durationText.trim();
@@ -904,7 +982,76 @@ const SongForm = ({initial, onSave, onCancel, onDelete}) => {
     setDurationError("");
     onSave(Object.assign({}, f, {lengthSec}));
   };
+  const doLookup = async (overrideQ) => {
+    const q = overrideQ != null ? overrideQ : lookupQuery;
+    setLookupBusy(true); setLookupError(""); setLookupResults([]);
+    try {
+      const results = await itunesSearch(q, 5);
+      setLookupResults(results);
+      if (results.length === 0) setLookupError("No matches.");
+    } catch (e) {
+      setLookupError("Lookup failed: " + e.message);
+    } finally {
+      setLookupBusy(false);
+    }
+  };
+  const openLookup = () => {
+    const q = ((f.artist||"") + " " + (f.title||"")).trim();
+    setLookupQuery(q); setLookupResults([]); setLookupError("");
+    setLookupOpen(true);
+    if (q) doLookup(q);
+  };
+  const useResult = (r) => {
+    setF(prev => {
+      const out = Object.assign({}, prev);
+      if (!prev.title && r.title) out.title = r.title;
+      if (!prev.artist && r.artist) out.artist = r.artist;
+      if (!prev.album && r.album) out.album = r.album;
+      if (!prev.year && r.year) out.year = r.year;
+      if (!prev.coverArtUrl && r.coverArtUrl) out.coverArtUrl = r.coverArtUrl;
+      if (!prev.iTunesUrl && r.iTunesUrl) out.iTunesUrl = r.iTunesUrl;
+      return out;
+    });
+    // Only set duration if currently empty/invalid
+    if (r.lengthSec && parseDuration(durationText) == null) {
+      setDurationText(formatDuration(r.lengthSec));
+      setDurationError("");
+    }
+    setLookupOpen(false);
+  };
   return h("div",{className:"card p-5 mb-4"},
+    // Auto-fill panel
+    h("div",{className:"mb-4 pb-4 border-b border-[var(--line)]/20"},
+      !lookupOpen
+        ? h("button",{type:"button",onClick:openLookup,className:"btn bg-white px-3 py-2 text-sm font-semibold w-full"},"🔍 Auto-fill from Apple Music")
+        : h("div",null,
+            h("div",{className:"flex items-center gap-2 mb-2"},
+              h("span",{className:"ticker text-[var(--berry)] flex-1"},"Apple Music search"),
+              h("button",{type:"button",onClick:()=>setLookupOpen(false),className:"ticker text-[var(--ink-soft)]"},"Close ✕")
+            ),
+            h("div",{className:"flex gap-2 mb-2"},
+              h("input",{className:"input flex-1",value:lookupQuery,onChange:e=>setLookupQuery(e.target.value),placeholder:"Title and artist…",onKeyDown:e=>{if(e.key==="Enter"){e.preventDefault();doLookup();}}}),
+              h("button",{type:"button",onClick:()=>doLookup(),disabled:lookupBusy,className:"btn berry-bg px-3 py-1.5 text-sm font-semibold"}, lookupBusy?"…":"Search")
+            ),
+            lookupError && h("p",{className:"text-sm italic text-[var(--ink-soft)] mb-2"}, lookupError),
+            lookupBusy && h("p",{className:"text-sm italic text-[var(--ink-soft)] mb-2"},"Searching Apple Music…"),
+            lookupResults.length > 0 && h("div",{className:"space-y-1.5"},
+              lookupResults.map((r, i) => h("button",{
+                key:i, type:"button", onClick:()=>useResult(r),
+                className:"card-flat p-2 w-full text-left hover:bg-[var(--acid)]/30 flex items-center gap-3"
+              },
+                r.coverArtUrl && h("img",{src:r.coverArtUrl,alt:"",className:"shrink-0 rounded border border-[var(--line)]/30",style:{width:48,height:48,objectFit:"cover"},onError:e=>{e.target.style.display="none";}}),
+                h("div",{className:"flex-1 min-w-0"},
+                  h("div",{className:"font-semibold truncate"}, r.title),
+                  h("div",{className:"text-xs text-[var(--ink-soft)] italic truncate"}, r.artist),
+                  h("div",{className:"text-xs text-[var(--ink-soft)] truncate"}, [r.album, r.year, formatDuration(r.lengthSec)].filter(Boolean).join(" · "))
+                ),
+                h("span",{className:"ticker text-[var(--berry)] shrink-0"},"Use ▸")
+              ))
+            ),
+            h("p",{className:"text-xs text-[var(--ink-soft)] italic mt-2"},"Tap a result to fill blank fields.")
+          )
+    ),
     h("div",{className:"grid grid-cols-1 md:grid-cols-2 gap-3"},
       h("label",{className:"text-sm md:col-span-2"}, h("div",{className:"ticker mb-1"},"Title"), h("input",{className:"input",value:f.title,onChange:e=>set("title",e.target.value),placeholder:"Song title"})),
       h("label",{className:"text-sm md:col-span-2"}, h("div",{className:"ticker mb-1"},"Artist"), h("input",{className:"input",value:f.artist,onChange:e=>set("artist",e.target.value),placeholder:"Artist"})),
@@ -1055,9 +1202,15 @@ const SongsView = ({songs, member, mutate}) => {
   const [view, setView] = useState("repertoire");
   const [query, setQuery] = useState("");
   const [sortMode, setSortMode] = useState("smart");
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState(null); // {current, total, song}
+  const [bulkResult, setBulkResult] = useState(null); // {filled, skipped, failed, total}
+  const bulkCancelRef = useRef(false);
 
   const all = songsList(songs);
   const counts = {}; SONG_STATUSES.forEach(s => { counts[s.id] = all.filter(x => x.status === s.id).length; });
+  // Candidates for bulk fill: have title+artist, are missing core metadata
+  const bulkCandidates = all.filter(s => s.title && s.artist && (!s.lengthSec || !s.coverArtUrl || !s.album || !s.iTunesUrl));
 
   const list = all.filter(s => s.status === view);
   list.sort((a, b) => {
@@ -1098,11 +1251,79 @@ const SongsView = ({songs, member, mutate}) => {
   });
   const promoteSong = (id) => mutate(prev => Object.assign({}, prev, {songs: Object.assign({}, prev.songs||{}, {[id]: Object.assign({}, (prev.songs && prev.songs[id])||{}, {status:"shortlist", votes:{}})})}));
 
+  // ---- Bulk fill from Apple Music
+  const startBulkFill = async () => {
+    setBulkOpen(true);
+    setBulkResult(null);
+    bulkCancelRef.current = false;
+    const candidates = bulkCandidates.slice();
+    if (candidates.length === 0) {
+      setBulkResult({filled:0, skipped:0, failed:0, total:0});
+      return;
+    }
+    let filled = 0, skipped = 0, failed = 0;
+    for (let i = 0; i < candidates.length; i++) {
+      if (bulkCancelRef.current) break;
+      const song = candidates[i];
+      setBulkProgress({current: i+1, total: candidates.length, song: (song.title||"") + (song.artist ? (" · " + song.artist) : "")});
+      try {
+        const results = await itunesSearch((song.artist||"") + " " + (song.title||""), 1);
+        const top = results[0];
+        if (!top || !confidenceMatch(song, top)) { skipped++; continue; }
+        const updates = {};
+        if (!song.lengthSec && top.lengthSec) updates.lengthSec = top.lengthSec;
+        if (!song.album && top.album) updates.album = top.album;
+        if (!song.year && top.year) updates.year = top.year;
+        if (!song.coverArtUrl && top.coverArtUrl) updates.coverArtUrl = top.coverArtUrl;
+        if (!song.iTunesUrl && top.iTunesUrl) updates.iTunesUrl = top.iTunesUrl;
+        if (Object.keys(updates).length > 0) { updateSong(song.id, updates); filled++; } else { skipped++; }
+      } catch (e) { failed++; }
+      await new Promise(r => setTimeout(r, 220));
+    }
+    setBulkProgress(null);
+    setBulkResult({filled, skipped, failed, total: candidates.length, cancelled: bulkCancelRef.current});
+  };
+  const cancelBulk = () => { bulkCancelRef.current = true; };
+  const closeBulk = () => { setBulkOpen(false); setBulkProgress(null); setBulkResult(null); };
+
   const allInSuggested = all.filter(c => c.status==="suggested" && MEMBERS.every(m => c.votes && c.votes[m.id]==="yes")).length;
   const newSuggested = all.filter(c => c.status==="suggested" && isNew(c.createdAt)).length;
   const currentStatus = SONG_STATUSES.find(s => s.id === view);
 
   return h("div",null,
+    // Bulk fill modal
+    bulkOpen && h("div",{className:"modal-bg",onClick: bulkProgress ? null : closeBulk},
+      h("div",{className:"card p-5 max-w-md w-full",onClick:e=>e.stopPropagation()},
+        h("h3",{className:"display text-2xl mb-2"},"Auto-fill from Apple Music"),
+        bulkProgress && h(React.Fragment,null,
+          h("p",{className:"text-sm text-[var(--ink-soft)]"}, "Looking up " + bulkProgress.current + " of " + bulkProgress.total),
+          h("p",{className:"text-sm font-semibold mt-1 truncate"}, bulkProgress.song),
+          h("div",{className:"mt-3 h-2 bg-[var(--line)]/10 rounded overflow-hidden"},
+            h("div",{className:"h-full berry-bg",style:{width: Math.round((bulkProgress.current/bulkProgress.total)*100) + "%"}})
+          ),
+          h("div",{className:"mt-4"},
+            h("button",{onClick:cancelBulk,className:"btn bg-white px-4 py-2 text-sm"},"Cancel")
+          ),
+          h("p",{className:"text-xs text-[var(--ink-soft)] italic mt-3"},"Existing fields are never overwritten. Only blank fields get filled.")
+        ),
+        !bulkProgress && bulkResult && h(React.Fragment,null,
+          h("p",{className:"text-sm font-semibold"}, bulkResult.cancelled ? "Cancelled." : "Done."),
+          h("div",{className:"mt-3 space-y-1 text-sm"},
+            h("div",null, h("span",{className:"text-[var(--good)] font-semibold"},"✓ Filled: "), bulkResult.filled),
+            h("div",null, h("span",{className:"text-[var(--ink-soft)] font-semibold"},"— Skipped: "), bulkResult.skipped, " ", h("span",{className:"text-xs text-[var(--ink-soft)] italic"},"(no confident match)")),
+            bulkResult.failed > 0 && h("div",null, h("span",{className:"text-[var(--berry)] font-semibold"},"✗ Failed: "), bulkResult.failed, " ", h("span",{className:"text-xs text-[var(--ink-soft)] italic"},"(network/API error)"))
+          ),
+          h("p",{className:"text-xs text-[var(--ink-soft)] italic mt-3"},"Skipped songs need manual lookup — open each and tap the Apple Music search button."),
+          h("div",{className:"mt-4 flex gap-2"},
+            h("button",{onClick:closeBulk,className:"btn berry-bg px-4 py-2 text-sm font-semibold"},"Close")
+          )
+        ),
+        !bulkProgress && !bulkResult && h(React.Fragment,null,
+          h("p",{className:"text-sm text-[var(--ink-soft)]"},"Preparing…")
+        )
+      )
+    ),
+
     // Status pills
     h("div",{className:"flex gap-2 overflow-x-auto pb-1 mb-3"},
       SONG_STATUSES.map(s => h("button",{key:s.id, onClick:()=>setView(s.id),
@@ -1116,7 +1337,7 @@ const SongsView = ({songs, member, mutate}) => {
       h("input",{className:"input flex-1",value:query,onChange:e=>setQuery(e.target.value),placeholder:"Search " + (currentStatus ? currentStatus.label.toLowerCase() : "") + "…"}),
       h("button",{onClick:()=>{setAdding(true); setEditingId(null);},className:"btn berry-bg px-4 py-2 text-sm font-semibold whitespace-nowrap"},"+ Add song")
     ),
-    // v8 fix: description on its own line, sort on its own line — no more squeezed wrapping
+    // Description + sort + bulk fill
     h("div",{className:"card p-3 mb-4 text-sm"},
       h("div",{className:"flex items-baseline gap-2 flex-wrap"},
         h("span",{className:"ticker text-[var(--berry)]"}, currentStatus && currentStatus.label),
@@ -1129,11 +1350,14 @@ const SongsView = ({songs, member, mutate}) => {
           {id:"newest", label:"Newest"},
           {id:"title", label:"A–Z"}
         ].map(opt => h("button",{key:opt.id, onClick:()=>setSortMode(opt.id), className:"pill px-2 py-0.5 text-xs " + (sortMode===opt.id?"berry-bg text-white":"bg-white")}, opt.label))
+      ),
+      bulkCandidates.length > 0 && h("div",{className:"mt-2 pt-2 border-t border-[var(--line)]/15 flex items-center gap-2 flex-wrap"},
+        h("span",{className:"text-xs text-[var(--ink-soft)]"}, bulkCandidates.length + " song" + (bulkCandidates.length===1?"":"s") + " missing details"),
+        h("button",{onClick:startBulkFill,className:"btn bg-white px-2.5 py-1 text-xs font-semibold ml-auto"},"🔍 Auto-fill from Apple Music")
       )
     ),
     adding && h(SongForm,{onSave: createSong, onCancel: () => setAdding(false)}),
     filtered.length===0 && !adding && h("div",{className:"card p-6 text-center"}, h("p",{className:"display text-xl"}, query?"No matches.":"Nothing here yet.")),
-    // v8: tighter spacing between cards
     h("div",{className:"space-y-1.5"},
       filtered.map(s => editingId===s.id
         ? h(SongForm,{key:s.id, initial:s, onSave: f => { updateSong(s.id, f); setEditingId(null); }, onCancel: () => setEditingId(null), onDelete: () => deleteSong(s.id)})
@@ -1180,29 +1404,107 @@ const SongPicker = ({songs, excludeIds, onPick, onClose}) => {
 const SetlistDetail = ({setlist, songs, events, member, onBack, onUpdate, onDelete, onDuplicate}) => {
   const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState(setlist.name);
-  const [picker, setPicker] = useState(false);
+  const [editingSetIdx, setEditingSetIdx] = useState(null);
+  const [editingSetName, setEditingSetName] = useState("");
+  const [picker, setPicker] = useState(null); // null | {kind:"set", index:n} | {kind:"soundcheck"}
   const [viewMode, setViewMode] = useState("detailed");
-  const songIds = setlist.songIds || [];
+  const sets = setlist.sets || [];
+  const soundcheckId = setlist.soundcheckSongId || null;
   const gigOptions = eventsList(events).filter(e => e.type === "gig");
-  const lengths = sumLengths(songIds, songs);
+  const totals = setlistTotals(setlist, songs);
+  const totalSongs = setlistSongCount(setlist);
   const totalsLabel = (() => {
-    const n = songIds.length;
-    const songLabel = n + " song" + (n===1 ? "" : "s");
-    if (n === 0) return "Empty setlist";
-    if (lengths.total === 0) return songLabel + " · no durations yet";
-    const dur = formatDuration(lengths.total) + (lengths.missing > 0 ? "+" : "");
-    const missingLabel = lengths.missing > 0 ? (" · " + lengths.missing + " missing length") : "";
-    return "Total " + dur + " · " + songLabel + missingLabel;
+    const setLabel = sets.length + " set" + (sets.length===1?"":"s");
+    if (totalSongs === 0) return "Empty · " + setLabel;
+    const songLabel = totalSongs + " song" + (totalSongs===1?"":"s");
+    if (totals.total === 0) return songLabel + " in " + setLabel + " · no durations yet";
+    const dur = formatDuration(totals.total) + (totals.missing > 0 ? "+" : "");
+    const missingLabel = totals.missing > 0 ? (" · " + totals.missing + " missing length") : "";
+    return "Total " + dur + " · " + songLabel + " in " + setLabel + missingLabel;
   })();
-  const moveSong = (idx, dir) => {
-    const arr = songIds.slice();
-    const ni = idx + dir;
-    if (ni < 0 || ni >= arr.length) return;
-    const tmp = arr[idx]; arr[idx] = arr[ni]; arr[ni] = tmp;
-    onUpdate({songIds: arr});
+
+  // Mutations on sets
+  const updateSet = (setIdx, data) => onUpdate({sets: sets.map((s,i) => i===setIdx ? Object.assign({}, s, data) : s)});
+  const renameSet = (setIdx, newName) => updateSet(setIdx, {name: newName.trim() || ("Set " + (setIdx+1))});
+  const addSet = () => {
+    const usedNumbers = sets.map(s => {
+      const m = (s.name || "").match(/^Set\s+(\d+)$/i);
+      return m ? parseInt(m[1],10) : 0;
+    });
+    const nextNum = Math.max(0, ...usedNumbers, sets.length) + 1;
+    onUpdate({sets: sets.concat([{name: "Set " + nextNum, songIds: []}])});
   };
-  const removeSong = idx => { const arr = songIds.slice(); arr.splice(idx, 1); onUpdate({songIds: arr}); };
-  const addSong = id => { if (songIds.includes(id)) return; onUpdate({songIds: songIds.concat([id])}); };
+  const deleteSet = (setIdx) => {
+    const set = sets[setIdx];
+    const songCount = (set.songIds || []).length;
+    if (songCount > 0 && !confirm("Delete \"" + (set.name||"set") + "\" with " + songCount + " song" + (songCount===1?"":"s") + "?")) return;
+    if (songCount === 0 && !confirm("Delete \"" + (set.name||"set") + "\"?")) return;
+    let newSets = sets.slice();
+    newSets.splice(setIdx, 1);
+    if (newSets.length === 0) newSets = [{name:"Set 1", songIds:[]}];
+    onUpdate({sets: newSets});
+  };
+  const moveSongInSet = (setIdx, songIdx, dir) => {
+    const set = sets[setIdx];
+    const arr = (set.songIds || []).slice();
+    const ni = songIdx + dir;
+    if (ni < 0 || ni >= arr.length) return;
+    const tmp = arr[songIdx]; arr[songIdx] = arr[ni]; arr[ni] = tmp;
+    updateSet(setIdx, {songIds: arr});
+  };
+  const removeSongFromSet = (setIdx, songIdx) => {
+    const arr = (sets[setIdx].songIds || []).slice();
+    arr.splice(songIdx, 1);
+    updateSet(setIdx, {songIds: arr});
+  };
+  const addSongToSet = (setIdx, songId) => {
+    const cur = sets[setIdx].songIds || [];
+    if (cur.includes(songId)) return;
+    updateSet(setIdx, {songIds: cur.concat([songId])});
+  };
+  const setSoundcheck = id => onUpdate({soundcheckSongId: id});
+  const clearSoundcheck = () => onUpdate({soundcheckSongId: null});
+
+  // Picker handlers
+  const handlePick = (songId) => {
+    if (!picker) return;
+    if (picker.kind === "soundcheck") setSoundcheck(songId);
+    else if (picker.kind === "set") addSongToSet(picker.index, songId);
+    setPicker(null);
+  };
+  const pickerExcludeIds = picker
+    ? (picker.kind === "soundcheck" ? (soundcheckId ? [soundcheckId] : []) : setlistAllSongIds(setlist))
+    : [];
+
+  const renderSongRow = (sid, setIdx, songIdx, isLast) => {
+    const s = songs && songs[sid];
+    if (!s) return h("li",{key:sid+"-"+songIdx,className:"card-flat p-3 text-sm italic text-[var(--ink-soft)]"},
+      "(deleted song) ",
+      h("button",{onClick:()=>removeSongFromSet(setIdx, songIdx),className:"text-[var(--berry)] underline ml-2"},"remove")
+    );
+    return h("li",{key:sid+"-"+songIdx,className:"card-flat p-3"},
+      h("div",{className:"flex items-start gap-3"},
+        h("div",{className:"display text-xl text-[var(--berry)] shrink-0 w-8"}, (songIdx+1) + "."),
+        s.coverArtUrl && h("img",{src:s.coverArtUrl, alt:"", className:"shrink-0 rounded border border-[var(--line)]/30", style:{width:40,height:40,objectFit:"cover"}, onError:e=>{e.target.style.display="none";}}),
+        h("div",{className:"flex-1 min-w-0"},
+          h("div",{className:"display text-base leading-tight"}, s.title),
+          s.artist && h("div",{className:"text-xs text-[var(--ink-soft)] italic"}, s.artist),
+          h("div",{className:"mt-1.5 flex items-center gap-1.5 flex-wrap"},
+            h("span",{className:"ticker text-[var(--ink-soft)]"}, (SONG_STATUSES.find(x=>x.id===s.status)||{}).label),
+            formatDuration(s.lengthSec) && h("span",{className:"ticker text-[var(--ink-soft)]"}, "· " + formatDuration(s.lengthSec)),
+            h("span",{className:"ticker text-[var(--ink-soft)]"},"·"),
+            MEMBERS.map(m => h(PracticeChip,{key:m.id, initial:m.name[0], state: s.practice && s.practice[m.id], isMe: false}))
+          )
+        ),
+        h("div",{className:"flex flex-col gap-1 shrink-0"},
+          h("button",{onClick:()=>moveSongInSet(setIdx, songIdx, -1),disabled:songIdx===0,className:"pill px-2 py-0.5 text-xs bg-white disabled:opacity-30"},"↑"),
+          h("button",{onClick:()=>moveSongInSet(setIdx, songIdx, 1),disabled:isLast,className:"pill px-2 py-0.5 text-xs bg-white disabled:opacity-30"},"↓"),
+          h("button",{onClick:()=>removeSongFromSet(setIdx, songIdx),className:"pill px-2 py-0.5 text-xs bg-white text-[var(--berry)]"},"×")
+        )
+      )
+    );
+  };
+
   return h("div",null,
     h("button",{onClick:onBack,className:"ticker text-[var(--berry)] mb-3"},"← Back to setlists"),
     h("div",{className:"card p-3 sm:p-4 mb-4"},
@@ -1225,7 +1527,6 @@ const SetlistDetail = ({setlist, songs, events, member, onBack, onUpdate, onDele
         h("textarea",{className:"input text-sm mt-2",rows:"2",value:setlist.notes||"",onChange:e=>onUpdate({notes:e.target.value}),placeholder:"e.g. running order tweaks, key changes…"})
       ),
       h("div",{className:"mt-3 sm:mt-4 flex gap-2 flex-wrap items-center"},
-        h("button",{onClick:()=>setPicker(true),className:"btn berry-bg px-3 sm:px-4 py-2 text-sm font-semibold"},"+ Add songs"),
         h("div",{className:"flex gap-1"},
           h("button",{onClick:()=>setViewMode("detailed"),className:"pill px-2.5 py-1 text-xs font-semibold " + (viewMode==="detailed"?"berry-bg text-white":"bg-white")},"Detailed"),
           h("button",{onClick:()=>setViewMode("summary"),className:"pill px-2.5 py-1 text-xs font-semibold " + (viewMode==="summary"?"berry-bg text-white":"bg-white")},"Summary")),
@@ -1233,53 +1534,121 @@ const SetlistDetail = ({setlist, songs, events, member, onBack, onUpdate, onDele
         h("button",{onClick:()=>{ if (confirm("Delete setlist \"" + setlist.name + "\"?")) onDelete(); },className:"btn bg-white px-3 py-2 text-sm text-[var(--berry)]"},"Delete")
       )
     ),
-    picker && h(SongPicker,{songs:songs, excludeIds:songIds, onPick:addSong, onClose:()=>setPicker(false)}),
-    songIds.length === 0
-      ? h("div",{className:"card-flat p-6 text-center"}, h("p",{className:"display text-xl"},"No songs yet."))
-      : viewMode === "summary"
-        ? h("div",{className:"card p-5"},
-            h("h3",{className:"display text-2xl mb-3"}, setlist.name),
-            h("ol",{className:"space-y-1 text-sm"},
-              songIds.map((sid, i) => {
-                const s = songs && songs[sid];
-                if (!s) return h("li",{key:sid,className:"text-[var(--ink-soft)] italic"}, (i+1) + ". (deleted song)");
-                const sLen = formatDuration(s.lengthSec);
-                return h("li",{key:sid,className:"flex gap-2 items-baseline"},
-                  h("span",{className:"text-[var(--berry)] font-semibold w-6 shrink-0"}, (i+1) + "."),
-                  h("span",{className:"font-semibold"}, s.title),
-                  s.artist && h("span",{className:"text-[var(--ink-soft)] italic"},"— " + s.artist),
-                  sLen && h("span",{className:"ticker text-[var(--ink-soft)] ml-auto shrink-0"}, sLen)
-                );
-              })
-            ),
-            h("p",{className:"text-xs text-[var(--ink-soft)] italic mt-4"}, totalsLabel + ".")
-          )
-        : h("ol",{className:"space-y-2"},
-            songIds.map((sid, i) => {
-              const s = songs && songs[sid];
-              if (!s) return h("li",{key:sid,className:"card-flat p-3 text-sm italic text-[var(--ink-soft)]"},"(deleted song) ", h("button",{onClick:()=>removeSong(i),className:"text-[var(--berry)] underline ml-2"},"remove"));
-              return h("li",{key:sid,className:"card-flat p-3"},
-                h("div",{className:"flex items-start gap-3"},
-                  h("div",{className:"display text-xl text-[var(--berry)] shrink-0 w-8"}, (i+1) + "."),
-                  h("div",{className:"flex-1 min-w-0"},
-                    h("div",{className:"display text-base leading-tight"}, s.title),
-                    s.artist && h("div",{className:"text-xs text-[var(--ink-soft)] italic"}, s.artist),
-                    h("div",{className:"mt-1.5 flex items-center gap-1.5 flex-wrap"},
-                      h("span",{className:"ticker text-[var(--ink-soft)]"}, (SONG_STATUSES.find(x=>x.id===s.status)||{}).label),
-                      formatDuration(s.lengthSec) && h("span",{className:"ticker text-[var(--ink-soft)]"}, "· " + formatDuration(s.lengthSec)),
-                      h("span",{className:"ticker text-[var(--ink-soft)]"},"·"),
-                      MEMBERS.map(m => h(PracticeChip,{key:m.id, initial:m.name[0], state: s.practice && s.practice[m.id], isMe: false}))
-                    )
-                  ),
-                  h("div",{className:"flex flex-col gap-1 shrink-0"},
-                    h("button",{onClick:()=>moveSong(i,-1),disabled:i===0,className:"pill px-2 py-0.5 text-xs bg-white disabled:opacity-30"},"↑"),
-                    h("button",{onClick:()=>moveSong(i,1),disabled:i===songIds.length-1,className:"pill px-2 py-0.5 text-xs bg-white disabled:opacity-30"},"↓"),
-                    h("button",{onClick:()=>removeSong(i),className:"pill px-2 py-0.5 text-xs bg-white text-[var(--berry)]"},"×")
-                  )
+
+    // Picker modal
+    picker && h(SongPicker,{songs:songs, excludeIds: pickerExcludeIds, onPick: handlePick, onClose: () => setPicker(null)}),
+
+    // SUMMARY VIEW
+    viewMode === "summary" && h("div",{className:"card p-5 space-y-5"},
+      h("h3",{className:"display text-2xl"}, setlist.name),
+      // Soundcheck in summary
+      soundcheckId && (() => {
+        const s = songs && songs[soundcheckId];
+        return h("div",null,
+          h("div",{className:"ticker text-[var(--berry)] mb-2"},"Soundcheck"),
+          s ? h("div",{className:"text-sm flex items-baseline gap-2"},
+                h("span",{className:"font-semibold"}, s.title),
+                s.artist && h("span",{className:"text-[var(--ink-soft)] italic"},"— " + s.artist),
+                formatDuration(s.lengthSec) && h("span",{className:"ticker text-[var(--ink-soft)] ml-auto"}, formatDuration(s.lengthSec)))
+            : h("p",{className:"text-sm italic text-[var(--ink-soft)]"},"(deleted song)")
+        );
+      })(),
+      // Each set in summary
+      sets.map((set, si) => {
+        const setIds = set.songIds || [];
+        const setLen = sumLengths(setIds, songs);
+        const setLenLabel = setLen.total > 0 ? (formatDuration(setLen.total) + (setLen.missing > 0 ? "+" : "")) : "";
+        return h("div",{key:si},
+          h("div",{className:"flex items-baseline justify-between gap-2 mb-2"},
+            h("div",{className:"ticker text-[var(--berry)]"}, set.name || ("Set " + (si+1))),
+            setLenLabel && h("span",{className:"ticker text-[var(--ink-soft)]"}, setIds.length + " songs · " + setLenLabel)
+          ),
+          setIds.length === 0
+            ? h("p",{className:"text-sm italic text-[var(--ink-soft)]"},"(empty)")
+            : h("ol",{className:"space-y-1 text-sm"},
+                setIds.map((sid, i) => {
+                  const s = songs && songs[sid];
+                  if (!s) return h("li",{key:sid+"-"+i,className:"text-[var(--ink-soft)] italic"}, (i+1) + ". (deleted song)");
+                  const sLen = formatDuration(s.lengthSec);
+                  return h("li",{key:sid+"-"+i,className:"flex gap-2 items-baseline"},
+                    h("span",{className:"text-[var(--berry)] font-semibold w-6 shrink-0"}, (i+1) + "."),
+                    h("span",{className:"font-semibold"}, s.title),
+                    s.artist && h("span",{className:"text-[var(--ink-soft)] italic"},"— " + s.artist),
+                    sLen && h("span",{className:"ticker text-[var(--ink-soft)] ml-auto shrink-0"}, sLen)
+                  );
+                })
+              )
+        );
+      }),
+      h("p",{className:"text-xs text-[var(--ink-soft)] italic pt-3 border-t border-[var(--line)]/20"}, totalsLabel + ".")
+    ),
+
+    // DETAILED VIEW
+    viewMode === "detailed" && h("div",{className:"space-y-5"},
+      // Soundcheck section
+      h("section",null,
+        h("div",{className:"flex items-center justify-between gap-2 mb-2 flex-wrap"},
+          h("div",{className:"ticker text-[var(--berry)]"},"Soundcheck"),
+          !soundcheckId && h("button",{onClick:()=>setPicker({kind:"soundcheck"}),className:"btn bg-white px-3 py-1 text-xs"},"+ Set soundcheck song")
+        ),
+        soundcheckId && (() => {
+          const s = songs && songs[soundcheckId];
+          if (!s) return h("div",{className:"card-flat p-3 text-sm italic text-[var(--ink-soft)]"},
+            "(deleted song) ",
+            h("button",{onClick:clearSoundcheck,className:"text-[var(--berry)] underline ml-2"},"remove")
+          );
+          return h("div",{className:"card-flat p-3"},
+            h("div",{className:"flex items-center gap-3"},
+              s.coverArtUrl && h("img",{src:s.coverArtUrl, alt:"", className:"shrink-0 rounded border border-[var(--line)]/30", style:{width:40,height:40,objectFit:"cover"}, onError:e=>{e.target.style.display="none";}}),
+              h("div",{className:"flex-1 min-w-0"},
+                h("div",{className:"display text-base leading-tight"}, s.title),
+                s.artist && h("div",{className:"text-xs text-[var(--ink-soft)] italic"}, s.artist),
+                formatDuration(s.lengthSec) && h("div",{className:"ticker text-[var(--ink-soft)] mt-0.5"}, formatDuration(s.lengthSec))
+              ),
+              h("div",{className:"flex gap-1 shrink-0"},
+                h("button",{onClick:()=>setPicker({kind:"soundcheck"}),className:"pill px-2.5 py-1 text-xs bg-white"},"Change"),
+                h("button",{onClick:clearSoundcheck,className:"pill px-2.5 py-1 text-xs bg-white text-[var(--berry)]"},"×")
+              )
+            )
+          );
+        })()
+      ),
+      // Each set
+      sets.map((set, si) => {
+        const setIds = set.songIds || [];
+        const setLen = sumLengths(setIds, songs);
+        const setLenLabel = setLen.total > 0 ? (formatDuration(setLen.total) + (setLen.missing > 0 ? "+" : "")) : "";
+        const isEditingThis = editingSetIdx === si;
+        return h("section",{key:si},
+          // Header
+          h("div",{className:"flex items-center justify-between gap-2 mb-2 flex-wrap"},
+            isEditingThis
+              ? h("div",{className:"flex gap-2 flex-1 min-w-0"},
+                  h("input",{className:"input text-sm",value:editingSetName,onChange:e=>setEditingSetName(e.target.value),autoFocus:true}),
+                  h("button",{onClick:()=>{ renameSet(si, editingSetName); setEditingSetIdx(null); },className:"btn berry-bg px-2 py-1 text-xs font-semibold"},"Save"),
+                  h("button",{onClick:()=>setEditingSetIdx(null),className:"btn bg-white px-2 py-1 text-xs"},"Cancel")
                 )
-              );
-            })
-          )
+              : h("div",{className:"flex items-baseline gap-2 flex-wrap"},
+                  h("h3",{className:"display text-xl text-[var(--berry)]"}, set.name || ("Set " + (si+1))),
+                  h("button",{onClick:()=>{ setEditingSetIdx(si); setEditingSetName(set.name || ""); },className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)]"},"rename ▸"),
+                  setLenLabel && h("span",{className:"ticker text-[var(--ink-soft)]"}, setIds.length + " · " + setLenLabel)
+                ),
+            !isEditingThis && h("div",{className:"flex gap-1 shrink-0"},
+              h("button",{onClick:()=>setPicker({kind:"set",index:si}),className:"btn bg-white px-3 py-1 text-xs font-semibold"},"+ Songs"),
+              h("button",{onClick:()=>deleteSet(si),className:"btn bg-white px-2 py-1 text-xs text-[var(--berry)]",title:"Delete set"},"×")
+            )
+          ),
+          // Songs
+          setIds.length === 0
+            ? h("div",{className:"card-flat p-4 text-center text-sm italic text-[var(--ink-soft)]"},"No songs in this set yet.")
+            : h("ol",{className:"space-y-2"}, setIds.map((sid, i) => renderSongRow(sid, si, i, i === setIds.length - 1)))
+        );
+      }),
+      // Add set button at bottom
+      h("div",{className:"pt-2"},
+        h("button",{onClick:addSet,className:"btn bg-white px-3 py-2 text-sm font-semibold w-full sm:w-auto"},"+ Add a new set")
+      )
+    )
   );
 };
 
@@ -1290,7 +1659,7 @@ const SetlistsView = ({setlists, songs, events, member, mutate}) => {
   const all = setlistsList(setlists).sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
   const createSetlist = name => {
     const id = newId("sl");
-    mutate(prev => Object.assign({}, prev, {setlists: Object.assign({}, prev.setlists||{}, {[id]: {name, songIds:[], gigEventId:null, notes:"", createdAt: Date.now()}})}));
+    mutate(prev => Object.assign({}, prev, {setlists: Object.assign({}, prev.setlists||{}, {[id]: {name, sets:[{name:"Set 1",songIds:[]}], soundcheckSongId:null, gigEventId:null, notes:"", createdAt: Date.now()}})}));
     setOpenId(id); setCreating(false); setNewName("");
   };
   const updateSetlist = (id, data) => mutate(prev => Object.assign({}, prev, {setlists: Object.assign({}, prev.setlists||{}, {[id]: Object.assign({}, (prev.setlists && prev.setlists[id])||{}, data)})}));
@@ -1299,7 +1668,9 @@ const SetlistsView = ({setlists, songs, events, member, mutate}) => {
     const src = setlists && setlists[id];
     if (!src) return;
     const newSlId = newId("sl");
-    mutate(prev => Object.assign({}, prev, {setlists: Object.assign({}, prev.setlists||{}, {[newSlId]: {name: (src.name || "Setlist") + " (copy)", songIds: (src.songIds || []).slice(), gigEventId: null, notes: src.notes || "", createdAt: Date.now()}})}));
+    const clonedSets = (src.sets || []).map(s => ({name: s.name, songIds: (s.songIds || []).slice()}));
+    if (clonedSets.length === 0) clonedSets.push({name:"Set 1",songIds:[]});
+    mutate(prev => Object.assign({}, prev, {setlists: Object.assign({}, prev.setlists||{}, {[newSlId]: {name: (src.name || "Setlist") + " (copy)", sets: clonedSets, soundcheckSongId: src.soundcheckSongId || null, gigEventId: null, notes: src.notes || "", createdAt: Date.now()}})}));
     setOpenId(newSlId);
   };
   if (openId && setlists && setlists[openId]) {
@@ -1320,15 +1691,16 @@ const SetlistsView = ({setlists, songs, events, member, mutate}) => {
     all.length===0 && !creating && h("div",{className:"card p-6 text-center"}, h("p",{className:"display text-xl"},"No setlists yet.")),
     h("div",{className:"space-y-3"},
       all.map(sl => {
-        const songCount = (sl.songIds || []).length;
-        const slLen = sumLengths(sl.songIds || [], songs);
+        const songCount = setlistSongCount(sl);
+        const slLen = setlistTotals(sl, songs);
+        const setCount = (sl.sets || []).length;
         const lenLabel = slLen.total > 0 ? (formatDuration(slLen.total) + (slLen.missing > 0 ? "+" : "")) : "";
         const gig = sl.gigEventId && events && events[sl.gigEventId];
         return h("button",{key:sl.id,onClick:()=>setOpenId(sl.id),className:"card-flat p-4 w-full text-left hover:bg-[var(--acid)]/20 transition"},
           h("div",{className:"flex items-center justify-between gap-3 flex-wrap"},
             h("div",{className:"flex-1 min-w-0"},
               h("div",{className:"display text-xl leading-tight"}, sl.name),
-              h("div",{className:"text-sm text-[var(--ink-soft)] mt-1"}, songCount + " song" + (songCount===1?"":"s") + (lenLabel ? (" · " + lenLabel) : "") + (gig ? (" · pinned to " + (gig.title||"gig") + " on " + fmtDate(gig.date)) : ""))
+              h("div",{className:"text-sm text-[var(--ink-soft)] mt-1"}, songCount + " song" + (songCount===1?"":"s") + " in " + setCount + " set" + (setCount===1?"":"s") + (lenLabel ? (" · " + lenLabel) : "") + (gig ? (" · pinned to " + (gig.title||"gig") + " on " + fmtDate(gig.date)) : ""))
             ),
             h("span",{className:"ticker text-[var(--berry)]"},"Open ▸")
           )
