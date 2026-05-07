@@ -99,6 +99,8 @@
       .gig-print-root span,
       .gig-print-root div { color: inherit !important; }
       .gig-print-root .text-\\[var\\(--ink-soft\\)\\] { color: #555 !important; }
+      /* Strip artist names from the printed setlist — only song titles need to be on stage. */
+      .gig-print-root .gig-artist { display: none !important; }
       /* Avoid trailing blank pages caused by content-length-padded ancestors. */
       html, body { height: auto !important; min-height: 0 !important; }
     }
@@ -119,7 +121,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.14.0";
+const APP_VERSION = "0.15.0";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 // Instruments for member profiles (multi-select). Order is the display order.
 // Icons are emoji — render natively on iOS/macOS/Android. Bass uses 🪕 (banjo) as the closest
@@ -801,11 +803,18 @@ const SETTINGS_DEFAULTS = {
   staleWeeks: 4,           // weeks before a setlist song is flagged "not rehearsed in N+ weeks"
   setupPreferredHrs: 2,    // gig planner: preferred setup window before first downbeat
   setupMinHrs: 1,          // gig planner: minimum acceptable setup window
-  breakDefaultMin: 20      // gig planner: default break length between sets
+  breakDefaultMin: 20,     // gig planner: default break length between sets
+  rehearsalLocation: ""    // optional default location pre-filled when creating new rehearsals
 };
 const getSetting = (settings, key) => {
   const v = settings && settings[key];
   return (typeof v === "number" && v > 0 && Number.isFinite(v)) ? v : SETTINGS_DEFAULTS[key];
+};
+// String-valued settings (e.g. rehearsalLocation) — separate getter because getSetting
+// rejects anything that isn't a positive number.
+const getStringSetting = (settings, key) => {
+  const v = settings && settings[key];
+  return (typeof v === "string") ? v : (SETTINGS_DEFAULTS[key] || "");
 };
 // Iteration B.1: a song is "stale" if it hasn't been rehearsed in the last `weeks` weeks (or ever).
 // `lastRehearsed` is a YYYY-MM-DD string (or undefined for never-rehearsed).
@@ -1585,6 +1594,32 @@ const SettingRow = ({label, description, settingKey, currentValue, defaultValue,
     )
   );
 };
+// Inline row for the default rehearsal location string. Same visual idiom as SettingRow
+// but accepts a freeform text value. Pre-fills the location field on new rehearsal events.
+const RehearsalLocationRow = ({currentValue, onSave}) => {
+  const [draft, setDraft] = useState(currentValue || "");
+  useEffect(() => { setDraft(currentValue || ""); }, [currentValue]);
+  const dirty = draft.trim() !== (currentValue || "").trim();
+  return h("div",{className:"py-2 border-b border-[var(--line)]/10 last:border-0"},
+    h("div",{className:"text-sm font-semibold"}, "Default rehearsal location"),
+    h("div",{className:"text-xs text-[var(--ink-soft)] mt-0.5"},
+      "Pre-fills the location field when you create a new rehearsal. Most bands rehearse at the same place — saves typing."
+    ),
+    h("div",{className:"flex items-center gap-2 mt-2 flex-wrap"},
+      h("input",{
+        type:"text", value:draft,
+        onChange:e=>setDraft(e.target.value),
+        placeholder:"e.g. Pirate Studios, Earlsfield",
+        className:"input text-sm flex-1",
+        style:{minWidth:"12rem"}
+      }),
+      h("div",{className:"flex items-center gap-2"},
+        dirty && h("button",{onClick:()=>onSave(draft.trim()),className:"btn berry-bg px-3 py-1 text-xs font-semibold"},"Save"),
+        !dirty && currentValue && h("button",{onClick:()=>onSave(""),className:"btn bg-white px-2 py-1 text-xs",title:"Clear default location"},"Clear")
+      )
+    )
+  );
+};
 const BandSettingsSection = ({settings, mutate}) => {
   const onSave = (key, value) => {
     mutate(prev => Object.assign({}, prev, {settings: Object.assign({}, prev.settings || {}, {[key]: value})}));
@@ -1629,6 +1664,12 @@ const BandSettingsSection = ({settings, mutate}) => {
       defaultValue: SETTINGS_DEFAULTS.breakDefaultMin,
       unit:"minutes", min:0, max:120,
       onSave: (v) => onSave("breakDefaultMin", v)
+    }),
+    // Rehearsal location is a string (not a number), so it gets its own inline row
+    // rather than going through SettingRow.
+    h(RehearsalLocationRow, {
+      currentValue: getStringSetting(settings, "rehearsalLocation"),
+      onSave: (v) => onSave("rehearsalLocation", v)
     })
   );
 };
@@ -1894,7 +1935,7 @@ const AvailabilityButtons = ({ev, member, onSet}) => {
   }, label);
   return h("div",{className:"flex gap-1.5"}, opt("yes","✓ Yes","var(--good)"), opt("maybe","? Maybe","var(--rusty)"), opt("no","✗ No","var(--learn)"));
 };
-const blankEvent = (type) => ({date: todayISO(), startTime:"18:00", endTime:"21:00", type: type||"rehearsal", venueType:"in-person-studio", location:"", bookingOwner:"", confirmed:false, status:"proposed", title:"", comments:"", recordingUrl:"", gigNotes:"", actualSetlistId:null});
+const blankEvent = (type, defaultLocation) => ({date: todayISO(), startTime:"18:00", endTime:"21:00", type: type||"rehearsal", venueType:"in-person-studio", location: defaultLocation || "", bookingOwner:"", confirmed:false, status:"proposed", title:"", comments:"", recordingUrl:"", gigNotes:"", actualSetlistId:null});
 
 const EventForm = ({initial, onSave, onCancel, onDelete, locationSuggestions, songs}) => {
   const [f, setF] = useState(initial || blankEvent());
@@ -2158,11 +2199,13 @@ const EventCard = ({ev, member, memberProfiles, songs, events, pinnedSetlist, on
         )
       ),
       // Embedded OSM map — only for upcoming events with cached coordinates.
-      // Hidden on mobile (would crowd the card); ~140×140 on tablets and up.
+      // Hidden on mobile (would crowd the card); ~200×200 on tablets and up.
+      // 200px is a balance: large enough that OSM's mandatory attribution doesn't
+      // dominate, small enough that it doesn't push the card into a giant footprint.
       // Tap the existing "View on map" link to open the full interactive map.
       !past && ev.locationGeo && typeof ev.locationGeo.lat === "number" && h("div",{
         className:"hidden sm:block shrink-0 rounded overflow-hidden border border-[var(--line)]/40",
-        style:{width:"140px", height:"140px"}
+        style:{width:"200px", height:"200px"}
       },
         h("iframe",{
           src: osmEmbedUrl(ev.locationGeo.lat, ev.locationGeo.lng, 0.006),
@@ -2230,7 +2273,7 @@ const TypedScheduleView = ({events, songs, setlists, member, memberProfiles, mut
       h("span",{className:"text-sm text-[var(--ink-soft)]"},"Tidy up: " + past.length + " past " + eventType + (past.length===1?"":"s") + "."),
       h("button",{onClick:clearAllPast,className:"btn bg-white px-3 py-1.5 text-sm text-[var(--berry)]"},"Delete all past")
     ),
-    adding && h(EventForm,{initial: blankEvent(eventType), onSave:createEvent, onCancel:()=>setAdding(false), locationSuggestions:locationSuggestions, songs:songs}),
+    adding && h(EventForm,{initial: blankEvent(eventType, eventType === "rehearsal" ? getStringSetting(settings, "rehearsalLocation") : ""), onSave:createEvent, onCancel:()=>setAdding(false), locationSuggestions:locationSuggestions, songs:songs}),
     list.length===0 && !adding && h("div",{className:"card p-6 text-center"},
       h("p",{className:"display text-xl"}, showPast ? ("No past " + eventType + "s.") : ("No " + eventType + "s in the diary yet.")),
       !showPast && h("p",{className:"text-sm mt-2 text-[var(--ink-soft)]"},"Tap \"" + addLabel + "\" to add one.")
@@ -3158,7 +3201,7 @@ const GigModeView = ({setlist, songs, events, onClose}) => {
                     if (!s) return h("li",{key:"d-"+i,className:"italic text-[var(--ink-soft)]"},"(deleted)");
                     return h("li",{key:sid,className:"break-words"},
                       h("span",{className:"font-semibold"}, s.title || "(untitled)"),
-                      s.artist && h("span",{className:"text-[var(--ink-soft)] italic ml-2",style:{fontSize:"0.75em"}}, "— " + s.artist)
+                      s.artist && h("span",{className:"gig-artist text-[var(--ink-soft)] italic ml-2",style:{fontSize:"0.75em"}}, "— " + s.artist)
                     );
                   })
                 )
