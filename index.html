@@ -134,7 +134,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.11.1";
+const APP_VERSION = "0.12.0";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 // Instruments for member profiles (multi-select). Order is the display order.
 // Icons are emoji — render natively on iOS/macOS/Android. Bass uses 🪕 (banjo) as the closest
@@ -571,6 +571,101 @@ const downloadJSON = (filename, data) => {
     return true;
   } catch (e) { return false; }
 };
+
+// === ICS / iCalendar helpers (Iteration: calendar export) ===
+// Generate a single-event or multi-event .ics file that the user can import into
+// Apple Calendar, Google Calendar, etc. No external library — iCalendar is just text.
+// RFC 5545 has many edge cases (timezones, recurrence, escaping); we cover the
+// common ones a band needs (date + start/end time + summary + location + notes).
+const icsEscape = (s) => {
+  if (!s) return "";
+  // Per RFC 5545: escape \ , ; first, then newlines
+  return String(s).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\n/g, "\\n").replace(/\r/g, "");
+};
+// Convert "YYYY-MM-DD" + "HH:MM" → "YYYYMMDDTHHMMSS" (local floating time, no Z).
+// Floating time means "this clock time wherever the calendar is read" — fine for a
+// band rehearsal which happens at a specific local clock time regardless of timezone.
+const icsLocalDateTime = (isoDate, hhmm) => {
+  if (!isoDate) return null;
+  const d = isoDate.replace(/-/g, "");
+  if (!hhmm) return d; // all-day fallback
+  const t = hhmm.replace(":", "") + "00";
+  return d + "T" + t;
+};
+// Stable UID: same event id always produces the same UID (good for re-import / update).
+const icsUid = (eventId, binId) => {
+  const safe = String(eventId || "").replace(/[^a-zA-Z0-9_-]/g, "");
+  const ns = String(binId || "anon").replace(/[^a-zA-Z0-9]/g, "");
+  return safe + "@" + ns + ".sourberry";
+};
+// Build the body lines for one VEVENT.
+const buildVEvent = (ev, opts) => {
+  if (!ev || !ev.date) return null;
+  const lines = [];
+  const uid = icsUid(ev.id, opts && opts.binId);
+  const summary = ((ev.type === "gig" ? "🎤 Gig" : "🎵 Rehearsal") + (ev.title ? (": " + ev.title) : ""));
+  const dtstamp = (new Date()).toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+  lines.push("BEGIN:VEVENT");
+  lines.push("UID:" + uid);
+  lines.push("DTSTAMP:" + dtstamp);
+  if (ev.startTime) {
+    const dtStart = icsLocalDateTime(ev.date, ev.startTime);
+    const dtEnd = ev.endTime ? icsLocalDateTime(ev.date, ev.endTime) : icsLocalDateTime(ev.date, ev.startTime); // fallback: zero-length
+    lines.push("DTSTART:" + dtStart);
+    lines.push("DTEND:" + dtEnd);
+  } else {
+    // All-day event
+    const d = ev.date.replace(/-/g, "");
+    // For all-day, end is exclusive next day
+    const next = new Date(ev.date + "T12:00:00");
+    next.setDate(next.getDate() + 1);
+    const nextISO = next.toISOString().slice(0,10).replace(/-/g, "");
+    lines.push("DTSTART;VALUE=DATE:" + d);
+    lines.push("DTEND;VALUE=DATE:" + nextISO);
+  }
+  lines.push("SUMMARY:" + icsEscape(summary));
+  if (ev.location) lines.push("LOCATION:" + icsEscape(ev.location));
+  const descParts = [];
+  if (ev.type === "gig" && ev.gigNotes) descParts.push(ev.gigNotes);
+  if (ev.type === "rehearsal" && ev.rehearsalNotes) descParts.push(ev.rehearsalNotes);
+  if (ev.type === "gig" && ev.bookingMember) descParts.push("Booking: " + ev.bookingMember);
+  descParts.push("\\nFrom Sourberry");
+  if (descParts.length) lines.push("DESCRIPTION:" + icsEscape(descParts.join("\n")));
+  lines.push("END:VEVENT");
+  return lines.join("\r\n");
+};
+// Wrap one or more VEVENT blocks in a full VCALENDAR.
+const buildICS = (events, opts) => {
+  const list = Array.isArray(events) ? events : [events];
+  const blocks = list.map(ev => buildVEvent(ev, opts)).filter(Boolean);
+  if (blocks.length === 0) return null;
+  return [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Sourberry//EN",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH"
+  ].concat(blocks).concat(["END:VCALENDAR"]).join("\r\n");
+};
+const downloadICS = (filename, ics) => {
+  try {
+    const blob = new Blob([ics], {type: "text/calendar;charset=utf-8"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return true;
+  } catch (e) { return false; }
+};
+// Build an Apple/Google maps URL for a location string. Tapping opens the device's
+// default maps app on iPad/iPhone, or the web maps in a browser tab.
+const mapsUrlFor = (locationStr) => {
+  if (!locationStr) return null;
+  return "https://maps.apple.com/?q=" + encodeURIComponent(locationStr);
+};
+// === END calendar/maps helpers ===
+
 // validateBackupShape: returns null if valid, otherwise an error string.
 const validateBackupShape = obj => {
   if (!obj || typeof obj !== "object") return "Not a valid JSON object.";
@@ -1101,7 +1196,7 @@ const StatusDot = ({status, photoUrl}) => {
     const ringColor = map[status] || "var(--line)";
     return h("span",{
       className:"inline-block rounded-full",
-      style:{width:14, height:14, padding:1, background:ringColor},
+      style:{width:16, height:16, padding:2, background:ringColor},
       title: status || ""
     },
       h("img",{src:photoUrl, alt:"", className:"block rounded-full object-cover", style:{width:12, height:12}})
@@ -2006,6 +2101,24 @@ const EventCard = ({ev, member, memberProfiles, songs, events, pinnedSetlist, on
             h(AvailabilityRow,{ev:ev, memberProfiles:memberProfiles}),
             h("span",{className:"text-xs text-[var(--ink-soft)]"}, yesCount + "/" + MEMBERS.length + " can make it")
           ),
+          // Calendar export + map links (only when there's something useful to point at)
+          (ev.location || ev.startTime) && h("div",{className:"mt-2 flex items-center gap-3 flex-wrap text-xs"},
+            h("button",{
+              onClick:()=>{
+                const ics = buildICS(ev, {});
+                if (ics) downloadICS(("sourberry-" + (ev.type||"event") + "-" + (ev.date||"") + ".ics"), ics);
+              },
+              className:"ticker text-[var(--berry)] hover:underline",
+              title:"Download .ics — opens in Calendar app"
+            },"📅 Add to calendar"),
+            ev.location && h("a",{
+              href: mapsUrlFor(ev.location),
+              target:"_blank",
+              rel:"noopener",
+              className:"ticker text-[var(--berry)] hover:underline",
+              title:"Open in Maps"
+            },"📍 View on map")
+          ),
           h("div",{className:"mt-3 flex flex-wrap items-center gap-2"},
             h(AvailabilityButtons,{ev:ev, member:member, onSet:onSetAvailability}),
             isRehearsal && onStartRehearsal && h("button",{onClick:()=>onStartRehearsal(ev.id),className:"btn berry-bg px-3 py-1.5 text-xs font-semibold ml-auto",title:"Open the focused rehearsal runner"},"▶ Start rehearsal"),
@@ -2213,11 +2326,11 @@ const SongForm = ({initial, onSave, onCancel, onDelete}) => {
 
 const VotePill = ({initial, vote, photoUrl}) => {
   const ringColor = vote==="yes" ? "var(--good)" : vote==="no" ? "var(--learn)" : "var(--line)";
-  // With photo: avatar with a coloured ring (2px) for vote state.
+  // With photo: avatar with a thick coloured ring (3px) for vote state.
   if (photoUrl) {
     return h("span",{
       className:"inline-block rounded-full",
-      style:{width:22, height:22, padding:2, background:ringColor},
+      style:{width:24, height:24, padding:3, background:ringColor},
       title: vote||"no vote"
     },
       h("img",{src:photoUrl, alt:"", className:"block rounded-full object-cover", style:{width:18, height:18}})
@@ -2228,7 +2341,7 @@ const VotePill = ({initial, vote, photoUrl}) => {
   return h("span",{className:"inline-flex items-center justify-center text-xs font-semibold rounded-full border border-[var(--line)]",style:{width:22,height:22,background:bg,color},title: vote||"no vote"}, initial);
 };
 const PracticeChip = ({initial, state, isMe, onClick, photoUrl}) => {
-  // With photo: tappable avatar with the practice-state colour as a 2px ring.
+  // With photo: tappable avatar with a thick (3px) practice-state colour ring.
   // No-state ring is light grey so the chip is visible without being loud.
   if (photoUrl) {
     const ringColor = state ? PRACTICE_COLOR[state] : "var(--line)";
@@ -2237,7 +2350,7 @@ const PracticeChip = ({initial, state, isMe, onClick, photoUrl}) => {
       disabled: !isMe,
       title: state ? (initial+": "+PRACTICE_LABEL[state]) : (initial+": not set"),
       className: "inline-block rounded-full",
-      style:{width:26, height:26, padding:2, background:ringColor, cursor: isMe?"pointer":"default", border:"none"}
+      style:{width:28, height:28, padding:3, background:ringColor, cursor: isMe?"pointer":"default", border:"none"}
     },
       h("img",{src:photoUrl, alt:"", className:"block rounded-full object-cover", style:{width:22, height:22, pointerEvents:"none"}})
     );
