@@ -287,7 +287,7 @@ const buildSongsSeed = () => {
   SEED_SONGS.forEach((row, i) => {
     const title=row[0], artist=row[1], status=row[2], jamtrax=row[3], proposer=row[4], lessonUrl=row[5], comments=row[6];
     const id = songId(title, artist);
-    songs[id] = {title, artist, status, jamtrax: !!jamtrax, proposer: proposer||"", lessonUrl: lessonUrl||"", comments: comments||"", votes:{}, practice:{}, createdAt: Date.now()+i};
+    songs[id] = {title, artist, status, jamtrax: !!jamtrax, proposer: proposer||"", lessonUrl: lessonUrl||"", comments: comments||"", votes:{}, practice:{}, lengthSec: null, album: "", year: "", coverArtUrl: "", iTunesUrl: "", spotifyUrl: "", createdAt: Date.now()+i};
   });
   return songs;
 };
@@ -307,7 +307,7 @@ const buildEquipmentSeed = () => {
   });
   return eq;
 };
-const buildSeedState = () => ({schemaVersion: 6, events: buildEventsSeed(), songs: buildSongsSeed(), setlists: buildSetlistsSeed(), polls: {}, equipment: buildEquipmentSeed(), wishlist: {}, practiceAvail: {}});
+const buildSeedState = () => ({schemaVersion: 7, events: buildEventsSeed(), songs: buildSongsSeed(), setlists: buildSetlistsSeed(), polls: {}, equipment: buildEquipmentSeed(), wishlist: {}, practiceAvail: {}});
 
 const migrate = data => {
   let migrated = false;
@@ -352,6 +352,24 @@ const migrate = data => {
   if (data.schemaVersion < 6) {
     data.practiceAvail = data.practiceAvail || {};
     data.schemaVersion = 6; migrated = true;
+  }
+  if (data.schemaVersion < 7) {
+    Object.keys(data.songs || {}).forEach(id => {
+      const s = data.songs[id];
+      if (s.lengthSec === undefined) s.lengthSec = null;
+      if (s.album === undefined) s.album = "";
+      if (s.year === undefined) s.year = "";
+      if (s.coverArtUrl === undefined) s.coverArtUrl = "";
+      if (s.iTunesUrl === undefined) s.iTunesUrl = "";
+      if (s.spotifyUrl === undefined) s.spotifyUrl = "";
+    });
+    Object.keys(data.events || {}).forEach(id => {
+      const e = data.events[id];
+      if (e.recordingUrl === undefined) e.recordingUrl = "";
+      if (e.gigNotes === undefined) e.gigNotes = "";
+      if (e.actualSetlistId === undefined) e.actualSetlistId = null;
+    });
+    data.schemaVersion = 7; migrated = true;
   }
   return migrated;
 };
@@ -406,6 +424,40 @@ const matchesQuery = (text, query) => {
 const songMatchesQuery = (s, query) => !query || matchesQuery((s.title||"") + " " + (s.artist||"") + " " + (s.proposer||""), query);
 const isNew = createdAt => createdAt && (Date.now() - createdAt) < NEW_BADGE_DAYS * 86400000;
 
+const parseDuration = (str) => {
+  if (str == null) return null;
+  const s = String(str).trim();
+  if (!s) return null;
+  if (/^\d+$/.test(s)) return parseInt(s, 10);
+  const parts = s.split(":").map(p => p.trim());
+  if (parts.some(p => !/^\d+$/.test(p))) return null;
+  const nums = parts.map(p => parseInt(p, 10));
+  if (nums.length === 2) return nums[0] * 60 + nums[1];
+  if (nums.length === 3) return nums[0] * 3600 + nums[1] * 60 + nums[2];
+  return null;
+};
+const formatDuration = (sec) => {
+  if (sec == null || sec < 0 || isNaN(sec)) return "";
+  const total = Math.round(sec);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (h > 0) return h + ":" + String(m).padStart(2,"0") + ":" + String(s).padStart(2,"0");
+  return m + ":" + String(s).padStart(2,"0");
+};
+const sumLengths = (songIds, songs) => {
+  let total = 0, missing = 0;
+  songIds.forEach(id => {
+    const s = songs && songs[id];
+    if (!s) return;
+    if (typeof s.lengthSec === "number" && s.lengthSec > 0) total += s.lengthSec;
+    else missing++;
+  });
+  return {total, missing};
+};
+const appleMusicLinkFor = (song) => song.iTunesUrl || ("https://music.apple.com/search?term=" + encodeURIComponent(((song.artist||"") + " " + (song.title||"")).trim()));
+const spotifyLinkFor = (song) => song.spotifyUrl || ("https://open.spotify.com/search/" + encodeURIComponent(((song.artist||"") + " " + (song.title||"")).trim()));
+
 const uniqueLocations = events => {
   const set = new Set();
   Object.values(events||{}).forEach(e => { if (e.location && e.venueType !== "jamkazam") set.add(e.location); });
@@ -453,7 +505,7 @@ const useSyncedState = binId => {
   }, [flushWrite]);
   const mutate = useCallback(updater => {
     setState(prev => {
-      const next = updater(prev || {schemaVersion:6, events:{}, songs:{}, setlists:{}, polls:{}, equipment:{}, wishlist:{}, practiceAvail:{}});
+      const next = updater(prev || {schemaVersion:7, events:{}, songs:{}, setlists:{}, polls:{}, equipment:{}, wishlist:{}, practiceAvail:{}});
       stateRef.current = next;
       return next;
     });
@@ -667,7 +719,7 @@ const AvailabilityButtons = ({ev, member, onSet}) => {
   }, label);
   return h("div",{className:"flex gap-1.5"}, opt("yes","✓ Yes","var(--good)"), opt("maybe","? Maybe","var(--rusty)"), opt("no","✗ No","var(--learn)"));
 };
-const blankEvent = (type) => ({date: todayISO(), startTime:"18:00", endTime:"21:00", type: type||"rehearsal", venueType:"in-person-studio", location:"", bookingOwner:"", confirmed:false, status:"proposed", title:"", comments:""});
+const blankEvent = (type) => ({date: todayISO(), startTime:"18:00", endTime:"21:00", type: type||"rehearsal", venueType:"in-person-studio", location:"", bookingOwner:"", confirmed:false, status:"proposed", title:"", comments:"", recordingUrl:"", gigNotes:"", actualSetlistId:null});
 
 const EventForm = ({initial, onSave, onCancel, onDelete, locationSuggestions}) => {
   const [f, setF] = useState(initial || blankEvent());
@@ -707,7 +759,11 @@ const EventForm = ({initial, onSave, onCancel, onDelete, locationSuggestions}) =
         h("span",null,"Booking confirmed")
       ),
       h("label",{className:"text-sm md:col-span-2"}, h("div",{className:"ticker mb-1"},"Comments"),
-        h("textarea",{className:"input",rows:"2",value:f.comments,onChange:e=>set("comments",e.target.value)}))
+        h("textarea",{className:"input",rows:"2",value:f.comments,onChange:e=>set("comments",e.target.value)})),
+      f.type === "gig" && h("label",{className:"text-sm md:col-span-2"}, h("div",{className:"ticker mb-1"},"Recording URL"),
+        h("input",{className:"input",type:"url",value:f.recordingUrl||"",onChange:e=>set("recordingUrl",e.target.value),placeholder:"https://… (YouTube, Drive, Dropbox, etc.)"})),
+      f.type === "gig" && h("label",{className:"text-sm md:col-span-2"}, h("div",{className:"ticker mb-1"},"Gig notes (post-gig)"),
+        h("textarea",{className:"input",rows:"3",value:f.gigNotes||"",onChange:e=>set("gigNotes",e.target.value),placeholder:"How it went. What killed, what flopped, what to fix next time…"}))
     ),
     h("div",{className:"flex flex-wrap gap-2 mt-4"},
       h("button",{onClick:()=>onSave(f),className:"btn berry-bg px-4 py-2 font-semibold"},"Save"),
@@ -741,9 +797,16 @@ const EventCard = ({ev, member, onEdit, onSetAvailability, onDelete}) => {
         ),
         ev.title && h("div",{className:"display text-xl mt-1.5 leading-tight"}, ev.title),
         h("div",{className:"text-sm mt-1 text-[var(--ink-soft)]"}, ev.startTime + "–" + ev.endTime + (ev.location ? " · " + ev.location : "") + (owner ? " · booking: " + owner.name : "")),
+        ev.type === "gig" && ev.recordingUrl && h("div",{className:"mt-2"},
+          h("a",{href:ev.recordingUrl,target:"_blank",rel:"noopener",className:"ticker text-[var(--berry)] underline"},"Recording ↗")
+        ),
         ev.comments && h("details",{className:"mt-2 text-sm"},
           h("summary",{className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)]"},"Notes ▾"),
           h("p",{className:"mt-1.5 italic text-[var(--ink-soft)]"}, ev.comments)
+        ),
+        ev.type === "gig" && ev.gigNotes && h("details",{className:"mt-2 text-sm", open: past},
+          h("summary",{className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)]"},"Gig notes ▾"),
+          h("p",{className:"mt-1.5 italic text-[var(--ink-soft)] whitespace-pre-wrap"}, ev.gigNotes)
         ),
         !past && h(React.Fragment, null,
           h("div",{className:"mt-3 flex flex-wrap items-center gap-x-4 gap-y-2"},
@@ -825,10 +888,22 @@ const TypedScheduleView = ({events, member, mutate, eventType}) => {
   );
 };
 
-const blankSong = () => ({title:"", artist:"", status:"suggested", jamtrax:false, proposer:"", lessonUrl:"", comments:"", votes:{}, practice:{}});
+const blankSong = () => ({title:"", artist:"", status:"suggested", jamtrax:false, proposer:"", lessonUrl:"", comments:"", votes:{}, practice:{}, lengthSec:null, album:"", year:"", coverArtUrl:"", iTunesUrl:"", spotifyUrl:""});
 const SongForm = ({initial, onSave, onCancel, onDelete}) => {
   const [f, setF] = useState(initial || blankSong());
+  const [durationText, setDurationText] = useState(formatDuration((initial || blankSong()).lengthSec));
+  const [durationError, setDurationError] = useState("");
   const set = (k,v) => setF(prev => Object.assign({}, prev, {[k]:v}));
+  const handleSave = () => {
+    const trimmed = durationText.trim();
+    let lengthSec = null;
+    if (trimmed) {
+      lengthSec = parseDuration(trimmed);
+      if (lengthSec == null) { setDurationError("Use M:SS, MM:SS, or seconds"); return; }
+    }
+    setDurationError("");
+    onSave(Object.assign({}, f, {lengthSec}));
+  };
   return h("div",{className:"card p-5 mb-4"},
     h("div",{className:"grid grid-cols-1 md:grid-cols-2 gap-3"},
       h("label",{className:"text-sm md:col-span-2"}, h("div",{className:"ticker mb-1"},"Title"), h("input",{className:"input",value:f.title,onChange:e=>set("title",e.target.value),placeholder:"Song title"})),
@@ -836,6 +911,14 @@ const SongForm = ({initial, onSave, onCancel, onDelete}) => {
       h("label",{className:"text-sm"}, h("div",{className:"ticker mb-1"},"Status"),
         h("select",{className:"input",value:f.status,onChange:e=>set("status",e.target.value)}, SONG_STATUSES.map(s=>h("option",{key:s.id,value:s.id}, s.label)))),
       h("label",{className:"text-sm"}, h("div",{className:"ticker mb-1"},"Proposed by"), h("input",{className:"input",value:f.proposer,onChange:e=>set("proposer",e.target.value),placeholder:"e.g. Veena, Sourberry"})),
+      h("label",{className:"text-sm"}, h("div",{className:"ticker mb-1"},"Length"),
+        h("input",{className:"input",value:durationText,onChange:e=>{setDurationText(e.target.value); setDurationError("");},placeholder:"3:45"}),
+        durationError && h("div",{className:"text-xs mt-1 text-[var(--berry)]"}, durationError)),
+      h("label",{className:"text-sm"}, h("div",{className:"ticker mb-1"},"Album"), h("input",{className:"input",value:f.album,onChange:e=>set("album",e.target.value),placeholder:"e.g. Back to Black"})),
+      h("label",{className:"text-sm"}, h("div",{className:"ticker mb-1"},"Year"), h("input",{className:"input",value:f.year,onChange:e=>set("year",e.target.value),placeholder:"e.g. 2007"})),
+      h("label",{className:"text-sm md:col-span-2"}, h("div",{className:"ticker mb-1"},"Cover art URL"), h("input",{className:"input",type:"url",value:f.coverArtUrl,onChange:e=>set("coverArtUrl",e.target.value),placeholder:"https://…"})),
+      h("label",{className:"text-sm"}, h("div",{className:"ticker mb-1"},"Apple Music URL"), h("input",{className:"input",type:"url",value:f.iTunesUrl,onChange:e=>set("iTunesUrl",e.target.value),placeholder:"https://music.apple.com/…"})),
+      h("label",{className:"text-sm"}, h("div",{className:"ticker mb-1"},"Spotify URL"), h("input",{className:"input",type:"url",value:f.spotifyUrl,onChange:e=>set("spotifyUrl",e.target.value),placeholder:"https://open.spotify.com/…"})),
       h("label",{className:"text-sm md:col-span-2 flex items-start gap-2 mt-1"},
         h("input",{type:"checkbox",checked:!!f.jamtrax,onChange:e=>set("jamtrax",e.target.checked),className:"w-4 h-4 mt-0.5"}),
         h("span",null, h("span",{className:"font-semibold"},"Jamtrax available"), h("br",null), h("span",{className:"text-xs text-[var(--ink-soft)]"},"A Jamkazam feature — guided backing tracks for online jamming, useful when not all members can make it."))
@@ -844,7 +927,7 @@ const SongForm = ({initial, onSave, onCancel, onDelete}) => {
       h("label",{className:"text-sm md:col-span-2"}, h("div",{className:"ticker mb-1"},"Comments"), h("textarea",{className:"input",rows:"2",value:f.comments,onChange:e=>set("comments",e.target.value)}))
     ),
     h("div",{className:"flex flex-wrap gap-2 mt-4"},
-      h("button",{onClick:()=>onSave(f),className:"btn berry-bg px-4 py-2 font-semibold"},"Save"),
+      h("button",{onClick:handleSave,className:"btn berry-bg px-4 py-2 font-semibold"},"Save"),
       h("button",{onClick:onCancel,className:"btn bg-white px-4 py-2"},"Cancel"),
       onDelete && h("button",{onClick:()=>{ if(confirm("Delete this song?")) onDelete(); },className:"btn bg-white px-4 py-2 ml-auto text-[var(--berry)]"},"Delete")
     )
@@ -878,8 +961,10 @@ const SongCard = ({song, member, onEdit, onVote, onSetStatus, onSetPractice, onP
   const allYes = yesCount === MEMBERS.length;
   const myVote = member ? (song.votes && song.votes[member.id]) : null;
   const fresh = isNew(song.createdAt);
+  const lengthLabel = formatDuration(song.lengthSec);
+  const hasIDirect = !!song.iTunesUrl;
+  const hasSDirect = !!song.spotifyUrl;
 
-  // Compact-row dots: practice for shortlist/learning/repertoire, votes for suggested
   const compactDots = () => {
     if (showPractice) {
       return MEMBERS.map(m => {
@@ -901,22 +986,35 @@ const SongCard = ({song, member, onEdit, onVote, onSetStatus, onSetPractice, onP
   return h("div",{className:"card-flat"},
     // Compact row — always visible, tap to toggle
     h("button",{onClick:()=>setExpanded(!expanded),className:"w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-[var(--acid)]/20"},
+      song.coverArtUrl && h("img",{src: song.coverArtUrl, alt:"", className:"shrink-0 rounded-sm border border-[var(--line)]/30", style:{width:28,height:28,objectFit:"cover"}, onError:e=>{e.target.style.display="none";}}),
       h("div",{className:"flex-1 min-w-0 flex items-baseline gap-2 flex-wrap"},
         fresh && h("span",{className:"ticker berry-bg px-1.5 py-0.5 text-[9px] shrink-0"},"NEW"),
         h("span",{className:"font-semibold truncate"}, song.title || "(untitled)"),
-        song.artist && h("span",{className:"text-xs text-[var(--ink-soft)] italic truncate"},"— " + song.artist)
+        song.artist && h("span",{className:"text-xs text-[var(--ink-soft)] italic truncate"},"— " + song.artist),
+        lengthLabel && h("span",{className:"ticker text-[var(--ink-soft)] shrink-0"}, lengthLabel)
       ),
       h("div",{className:"flex gap-1 shrink-0"}, compactDots()),
       h("span",{className:"ticker text-[var(--ink-soft)] shrink-0 text-[10px] w-3 text-center"}, expanded ? "▾" : "▸")
     ),
     // Expanded content
     expanded && h("div",{className:"px-3 pb-3 pt-2 border-t border-[var(--line)]/20 space-y-3"},
-      // Meta + edit
+      // Cover banner: only if we have something interesting (cover, album, year, or length)
+      (song.coverArtUrl || song.album || song.year || lengthLabel) && h("div",{className:"flex items-start gap-3"},
+        song.coverArtUrl && h("img",{src: song.coverArtUrl, alt:"", className:"shrink-0 rounded border border-[var(--line)]/30", style:{width:64,height:64,objectFit:"cover"}, onError:e=>{e.target.style.display="none";}}),
+        h("div",{className:"flex-1 min-w-0 text-sm"},
+          (song.album || song.year || lengthLabel) && h("div",{className:"text-[var(--ink-soft)]"},
+            [song.album, song.year, lengthLabel].filter(Boolean).join(" · ")
+          )
+        )
+      ),
+      // Music links + meta + edit (always visible)
       h("div",{className:"flex items-start justify-between gap-2 flex-wrap"},
         h("div",{className:"flex flex-wrap items-center gap-1.5"},
-          song.jamtrax && h("span",{className:"ticker acid-bg px-2 py-0.5", title:"Jamkazam Jamtrax: backing track for online jamming"},"Jamtrax (Jamkazam)"),
-          song.proposer && h("span",{className:"ticker text-[var(--ink-soft)]"},"prop: " + song.proposer),
-          song.lessonUrl && h("a",{href:song.lessonUrl,target:"_blank",rel:"noopener",className:"ticker text-[var(--berry)] underline",onClick:e=>e.stopPropagation()},"Lesson ↗")
+          h("a",{href: appleMusicLinkFor(song), target:"_blank", rel:"noopener", className:"ticker text-[var(--berry)] underline", onClick:e=>e.stopPropagation(), title: hasIDirect ? "Open on Apple Music" : "Search on Apple Music"}, hasIDirect ? "Apple Music ↗" : "Apple Music 🔍"),
+          h("a",{href: spotifyLinkFor(song), target:"_blank", rel:"noopener", className:"ticker text-[var(--berry)] underline", onClick:e=>e.stopPropagation(), title: hasSDirect ? "Open on Spotify" : "Search on Spotify"}, hasSDirect ? "Spotify ↗" : "Spotify 🔍"),
+          song.lessonUrl && h("a",{href:song.lessonUrl,target:"_blank",rel:"noopener",className:"ticker text-[var(--berry)] underline",onClick:e=>e.stopPropagation()},"Lesson ↗"),
+          song.jamtrax && h("span",{className:"ticker acid-bg px-2 py-0.5", title:"Jamkazam Jamtrax: backing track for online jamming"},"Jamtrax"),
+          song.proposer && h("span",{className:"ticker text-[var(--ink-soft)]"},"prop: " + song.proposer)
         ),
         h("button",{onClick:e=>{e.stopPropagation(); onEdit();},className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)] shrink-0"},"Edit ▸")
       ),
@@ -1079,13 +1177,23 @@ const SongPicker = ({songs, excludeIds, onPick, onClose}) => {
   );
 };
 
-const SetlistDetail = ({setlist, songs, events, member, onBack, onUpdate, onDelete}) => {
+const SetlistDetail = ({setlist, songs, events, member, onBack, onUpdate, onDelete, onDuplicate}) => {
   const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState(setlist.name);
   const [picker, setPicker] = useState(false);
   const [viewMode, setViewMode] = useState("detailed");
   const songIds = setlist.songIds || [];
   const gigOptions = eventsList(events).filter(e => e.type === "gig");
+  const lengths = sumLengths(songIds, songs);
+  const totalsLabel = (() => {
+    const n = songIds.length;
+    const songLabel = n + " song" + (n===1 ? "" : "s");
+    if (n === 0) return "Empty setlist";
+    if (lengths.total === 0) return songLabel + " · no durations yet";
+    const dur = formatDuration(lengths.total) + (lengths.missing > 0 ? "+" : "");
+    const missingLabel = lengths.missing > 0 ? (" · " + lengths.missing + " missing length") : "";
+    return "Total " + dur + " · " + songLabel + missingLabel;
+  })();
   const moveSong = (idx, dir) => {
     const arr = songIds.slice();
     const ni = idx + dir;
@@ -1105,6 +1213,7 @@ const SetlistDetail = ({setlist, songs, events, member, onBack, onUpdate, onDele
         : h("div",{className:"flex items-start justify-between gap-3"},
             h("h2",{className:"display text-xl sm:text-2xl md:text-3xl leading-tight break-words flex-1 min-w-0"}, setlist.name),
             h("button",{onClick:()=>setEditingName(true),className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)] shrink-0 mt-1"},"Rename ▸")),
+      h("div",{className:"mt-1.5 text-sm text-[var(--ink-soft)]"}, totalsLabel),
       h("div",{className:"mt-3 flex items-center gap-2 flex-wrap"},
         h("span",{className:"ticker text-[var(--ink-soft)]"},"Pin to gig"),
         h("select",{className:"input text-sm flex-1 min-w-0",value: setlist.gigEventId || "",onChange:e=>onUpdate({gigEventId: e.target.value || null})},
@@ -1120,7 +1229,8 @@ const SetlistDetail = ({setlist, songs, events, member, onBack, onUpdate, onDele
         h("div",{className:"flex gap-1"},
           h("button",{onClick:()=>setViewMode("detailed"),className:"pill px-2.5 py-1 text-xs font-semibold " + (viewMode==="detailed"?"berry-bg text-white":"bg-white")},"Detailed"),
           h("button",{onClick:()=>setViewMode("summary"),className:"pill px-2.5 py-1 text-xs font-semibold " + (viewMode==="summary"?"berry-bg text-white":"bg-white")},"Summary")),
-        h("button",{onClick:()=>{ if (confirm("Delete setlist \"" + setlist.name + "\"?")) onDelete(); },className:"btn bg-white px-3 py-2 text-sm text-[var(--berry)] sm:ml-auto"},"Delete")
+        onDuplicate && h("button",{onClick:onDuplicate,className:"btn bg-white px-3 py-2 text-sm sm:ml-auto"},"Duplicate"),
+        h("button",{onClick:()=>{ if (confirm("Delete setlist \"" + setlist.name + "\"?")) onDelete(); },className:"btn bg-white px-3 py-2 text-sm text-[var(--berry)]"},"Delete")
       )
     ),
     picker && h(SongPicker,{songs:songs, excludeIds:songIds, onPick:addSong, onClose:()=>setPicker(false)}),
@@ -1133,14 +1243,16 @@ const SetlistDetail = ({setlist, songs, events, member, onBack, onUpdate, onDele
               songIds.map((sid, i) => {
                 const s = songs && songs[sid];
                 if (!s) return h("li",{key:sid,className:"text-[var(--ink-soft)] italic"}, (i+1) + ". (deleted song)");
-                return h("li",{key:sid,className:"flex gap-2"},
+                const sLen = formatDuration(s.lengthSec);
+                return h("li",{key:sid,className:"flex gap-2 items-baseline"},
                   h("span",{className:"text-[var(--berry)] font-semibold w-6 shrink-0"}, (i+1) + "."),
                   h("span",{className:"font-semibold"}, s.title),
-                  s.artist && h("span",{className:"text-[var(--ink-soft)] italic"},"— " + s.artist)
+                  s.artist && h("span",{className:"text-[var(--ink-soft)] italic"},"— " + s.artist),
+                  sLen && h("span",{className:"ticker text-[var(--ink-soft)] ml-auto shrink-0"}, sLen)
                 );
               })
             ),
-            h("p",{className:"text-xs text-[var(--ink-soft)] italic mt-4"}, songIds.length + " song" + (songIds.length===1?"":"s") + ".")
+            h("p",{className:"text-xs text-[var(--ink-soft)] italic mt-4"}, totalsLabel + ".")
           )
         : h("ol",{className:"space-y-2"},
             songIds.map((sid, i) => {
@@ -1154,6 +1266,7 @@ const SetlistDetail = ({setlist, songs, events, member, onBack, onUpdate, onDele
                     s.artist && h("div",{className:"text-xs text-[var(--ink-soft)] italic"}, s.artist),
                     h("div",{className:"mt-1.5 flex items-center gap-1.5 flex-wrap"},
                       h("span",{className:"ticker text-[var(--ink-soft)]"}, (SONG_STATUSES.find(x=>x.id===s.status)||{}).label),
+                      formatDuration(s.lengthSec) && h("span",{className:"ticker text-[var(--ink-soft)]"}, "· " + formatDuration(s.lengthSec)),
                       h("span",{className:"ticker text-[var(--ink-soft)]"},"·"),
                       MEMBERS.map(m => h(PracticeChip,{key:m.id, initial:m.name[0], state: s.practice && s.practice[m.id], isMe: false}))
                     )
@@ -1182,8 +1295,15 @@ const SetlistsView = ({setlists, songs, events, member, mutate}) => {
   };
   const updateSetlist = (id, data) => mutate(prev => Object.assign({}, prev, {setlists: Object.assign({}, prev.setlists||{}, {[id]: Object.assign({}, (prev.setlists && prev.setlists[id])||{}, data)})}));
   const deleteSetlist = id => { mutate(prev => { const sl = Object.assign({}, prev.setlists||{}); delete sl[id]; return Object.assign({}, prev, {setlists: sl}); }); setOpenId(null); };
+  const duplicateSetlist = id => {
+    const src = setlists && setlists[id];
+    if (!src) return;
+    const newSlId = newId("sl");
+    mutate(prev => Object.assign({}, prev, {setlists: Object.assign({}, prev.setlists||{}, {[newSlId]: {name: (src.name || "Setlist") + " (copy)", songIds: (src.songIds || []).slice(), gigEventId: null, notes: src.notes || "", createdAt: Date.now()}})}));
+    setOpenId(newSlId);
+  };
   if (openId && setlists && setlists[openId]) {
-    return h(SetlistDetail,{setlist: Object.assign({id:openId}, setlists[openId]), songs:songs, events:events, member:member, onBack:()=>setOpenId(null), onUpdate: data => updateSetlist(openId, data), onDelete: () => deleteSetlist(openId)});
+    return h(SetlistDetail,{setlist: Object.assign({id:openId}, setlists[openId]), songs:songs, events:events, member:member, onBack:()=>setOpenId(null), onUpdate: data => updateSetlist(openId, data), onDelete: () => deleteSetlist(openId), onDuplicate: () => duplicateSetlist(openId)});
   }
   return h("div",null,
     h("div",{className:"flex items-center justify-between mb-4 flex-wrap gap-2"},
@@ -1201,12 +1321,14 @@ const SetlistsView = ({setlists, songs, events, member, mutate}) => {
     h("div",{className:"space-y-3"},
       all.map(sl => {
         const songCount = (sl.songIds || []).length;
+        const slLen = sumLengths(sl.songIds || [], songs);
+        const lenLabel = slLen.total > 0 ? (formatDuration(slLen.total) + (slLen.missing > 0 ? "+" : "")) : "";
         const gig = sl.gigEventId && events && events[sl.gigEventId];
         return h("button",{key:sl.id,onClick:()=>setOpenId(sl.id),className:"card-flat p-4 w-full text-left hover:bg-[var(--acid)]/20 transition"},
           h("div",{className:"flex items-center justify-between gap-3 flex-wrap"},
             h("div",{className:"flex-1 min-w-0"},
               h("div",{className:"display text-xl leading-tight"}, sl.name),
-              h("div",{className:"text-sm text-[var(--ink-soft)] mt-1"}, songCount + " song" + (songCount===1?"":"s") + (gig ? (" · pinned to " + (gig.title||"gig") + " on " + fmtDate(gig.date)) : ""))
+              h("div",{className:"text-sm text-[var(--ink-soft)] mt-1"}, songCount + " song" + (songCount===1?"":"s") + (lenLabel ? (" · " + lenLabel) : "") + (gig ? (" · pinned to " + (gig.title||"gig") + " on " + fmtDate(gig.date)) : ""))
             ),
             h("span",{className:"ticker text-[var(--berry)]"},"Open ▸")
           )
