@@ -68,27 +68,45 @@
     .modal-bg { position: fixed; inset: 0; background: rgba(26,10,20,0.5); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 1rem; }
     .blink { animation: blink 1.4s ease-in-out infinite; }
     @keyframes blink { 50% { opacity: 0.5; } }
-    /* === PRINT STYLES — used by the setlist export view === */
-    /* On-screen, the export view looks like a print preview. When actually printing,
-       hide all the on-screen chrome and use a clean white background. */
+    /* === PRINT STYLES === */
+    /* When printing from Gig Mode, the trick is:
+       - Gig Mode is a fixed-position overlay (z-index 50) — the rest of the app
+         is still in the DOM behind it. By default print would render BOTH layers
+         on top of each other, which is what produced the garbled output.
+       - Solution: when Gig Mode is mounted, the app marks <body data-gig-mode="1">.
+         The print stylesheet then hides everything in body except .gig-print-root,
+         and flattens .gig-print-root to a normal flow block (no fixed positioning,
+         no overlay). */
     @media print {
       body { background: #fff !important; background-image: none !important; color: #000 !important; }
       .no-print { display: none !important; }
       .print-only { display: block !important; }
-      .print-page { padding: 0 !important; max-width: none !important; box-shadow: none !important; border: none !important; }
-      .card, .card-flat { box-shadow: none !important; border: 1px solid #ccc !important; background: #fff !important; }
       a { color: inherit !important; text-decoration: none !important; }
+      .card, .card-flat { box-shadow: none !important; border: 1px solid #ccc !important; background: #fff !important; }
       /* Page break controls */
       .page-break-before { page-break-before: always; break-before: page; }
       .avoid-break { page-break-inside: avoid; break-inside: avoid; }
-      /* Iteration D.1: when GigModeView prints, override its on-screen styling for paper.
-         GigModeView uses inline font sizes for the on-stage display, but those are too
-         large for an A4 sheet. Force a sensible printable size instead. */
-      .gig-print-root h1 { font-size: 22pt !important; }
+      /* When Gig Mode is active, hide everything else and unfix the gig view. */
+      body[data-gig-mode="1"] > *:not(.gig-print-root) { display: none !important; }
+      body[data-gig-mode="1"] .gig-print-root {
+        position: static !important;
+        inset: auto !important;
+        z-index: auto !important;
+        overflow: visible !important;
+        background: #fff !important;
+        color: #000 !important;
+        height: auto !important;
+        width: auto !important;
+      }
+      /* Override Gig Mode's inline font sizes for paper. */
+      .gig-print-root h1 { font-size: 22pt !important; color: #000 !important; }
       .gig-print-root h2,
       .gig-print-root .display { font-size: 14pt !important; color: #000 !important; border-color: #000 !important; }
-      .gig-print-root ol { font-size: 11pt !important; line-height: 1.45 !important; }
-      .gig-print-root ol li span.font-semibold { font-weight: 700 !important; }
+      .gig-print-root ol { font-size: 11pt !important; line-height: 1.45 !important; color: #000 !important; }
+      .gig-print-root ol li { color: #000 !important; }
+      .gig-print-root ol li span.font-semibold { font-weight: 700 !important; color: #000 !important; }
+      .gig-print-root span,
+      .gig-print-root div { color: inherit !important; }
       .gig-print-root .text-\\[var\\(--ink-soft\\)\\] { color: #555 !important; }
     }
     @page { margin: 12mm; }
@@ -108,7 +126,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.10.1";
+const APP_VERSION = "0.11.0";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 // Instruments for member profiles (multi-select). Order is the display order.
 // Icons are emoji — render natively on iOS/macOS/Android. Bass uses 🪕 (banjo) as the closest
@@ -1067,8 +1085,20 @@ const VenueBadge = ({venueType}) => {
   if (venueType === "jamkazam") return h("span",{className:"ticker bg-blue-100 px-2 py-0.5"},"Jamkazam");
   return h("span",{className:"ticker bg-orange-100 px-2 py-0.5"},"Studio");
 };
-const StatusDot = ({status}) => {
+const StatusDot = ({status, photoUrl}) => {
   const map = {yes:"var(--good)", no:"var(--learn)", maybe:"var(--rusty)"};
+  // When a photo is provided we show a tiny circular avatar with the status colour
+  // as a 2px ring around it. No status → grey ring.
+  if (photoUrl) {
+    const ringColor = map[status] || "var(--line)";
+    return h("span",{
+      className:"inline-block rounded-full",
+      style:{width:14, height:14, padding:1, background:ringColor},
+      title: status || ""
+    },
+      h("img",{src:photoUrl, alt:"", className:"block rounded-full object-cover", style:{width:12, height:12}})
+    );
+  }
   if (!map[status]) return h("span",{className:"inline-block w-3 h-3 rounded-full border border-[var(--line)] bg-white"});
   return h("span",{className:"inline-block w-3 h-3 rounded-full border border-[var(--line)]",style:{background: map[status]}});
 };
@@ -1729,11 +1759,14 @@ const SyncBadge = ({sync, onOpen}) => {
   return h("button",{onClick:onOpen,className:"display-italic text-[10px] sm:text-xs hover:underline text-right " + cls + (sync.status==="error"?" blink":"")}, label);
 };
 
-const AvailabilityRow = ({ev}) => h("div",{className:"flex items-center gap-3 text-xs"},
-  MEMBERS.map(m => h("div",{key:m.id,className:"flex items-center gap-1"},
-    h(StatusDot,{status: ev.availability && ev.availability[m.id]}),
-    h("span",{className:"font-medium"}, m.name[0])
-  ))
+const AvailabilityRow = ({ev, memberProfiles}) => h("div",{className:"flex items-center gap-3 text-xs"},
+  MEMBERS.map(m => {
+    const photo = (memberProfiles && memberProfiles[m.id] && memberProfiles[m.id].photoUrl) || "";
+    return h("div",{key:m.id,className:"flex items-center gap-1"},
+      h(StatusDot,{status: ev.availability && ev.availability[m.id], photoUrl: photo}),
+      h("span",{className:"font-medium"}, m.name[0])
+    );
+  })
 );
 const AvailabilityButtons = ({ev, member, onSet}) => {
   if (!member) return h("p",{className:"text-xs text-[var(--ink-soft)] italic"},"Pick who you are above to mark availability.");
@@ -1816,7 +1849,7 @@ const EventForm = ({initial, onSave, onCancel, onDelete, locationSuggestions, so
   );
 };
 
-const EventCard = ({ev, member, songs, events, pinnedSetlist, onEdit, onSetAvailability, onDelete, onStartRehearsal, settings}) => {
+const EventCard = ({ev, member, memberProfiles, songs, events, pinnedSetlist, onEdit, onSetAvailability, onDelete, onStartRehearsal, settings}) => {
   const owner = MEMBERS.find(m => m.id === ev.bookingOwner);
   const yesCount = MEMBERS.filter(m => ev.availability && ev.availability[m.id] === "yes").length;
   const isRehearsal = ev.type === "rehearsal";
@@ -1962,7 +1995,7 @@ const EventCard = ({ev, member, songs, events, pinnedSetlist, onEdit, onSetAvail
         ),
         !past && h(React.Fragment, null,
           h("div",{className:"mt-3 flex flex-wrap items-center gap-x-4 gap-y-2"},
-            h(AvailabilityRow,{ev:ev}),
+            h(AvailabilityRow,{ev:ev, memberProfiles:memberProfiles}),
             h("span",{className:"text-xs text-[var(--ink-soft)]"}, yesCount + "/" + MEMBERS.length + " can make it")
           ),
           h("div",{className:"mt-3 flex flex-wrap items-center gap-2"},
@@ -1980,7 +2013,7 @@ const EventCard = ({ev, member, songs, events, pinnedSetlist, onEdit, onSetAvail
   );
 };
 
-const TypedScheduleView = ({events, songs, setlists, member, mutate, eventType, onStartRehearsal, settings}) => {
+const TypedScheduleView = ({events, songs, setlists, member, memberProfiles, mutate, eventType, onStartRehearsal, settings}) => {
   const [editingId, setEditingId] = useState(null);
   const [adding, setAdding] = useState(false);
   const [showPast, setShowPast] = useState(false);
@@ -2043,7 +2076,7 @@ const TypedScheduleView = ({events, songs, setlists, member, mutate, eventType, 
     h("div",{className:"space-y-3"},
       list.map(ev => editingId===ev.id
         ? h(EventForm,{key:ev.id, initial:ev, onSave: f => updateEvent(ev.id, f), onCancel:()=>setEditingId(null), onDelete:()=>deleteEvent(ev.id), locationSuggestions:locationSuggestions, songs:songs})
-        : h(EventCard,{key:ev.id, ev:ev, member:member, songs:songs, events:events, pinnedSetlist: setlistByGig[ev.id], settings: settings, onEdit:()=>{setEditingId(ev.id); setAdding(false);}, onSetAvailability:setAvailability, onStartRehearsal: onStartRehearsal, onDelete:()=>{ if(confirm("Delete this past event?")) deleteEvent(ev.id); }})
+        : h(EventCard,{key:ev.id, ev:ev, member:member, memberProfiles:memberProfiles, songs:songs, events:events, pinnedSetlist: setlistByGig[ev.id], settings: settings, onEdit:()=>{setEditingId(ev.id); setAdding(false);}, onSetAvailability:setAvailability, onStartRehearsal: onStartRehearsal, onDelete:()=>{ if(confirm("Delete this past event?")) deleteEvent(ev.id); }})
       )
     )
   );
@@ -2170,12 +2203,37 @@ const SongForm = ({initial, onSave, onCancel, onDelete}) => {
   );
 };
 
-const VotePill = ({initial, vote}) => {
+const VotePill = ({initial, vote, photoUrl}) => {
+  const ringColor = vote==="yes" ? "var(--good)" : vote==="no" ? "var(--learn)" : "var(--line)";
+  // With photo: avatar with a coloured ring (2px) for vote state.
+  if (photoUrl) {
+    return h("span",{
+      className:"inline-block rounded-full",
+      style:{width:22, height:22, padding:2, background:ringColor},
+      title: vote||"no vote"
+    },
+      h("img",{src:photoUrl, alt:"", className:"block rounded-full object-cover", style:{width:18, height:18}})
+    );
+  }
   const bg = vote==="yes" ? "var(--good)" : vote==="no" ? "var(--learn)" : "transparent";
   const color = vote ? "#fff" : "var(--ink-soft)";
   return h("span",{className:"inline-flex items-center justify-center text-xs font-semibold rounded-full border border-[var(--line)]",style:{width:22,height:22,background:bg,color},title: vote||"no vote"}, initial);
 };
-const PracticeChip = ({initial, state, isMe, onClick}) => {
+const PracticeChip = ({initial, state, isMe, onClick, photoUrl}) => {
+  // With photo: tappable avatar with the practice-state colour as a 2px ring.
+  // No-state ring is light grey so the chip is visible without being loud.
+  if (photoUrl) {
+    const ringColor = state ? PRACTICE_COLOR[state] : "var(--line)";
+    return h("button",{
+      onClick: isMe?onClick:undefined,
+      disabled: !isMe,
+      title: state ? (initial+": "+PRACTICE_LABEL[state]) : (initial+": not set"),
+      className: "inline-block rounded-full",
+      style:{width:26, height:26, padding:2, background:ringColor, cursor: isMe?"pointer":"default", border:"none"}
+    },
+      h("img",{src:photoUrl, alt:"", className:"block rounded-full object-cover", style:{width:22, height:22, pointerEvents:"none"}})
+    );
+  }
   const bg = state ? PRACTICE_COLOR[state] : "transparent";
   const color = state ? "#fff" : "var(--ink-soft)";
   return h("button",{onClick: isMe?onClick:undefined, disabled:!isMe, title: state ? (initial+": "+PRACTICE_LABEL[state]) : (initial+": not set"), className:"inline-flex items-center justify-center text-xs font-semibold rounded-full border border-[var(--line)]", style:{width:26,height:26,background:bg,color,cursor: isMe?"pointer":"default"}}, initial);
@@ -2188,7 +2246,7 @@ const cyclePractice = current => {
 };
 
 // v8: Compact-by-default SongCard with tap-to-expand
-const SongCard = ({song, member, onEdit, onVote, onSetStatus, onSetPractice, onPromote, showStatus, lastRehearsed, isStale}) => {
+const SongCard = ({song, member, memberProfiles, onEdit, onVote, onSetStatus, onSetPractice, onPromote, showStatus, lastRehearsed, isStale}) => {
   const [expanded, setExpanded] = useState(false);
   const showVotes = song.status === "suggested";
   const showPractice = ["shortlist","learning","repertoire"].includes(song.status);
@@ -2264,7 +2322,7 @@ const SongCard = ({song, member, onEdit, onVote, onSetStatus, onSetPractice, onP
       showPractice && h("div",{className:"flex flex-wrap items-center gap-3 pt-2 border-t border-[var(--line)]/15"},
         h("span",{className:"ticker text-[var(--ink-soft)]"},"Practice"),
         h("div",{className:"flex items-center gap-1.5"},
-          MEMBERS.map(m => h(PracticeChip,{key:m.id, initial:m.name[0], state:song.practice && song.practice[m.id], isMe: member && member.id===m.id, onClick:()=>onSetPractice(song.id, m.id, cyclePractice(song.practice && song.practice[m.id]))}))
+          MEMBERS.map(m => h(PracticeChip,{key:m.id, initial:m.name[0], photoUrl: (memberProfiles && memberProfiles[m.id] && memberProfiles[m.id].photoUrl) || "", state:song.practice && song.practice[m.id], isMe: member && member.id===m.id, onClick:()=>onSetPractice(song.id, m.id, cyclePractice(song.practice && song.practice[m.id]))}))
         ),
         member ? h("span",{className:"text-xs text-[var(--ink-soft)] italic"},"Tap your circle: Good → Rusty → Learn → —")
                : h("span",{className:"text-xs text-[var(--ink-soft)] italic"},"Pick who you are above to mark practice.")
@@ -2272,7 +2330,7 @@ const SongCard = ({song, member, onEdit, onVote, onSetStatus, onSetPractice, onP
       // Votes row
       showVotes && h("div",{className:"flex flex-wrap items-center gap-3 pt-2 border-t border-[var(--line)]/15"},
         h("div",{className:"flex items-center gap-1.5"},
-          MEMBERS.map(m => h(VotePill,{key:m.id, initial:m.name[0], vote: song.votes && song.votes[m.id]}))
+          MEMBERS.map(m => h(VotePill,{key:m.id, initial:m.name[0], photoUrl: (memberProfiles && memberProfiles[m.id] && memberProfiles[m.id].photoUrl) || "", vote: song.votes && song.votes[m.id]}))
         ),
         h("span",{className:"text-xs text-[var(--ink-soft)]"}, yesCount + " yes" + (noCount ? (" · " + noCount + " no") : "")),
         member ? h("div",{className:"flex gap-1.5 ml-auto"},
@@ -2290,7 +2348,7 @@ const SongCard = ({song, member, onEdit, onVote, onSetStatus, onSetPractice, onP
   );
 };
 
-const SongsView = ({songs, events, member, mutate, settings}) => {
+const SongsView = ({songs, events, member, memberProfiles, mutate, settings}) => {
   const lastRehearsedMap = useMemo(() => buildLastRehearsedMap(events), [events]);
   // Iteration B.2: configurable stale-weeks threshold from band settings.
   const staleWeeks = getSetting(settings, "staleWeeks");
@@ -2690,7 +2748,7 @@ const SongsView = ({songs, events, member, mutate, settings}) => {
     h("div",{className:"space-y-1.5"},
       filtered.map(s => editingId===s.id
         ? h(SongForm,{key:s.id, initial:s, onSave: f => { updateSong(s.id, f); setEditingId(null); }, onCancel: () => setEditingId(null), onDelete: () => deleteSong(s.id)})
-        : h(SongCard,{key:s.id, song:s, member:member, onEdit: () => { setEditingId(s.id); setAdding(false); }, onVote: voteSong, onSetStatus: setStatus, onSetPractice: setPractice, onPromote: promoteSong, showStatus: view === "all", lastRehearsed: lastRehearsedMap[s.id], isStale: s.status === "repertoire" && isStaleSong(lastRehearsedMap[s.id], staleWeeks)})
+        : h(SongCard,{key:s.id, song:s, member:member, memberProfiles:memberProfiles, onEdit: () => { setEditingId(s.id); setAdding(false); }, onVote: voteSong, onSetStatus: setStatus, onSetPractice: setPractice, onPromote: promoteSong, showStatus: view === "all", lastRehearsed: lastRehearsedMap[s.id], isStale: s.status === "repertoire" && isStaleSong(lastRehearsedMap[s.id], staleWeeks)})
       )
     )
   );
@@ -2862,6 +2920,12 @@ const GigModeView = ({setlist, songs, events, onClose}) => {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+  // While mounted, tag the body so the @media print rules can find us and hide
+  // everything else. Removed on unmount so normal printing isn't affected.
+  useEffect(() => {
+    document.body.setAttribute("data-gig-mode", "1");
+    return () => { document.body.removeAttribute("data-gig-mode"); };
+  }, []);
   return h("div",{ref:containerRef, className:"fixed inset-0 z-50 overflow-auto gig-print-root",style:{background:"var(--cream)",color:"var(--ink)"}},
     h("div",{className:"max-w-5xl mx-auto p-4 sm:p-6"},
       // Toolbar — small, doesn't compete with content. Hidden when printing.
@@ -3767,7 +3831,7 @@ const WishItemForm = ({initial, onSave, onCancel, onDelete}) => {
   );
 };
 
-const WishItemCard = ({item, member, onEdit, onVote, onSetStatus}) => {
+const WishItemCard = ({item, member, memberProfiles, onEdit, onVote, onSetStatus}) => {
   const status = WISHLIST_STATUSES.find(s => s.id === item.status) || WISHLIST_STATUSES[0];
   const yesCount = MEMBERS.filter(m => item.votes && item.votes[m.id] === "yes").length;
   const noCount = MEMBERS.filter(m => item.votes && item.votes[m.id] === "no").length;
@@ -3794,7 +3858,7 @@ const WishItemCard = ({item, member, onEdit, onVote, onSetStatus}) => {
     ),
     h("div",{className:"mt-3 pt-3 border-t border-[var(--line)]/20 flex flex-wrap items-center gap-3"},
       h("div",{className:"flex items-center gap-1.5"},
-        MEMBERS.map(m => h(VotePill,{key:m.id, initial:m.name[0], vote: item.votes && item.votes[m.id]}))
+        MEMBERS.map(m => h(VotePill,{key:m.id, initial:m.name[0], photoUrl: (memberProfiles && memberProfiles[m.id] && memberProfiles[m.id].photoUrl) || "", vote: item.votes && item.votes[m.id]}))
       ),
       h("span",{className:"text-xs text-[var(--ink-soft)]"}, yesCount + " yes" + (noCount ? (" · " + noCount + " no") : "")),
       member ? h("div",{className:"flex gap-1.5 ml-auto"},
@@ -3809,7 +3873,7 @@ const WishItemCard = ({item, member, onEdit, onVote, onSetStatus}) => {
   );
 };
 
-const WishlistView = ({wishlist, member, mutate}) => {
+const WishlistView = ({wishlist, member, memberProfiles, mutate}) => {
   const [editingId, setEditingId] = useState(null);
   const [adding, setAdding] = useState(false);
   const [statusFilter, setStatusFilter] = useState("active");
@@ -3858,20 +3922,20 @@ const WishlistView = ({wishlist, member, mutate}) => {
     h("div",{className:"space-y-2.5"},
       list.map(item => editingId===item.id
         ? h(WishItemForm,{key:item.id,initial:item,onSave: f=>{ update(item.id, f); setEditingId(null); },onCancel:()=>setEditingId(null),onDelete:()=>remove(item.id)})
-        : h(WishItemCard,{key:item.id,item:item,member:member,onEdit:()=>{setEditingId(item.id); setAdding(false);},onVote:vote,onSetStatus:setStatus})
+        : h(WishItemCard,{key:item.id,item:item,member:member,memberProfiles:memberProfiles,onEdit:()=>{setEditingId(item.id); setAdding(false);},onVote:vote,onSetStatus:setStatus})
       )
     )
   );
 };
 
-const EquipmentView = ({equipment, wishlist, member, mutate}) => {
+const EquipmentView = ({equipment, wishlist, member, memberProfiles, mutate}) => {
   const [view, setView] = useState("owned");
   return h("div",null,
     h("div",{className:"flex gap-2 mb-4"},
       h("button",{onClick:()=>setView("owned"),className:"pill px-3 py-1.5 text-sm font-semibold " + (view==="owned"?"berry-bg text-white":"bg-white hover:bg-[var(--acid)]")},"Owned (" + Object.keys(equipment||{}).length + ")"),
       h("button",{onClick:()=>setView("wishlist"),className:"pill px-3 py-1.5 text-sm font-semibold " + (view==="wishlist"?"berry-bg text-white":"bg-white hover:bg-[var(--acid)]")},"Wishlist (" + Object.keys(wishlist||{}).length + ")")
     ),
-    view==="owned" ? h(OwnedEquipmentView,{equipment:equipment,member:member,mutate:mutate}) : h(WishlistView,{wishlist:wishlist,member:member,mutate:mutate})
+    view==="owned" ? h(OwnedEquipmentView,{equipment:equipment,member:member,mutate:mutate}) : h(WishlistView,{wishlist:wishlist,member:member,memberProfiles:memberProfiles,mutate:mutate})
   );
 };
 
@@ -4226,7 +4290,7 @@ const renderCardNoMove = (item, memberProfiles, member, MEMBERS_ARR, updateFeedb
 // mark Played / Skip, log unplanned songs, set practice statuses, take notes.
 // All state lives on the event itself (playedSongIds, rehearsalNotes) — closing and
 // reopening just resumes from wherever you were.
-const RehearsalRunMode = ({event, songs, member, mutate, onClose}) => {
+const RehearsalRunMode = ({event, songs, member, memberProfiles, mutate, onClose}) => {
   const eid = event.id;
   const agendaIds = Array.isArray(event.agendaSongIds) ? event.agendaSongIds : [];
   const playedIds = Array.isArray(event.playedSongIds) ? event.playedSongIds : [];
@@ -4405,7 +4469,7 @@ const RehearsalRunMode = ({event, songs, member, mutate, onClose}) => {
                 h("div",{className:"flex items-center gap-3 flex-wrap"},
                   h("span",{className:"ticker text-[var(--ink-soft)]"},"Practice"),
                   h("div",{className:"flex items-center gap-1.5"},
-                    MEMBERS.map(m => h(PracticeChip,{key:m.id, initial:m.name[0], state:currentSong.practice && currentSong.practice[m.id], isMe: member && member.id===m.id, onClick:()=>setMyPractice(currentSongId, cyclePractice(currentSong.practice && currentSong.practice[m.id]))}))
+                    MEMBERS.map(m => h(PracticeChip,{key:m.id, initial:m.name[0], photoUrl: (memberProfiles && memberProfiles[m.id] && memberProfiles[m.id].photoUrl) || "", state:currentSong.practice && currentSong.practice[m.id], isMe: member && member.id===m.id, onClick:()=>setMyPractice(currentSongId, cyclePractice(currentSong.practice && currentSong.practice[m.id]))}))
                   ),
                   member ? h("span",{className:"text-xs text-[var(--ink-soft)] italic"},"Tap your circle to log how it went")
                          : h("span",{className:"text-xs text-[var(--ink-soft)] italic"},"Pick who you are at top to log practice")
@@ -4436,7 +4500,7 @@ const RehearsalRunMode = ({event, songs, member, mutate, onClose}) => {
     agendaIds.length > 0 && h("div",{className:"card p-3 mb-3"},
       h("div",{className:"flex items-center justify-between mb-2"},
         h("div",{className:"ticker text-[var(--berry)]"},"Agenda (", agendaIds.length, ")"),
-        !pickerMode && h("button",{onClick:()=>setPickerMode("agenda"),className:"ticker text-[var(--berry)] hover:underline"},"+ Add to agenda")
+        h("span",{className:"ticker text-[var(--ink-soft)] text-[10px]"},"Tap a song to jump")
       ),
       h("ol",{className:"space-y-1 text-sm",style:{listStyle:"none",paddingLeft:0}},
         agendaIds.map((sid, i) => {
@@ -4460,7 +4524,11 @@ const RehearsalRunMode = ({event, songs, member, mutate, onClose}) => {
     ),
     // No agenda yet — CTA
     agendaIds.length === 0 && !pickerMode && h("div",{className:"card p-3 mb-3"},
-      h("button",{onClick:()=>setPickerMode("agenda"),className:"btn bg-white px-3 py-2 text-sm font-semibold w-full"},"+ Add to agenda")
+      h("p",{className:"text-sm text-[var(--ink-soft)] italic mb-2"},"No agenda yet. Add songs to plan, or log songs as you play them."),
+      h("div",{className:"grid grid-cols-1 sm:grid-cols-2 gap-2"},
+        h("button",{onClick:()=>setPickerMode("agenda"),className:"btn berry-bg px-3 py-2 text-sm font-semibold"},"+ Add to agenda"),
+        h("button",{onClick:()=>setPickerMode("played"),className:"btn bg-white px-3 py-2 text-sm font-semibold"},"+ Log a song just played")
+      )
     ),
     // Unplanned songs played (separate list — these aren't in the agenda)
     extraPlayed.length > 0 && h("div",{className:"card p-3 mb-3"},
@@ -4476,8 +4544,11 @@ const RehearsalRunMode = ({event, songs, member, mutate, onClose}) => {
         })
       )
     ),
-    // Log unplanned button — different from "+ Add to agenda" because this marks a song as already-played
-    !pickerMode && h("button",{onClick:()=>setPickerMode("played"),className:"btn bg-white px-3 py-2 text-sm font-semibold w-full mb-3"},"+ Log a song we just played (not in agenda)"),
+    // Both Add buttons, side-by-side, when an agenda already exists.
+    !pickerMode && agendaIds.length > 0 && h("div",{className:"grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3"},
+      h("button",{onClick:()=>setPickerMode("agenda"),className:"btn bg-white px-3 py-2 text-sm font-semibold"},"+ Add to agenda"),
+      h("button",{onClick:()=>setPickerMode("played"),className:"btn bg-white px-3 py-2 text-sm font-semibold"},"+ Log a song just played")
+    ),
     // Notes
     h("div",{className:"card p-3 mb-3"},
       h("div",{className:"ticker text-[var(--berry)] mb-1"},"Rehearsal notes"),
@@ -4544,7 +4615,7 @@ const App = () => {
   // Iteration C.1: full-page takeover for the rehearsal runner.
   if (runRehearsalId && events[runRehearsalId] && events[runRehearsalId].type === "rehearsal") {
     const ev = Object.assign({id: runRehearsalId}, events[runRehearsalId]);
-    return h(RehearsalRunMode, {event: ev, songs: songs, member: member, mutate: sync.mutate, onClose: () => setRunRehearsalId(null)});
+    return h(RehearsalRunMode, {event: ev, songs: songs, member: member, memberProfiles: memberProfiles, mutate: sync.mutate, onClose: () => setRunRehearsalId(null)});
   }
   // If the id pointed to something that's gone or isn't a rehearsal, clear it silently.
   if (runRehearsalId && (!events[runRehearsalId] || events[runRehearsalId].type !== "rehearsal")) {
@@ -4580,12 +4651,12 @@ const App = () => {
         )
       )
     ),
-    tab==="gigs" && h(TypedScheduleView,{events:events,songs:songs,setlists:setlists,member:member,mutate:sync.mutate,eventType:"gig",settings:settings}),
-    tab==="rehearsals" && h(TypedScheduleView,{events:events,songs:songs,setlists:setlists,member:member,mutate:sync.mutate,eventType:"rehearsal",settings:settings,onStartRehearsal: (id) => setRunRehearsalId(id)}),
+    tab==="gigs" && h(TypedScheduleView,{events:events,songs:songs,setlists:setlists,member:member,memberProfiles:memberProfiles,mutate:sync.mutate,eventType:"gig",settings:settings}),
+    tab==="rehearsals" && h(TypedScheduleView,{events:events,songs:songs,setlists:setlists,member:member,memberProfiles:memberProfiles,mutate:sync.mutate,eventType:"rehearsal",settings:settings,onStartRehearsal: (id) => setRunRehearsalId(id)}),
     tab==="practice" && h(PracticeView,{practiceAvail:practiceAvail,events:events,member:member,mutate:sync.mutate,onGoToSchedule:()=>setTab("rehearsals")}),
-    tab==="songs" && h(SongsView,{songs:songs,events:events,member:member,mutate:sync.mutate,settings:settings}),
+    tab==="songs" && h(SongsView,{songs:songs,events:events,member:member,memberProfiles:memberProfiles,mutate:sync.mutate,settings:settings}),
     tab==="setlists" && h(SetlistsView,{setlists:setlists,songs:songs,events:events,member:member,mutate:sync.mutate,settings:settings}),
-    tab==="equipment" && h(EquipmentView,{equipment:equipment,wishlist:wishlist,member:member,mutate:sync.mutate}),
+    tab==="equipment" && h(EquipmentView,{equipment:equipment,wishlist:wishlist,member:member,memberProfiles:memberProfiles,mutate:sync.mutate}),
     tab==="feedback" && h(FeedbackView,{feedback:feedback,member:member,memberProfiles:memberProfiles,mutate:sync.mutate}),
     h("footer",{className:"mt-12 pt-6 border-t border-[var(--line)]/30 text-xs text-[var(--ink-soft)] flex justify-between flex-wrap gap-2"},
       h("span",null,"Sourberry ", h("span",{className:"opacity-70"},"v"+APP_VERSION)),
