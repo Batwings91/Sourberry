@@ -83,7 +83,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.2.1";
+const APP_VERSION = "0.3.0";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 const SONG_STATUSES = [
   {id:"suggested",label:"Suggested",desc:"In the voting pool"},
@@ -616,6 +616,16 @@ const staleSongsForSetlist = (setlist, events, weeks) => {
     const last = map[sid];
     return !last || last < cutoffISO;
   });
+};
+// Iteration B.1: a song is "stale" if it hasn't been rehearsed in the last `weeks` weeks (or ever).
+// Used for the Repertoire stale filter — applies the same threshold as the gig un-rehearsed warning.
+// `lastRehearsed` is a YYYY-MM-DD string (or undefined for never-rehearsed).
+const STALE_WEEKS = 4; // Iteration B.2 will make this configurable
+const isStaleSong = (lastRehearsed, weeks) => {
+  const w = (weeks == null ? STALE_WEEKS : weeks);
+  if (!lastRehearsed) return true; // never rehearsed → stale
+  const cutoffISO = (new Date(Date.now() - w * 7 * 24 * 60 * 60 * 1000)).toISOString().slice(0,10);
+  return lastRehearsed < cutoffISO;
 };
 const setlistTotals = (sl, songs) => sumLengths(setlistAllSongIds(sl), songs);
 const setlistSongCount = (sl) => setlistAllSongIds(sl).length;
@@ -1666,7 +1676,7 @@ const cyclePractice = current => {
 };
 
 // v8: Compact-by-default SongCard with tap-to-expand
-const SongCard = ({song, member, onEdit, onVote, onSetStatus, onSetPractice, onPromote, showStatus, lastRehearsed}) => {
+const SongCard = ({song, member, onEdit, onVote, onSetStatus, onSetPractice, onPromote, showStatus, lastRehearsed, isStale}) => {
   const [expanded, setExpanded] = useState(false);
   const showVotes = song.status === "suggested";
   const showPractice = ["shortlist","learning","repertoire"].includes(song.status);
@@ -1703,6 +1713,7 @@ const SongCard = ({song, member, onEdit, onVote, onSetStatus, onSetPractice, onP
       song.coverArtUrl && h("img",{src: song.coverArtUrl, alt:"", className:"shrink-0 rounded-sm border border-[var(--line)]/30", style:{width:28,height:28,objectFit:"cover"}, onError:e=>{e.target.style.display="none";}}),
       h("div",{className:"flex-1 min-w-0 flex items-baseline gap-2 flex-wrap"},
         fresh && h("span",{className:"ticker berry-bg px-1.5 py-0.5 text-[9px] shrink-0"},"NEW"),
+        isStale && h("span",{className:"ticker px-1.5 py-0.5 text-[9px] shrink-0",style:{background:"#fcd34d",color:"#78350f"},title:"Not rehearsed in " + STALE_WEEKS + "+ weeks"},"⚠ RUSTY"),
         showStatus && h("span",{className:"ticker bg-white border border-[var(--line)]/40 px-1.5 py-0.5 text-[9px] shrink-0 text-[var(--ink-soft)]"}, ((SONG_STATUSES.find(x => x.id === song.status) || {}).label || song.status || "?")),
         h("span",{className:"font-semibold truncate"}, song.title || "(untitled)"),
         song.artist && h("span",{className:"text-xs text-[var(--ink-soft)] italic truncate"},"— " + song.artist),
@@ -1774,6 +1785,7 @@ const SongsView = ({songs, events, member, mutate}) => {
   const [view, setView] = useState("repertoire");
   const [query, setQuery] = useState("");
   const [sortMode, setSortMode] = useState("smart");
+  const [staleOnly, setStaleOnly] = useState(false); // Iteration B.1: filter Repertoire to stale songs only
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkProgress, setBulkProgress] = useState(null); // {current, total, song}
   const [bulkResult, setBulkResult] = useState(null); // {filled, skipped, failed, total}
@@ -1781,6 +1793,8 @@ const SongsView = ({songs, events, member, mutate}) => {
 
   const all = songsList(songs);
   const counts = {}; SONG_STATUSES.forEach(s => { counts[s.id] = all.filter(x => x.status === s.id).length; });
+  // Iteration B.1: how many repertoire songs are stale (never or 4+ weeks since last rehearsed).
+  const repertoireStaleCount = useMemo(() => all.filter(s => s.status === "repertoire" && isStaleSong(lastRehearsedMap[s.id])).length, [all, lastRehearsedMap]);
   // Candidates for bulk fill: have title+artist, are missing core metadata
   const bulkCandidates = all.filter(s => s.title && s.artist && (!s.lengthSec || !s.coverArtUrl || !s.album || !s.iTunesUrl));
 
@@ -1799,7 +1813,12 @@ const SongsView = ({songs, events, member, mutate}) => {
     }
     return (a.title||"").localeCompare(b.title||"");
   });
-  const filtered = list.filter(s => songMatchesQuery(s, query));
+  const filtered = list.filter(s => {
+    if (!songMatchesQuery(s, query)) return false;
+    // Iteration B.1: when on Repertoire with staleOnly, hide non-stale songs.
+    if (view === "repertoire" && staleOnly && !isStaleSong(lastRehearsedMap[s.id])) return false;
+    return true;
+  });
 
   const updateSong = (id, data) => mutate(prev => Object.assign({}, prev, {songs: Object.assign({}, prev.songs||{}, {[id]: Object.assign({}, (prev.songs && prev.songs[id])||{}, data)})}));
   const setStatus = (id, status) => updateSong(id, {status});
@@ -1904,7 +1923,8 @@ const SongsView = ({songs, events, member, mutate}) => {
       SONG_STATUSES.map(s => h("button",{key:s.id, onClick:()=>setView(s.id),
         className:"pill px-3 py-1.5 text-sm font-semibold whitespace-nowrap shrink-0 " + (view===s.id?"berry-bg text-white":"bg-white hover:bg-[var(--acid)]")},
         s.label, " ", h("span",{className:"opacity-70 ml-1"}, counts[s.id]),
-        s.id==="suggested" && (allInSuggested + newSuggested > 0) && view!=="suggested" && h("span",{className:"ml-1 text-[10px] berry-bg text-white px-1 rounded-full"}, newSuggested>0 ? (newSuggested + " new") : (allInSuggested + "!"))
+        s.id==="suggested" && (allInSuggested + newSuggested > 0) && view!=="suggested" && h("span",{className:"ml-1 text-[10px] berry-bg text-white px-1 rounded-full"}, newSuggested>0 ? (newSuggested + " new") : (allInSuggested + "!")),
+        s.id==="repertoire" && repertoireStaleCount > 0 && view!=="repertoire" && h("span",{className:"ml-1 text-[10px] px-1 rounded-full",style:{background:"#fcd34d",color:"#78350f"}}, "⚠ " + repertoireStaleCount)
       ))
     ),
     // Search + add
@@ -1926,6 +1946,17 @@ const SongsView = ({songs, events, member, mutate}) => {
           {id:"title", label:"A–Z"}
         ].map(opt => h("button",{key:opt.id, onClick:()=>setSortMode(opt.id), className:"pill px-2 py-0.5 text-xs " + (sortMode===opt.id?"berry-bg text-white":"bg-white")}, opt.label))
       ),
+      // Iteration B.1: Stale filter — only on Repertoire.
+      view === "repertoire" && h("div",{className:"flex items-center gap-1.5 mt-2 flex-wrap"},
+        h("span",{className:"ticker text-[var(--ink-soft)]"},"Filter"),
+        h("button",{
+          onClick:()=>setStaleOnly(v => !v),
+          className:"pill px-2.5 py-0.5 text-xs font-semibold " + (staleOnly ? "text-white" : "bg-white"),
+          style: staleOnly ? {background:"#b45309"} : {},
+          title: "Show only songs not rehearsed in " + STALE_WEEKS + "+ weeks"
+        }, (staleOnly ? "✓ " : "") + "⚠ Stale only", repertoireStaleCount > 0 && h("span",{className:"ml-1 opacity-70"}, "(" + repertoireStaleCount + ")")),
+        repertoireStaleCount === 0 && !staleOnly && h("span",{className:"text-xs text-[var(--ink-soft)] italic"},"No stale songs — nothing's been gathering dust.")
+      ),
       bulkCandidates.length > 0 && h("div",{className:"mt-2 pt-2 border-t border-[var(--line)]/15 flex items-center gap-2 flex-wrap"},
         h("span",{className:"text-xs text-[var(--ink-soft)]"}, bulkCandidates.length + " song" + (bulkCandidates.length===1?"":"s") + " missing details"),
         h("button",{onClick:startBulkFill,className:"btn bg-white px-2.5 py-1 text-xs font-semibold ml-auto"},"🔍 Auto-fill from Apple Music")
@@ -1936,7 +1967,7 @@ const SongsView = ({songs, events, member, mutate}) => {
     h("div",{className:"space-y-1.5"},
       filtered.map(s => editingId===s.id
         ? h(SongForm,{key:s.id, initial:s, onSave: f => { updateSong(s.id, f); setEditingId(null); }, onCancel: () => setEditingId(null), onDelete: () => deleteSong(s.id)})
-        : h(SongCard,{key:s.id, song:s, member:member, onEdit: () => { setEditingId(s.id); setAdding(false); }, onVote: voteSong, onSetStatus: setStatus, onSetPractice: setPractice, onPromote: promoteSong, showStatus: view === "all", lastRehearsed: lastRehearsedMap[s.id]})
+        : h(SongCard,{key:s.id, song:s, member:member, onEdit: () => { setEditingId(s.id); setAdding(false); }, onVote: voteSong, onSetStatus: setStatus, onSetPractice: setPractice, onPromote: promoteSong, showStatus: view === "all", lastRehearsed: lastRehearsedMap[s.id], isStale: s.status === "repertoire" && isStaleSong(lastRehearsedMap[s.id])})
       )
     )
   );
