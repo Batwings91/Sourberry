@@ -90,11 +90,16 @@
          (a) strip backgrounds/colours for paper
          (b) override Gig Mode's inline display font sizes for A4-friendly type. */
       .gig-print-root { background: #fff !important; color: #000 !important; min-height: 0 !important; height: auto !important; }
-      .gig-print-root h1 { font-size: 22pt !important; color: #000 !important; }
+      .gig-print-root h1 { font-size: 18pt !important; color: #000 !important; margin: 0 !important; line-height: 1.1 !important; display: inline !important; }
+      /* v0.19.0 (feedback item 2): tighten the title block. The setlist title and pinned-gig meta
+         used to render as two stacked divs, eating ~2 lines for 22pt + meta. Inline them so the
+         whole header is one line wherever the page width allows. */
+      .gig-print-root .gig-print-title-row { margin-bottom: 4pt !important; }
+      .gig-print-root .gig-print-meta { font-size: 9pt !important; color: #555 !important; display: inline !important; margin-left: 0.5em !important; font-style: italic; }
       .gig-print-root h2,
-      .gig-print-root .display { font-size: 14pt !important; color: #000 !important; border-color: #000 !important; }
-      .gig-print-root ol { font-size: 11pt !important; line-height: 1.45 !important; color: #000 !important; }
-      .gig-print-root ol li { color: #000 !important; }
+      .gig-print-root .display { font-size: 13pt !important; color: #000 !important; border-color: #000 !important; margin-top: 6pt !important; margin-bottom: 2pt !important; padding-bottom: 1pt !important; line-height: 1.2 !important; }
+      .gig-print-root ol { font-size: 11pt !important; line-height: 1.35 !important; color: #000 !important; margin-top: 0 !important; padding-left: 1.5em !important; }
+      .gig-print-root ol li { color: #000 !important; margin-bottom: 0 !important; }
       .gig-print-root ol li span.font-semibold { font-weight: 700 !important; color: #000 !important; }
       .gig-print-root span,
       .gig-print-root div { color: inherit !important; }
@@ -119,7 +124,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.18.0";
+const APP_VERSION = "0.19.0";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 // Instruments for member profiles (multi-select). Order is the display order.
 // Icons are emoji — render natively on iOS/macOS/Android. Bass uses 🪕 (banjo) as the closest
@@ -3503,10 +3508,10 @@ const GigModeView = ({setlist, songs, events, onClose}) => {
           )
         )
       ),
-      // Title + meta
-      h("div",{className:"mb-2"},
+      // Title + meta — on screen these stack; in print they inline (see .gig-print-title-row / .gig-print-meta CSS).
+      h("div",{className:"mb-2 gig-print-title-row"},
         h("h1",{className:"display leading-tight",style:{fontSize: Math.round(fontPx * 1.6) + "px"}}, setlist.name),
-        pinnedGig && h("div",{className:"text-[var(--ink-soft)] mt-1",style:{fontSize: Math.round(fontPx * 0.55) + "px"}},
+        pinnedGig && h("div",{className:"text-[var(--ink-soft)] mt-1 gig-print-meta",style:{fontSize: Math.round(fontPx * 0.55) + "px"}},
           fmtDate(pinnedGig.date), pinnedGig.title ? (" · " + pinnedGig.title) : "", pinnedGig.location ? (" · " + pinnedGig.location) : ""
         )
       ),
@@ -3563,7 +3568,7 @@ const GigModeView = ({setlist, songs, events, onClose}) => {
 };
 // === END GIG MODE VIEW ===
 
-const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack, onUpdate, onDelete, onDuplicate, onStartGigMode}) => {
+const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack, onUpdate, onDelete, onDuplicate, onStartGigMode, siblingIds, onNavigate}) => {
   const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState(setlist.name);
   const [editingSetIdx, setEditingSetIdx] = useState(null);
@@ -3691,6 +3696,20 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack
     next.splice(newIdx, 0, moved);
     onUpdate({encoreSongIds: next});
   };
+  // v0.19.0 (feedback item 1): move a song from the encore list back into a set.
+  // Single onUpdate so the encore-removal and set-add happen in one mutation.
+  const moveEncoreToSet = (encoreIdx, toSetIdx) => {
+    if (toSetIdx < 0 || toSetIdx >= sets.length) return;
+    const fromArr = encoreIds.slice();
+    const [sid] = fromArr.splice(encoreIdx, 1);
+    if (!sid) return;
+    const toArr = (sets[toSetIdx].songIds || []).slice();
+    const newToArr = toArr.includes(sid) ? toArr : toArr.concat([sid]);
+    onUpdate({
+      encoreSongIds: fromArr,
+      sets: sets.map((s, i) => i === toSetIdx ? Object.assign({}, s, {songIds: newToArr}) : s)
+    });
+  };
 
   // Picker handlers
   // v0.18.0 (feedback item 4): when adding from the picker, briefly flash + scroll to the newly added song
@@ -3803,7 +3822,32 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack
   };
 
   return h("div",null,
-    h("button",{onClick:onBack,className:"ticker text-[var(--berry)] mb-3"},"← Back to setlists"),
+    // v0.19.0 (feedback item 4): header row with Back + Prev/Next setlist navigation.
+    // Prev/Next cycles through setlists in the same upcoming-then-past order the index shows.
+    (() => {
+      const ids = Array.isArray(siblingIds) ? siblingIds : [];
+      const idx = ids.indexOf(setlist.id);
+      const total = ids.length;
+      const hasNav = total > 1 && idx >= 0;
+      const prevId = hasNav ? ids[(idx - 1 + total) % total] : null;
+      const nextId = hasNav ? ids[(idx + 1) % total] : null;
+      return h("div",{className:"flex items-center gap-2 mb-3 flex-wrap"},
+        h("button",{onClick:onBack,className:"ticker text-[var(--berry)] hover:underline"},"← Back to setlists"),
+        hasNav && onNavigate && h("div",{className:"flex items-center gap-1 ml-auto"},
+          h("button",{
+            onClick:()=>onNavigate(prevId),
+            className:"pill px-2.5 py-1 text-xs bg-white hover:bg-[var(--acid)]",
+            title:"Previous setlist"
+          },"◀ Prev"),
+          h("span",{className:"text-xs text-[var(--ink-soft)] tabular-nums"}, (idx+1) + " / " + total),
+          h("button",{
+            onClick:()=>onNavigate(nextId),
+            className:"pill px-2.5 py-1 text-xs bg-white hover:bg-[var(--acid)]",
+            title:"Next setlist"
+          },"Next ▶")
+        )
+      );
+    })(),
     h("div",{className:"card p-3 sm:p-4 mb-4"},
       editingName
         ? h("div",{className:"flex gap-2"},
@@ -4039,6 +4083,18 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack
                 ),
                 h("button",{onClick:()=>moveEncore(i, -1),disabled:i===0,className:"pill px-1.5 py-0.5 text-xs bg-white disabled:opacity-30",title:"Move up"},"↑"),
                 h("button",{onClick:()=>moveEncore(i, 1),disabled:i===encoreIds.length-1,className:"pill px-1.5 py-0.5 text-xs bg-white disabled:opacity-30",title:"Move down"},"↓"),
+                // v0.19.0 (feedback item 1): move an encore song back into a set.
+                // Mirror of the set-row "→ Move" dropdown. Only renders when there's at least one set.
+                sets.length > 0 && h("select",{
+                  value:"",
+                  onChange:e=>{ const v = e.target.value; if (v !== "") { moveEncoreToSet(i, parseInt(v,10)); } e.target.value=""; },
+                  className:"pill px-1 py-0.5 text-xs bg-white",
+                  title:"Move back to a set",
+                  style:{maxWidth:"82px"}
+                },
+                  h("option",{value:""},"→ Move"),
+                  sets.map((s, idx) => h("option",{key:idx,value:idx}, s.name || ("Set " + (idx+1))))
+                ),
                 h("button",{onClick:()=>removeEncore(sid),className:"pill px-1.5 py-0.5 text-xs bg-white text-[var(--berry)] font-bold",title:"Remove"},"×")
               );
             }))
@@ -4073,7 +4129,26 @@ const SetlistsView = ({setlists, songs, events, member, mutate, settings, onStar
     setOpenId(newSlId);
   };
   if (openId && setlists && setlists[openId]) {
-    return h(SetlistDetail,{setlist: Object.assign({id:openId}, setlists[openId]), songs:songs, events:events, member:member, mutate:mutate, settings:settings, onBack:()=>setOpenId(null), onUpdate: data => updateSetlist(openId, data), onDelete: () => deleteSetlist(openId), onDuplicate: () => duplicateSetlist(openId), onStartGigMode: onStartGigMode ? () => onStartGigMode(openId) : null});
+    // v0.19.0 (feedback item 4): build the same upcoming-then-past ordering used on the index
+    // page, so Prev/Next inside SetlistDetail flips through them in the order the user just saw.
+    const orderedIds = (() => {
+      const upcoming = [];
+      const past = [];
+      all.forEach(sl => {
+        const gig = sl.gigEventId && events && events[sl.gigEventId];
+        if (gig && isPast(gig.date)) past.push({sl, gig});
+        else upcoming.push({sl, gig});
+      });
+      upcoming.sort((a, b) => {
+        if (a.gig && !b.gig) return -1;
+        if (!a.gig && b.gig) return 1;
+        if (a.gig && b.gig) return (a.gig.date || "").localeCompare(b.gig.date || "");
+        return (b.sl.createdAt || 0) - (a.sl.createdAt || 0);
+      });
+      past.sort((a, b) => (b.gig.date || "").localeCompare(a.gig.date || ""));
+      return upcoming.concat(past).map(x => x.sl.id);
+    })();
+    return h(SetlistDetail,{setlist: Object.assign({id:openId}, setlists[openId]), songs:songs, events:events, member:member, mutate:mutate, settings:settings, onBack:()=>setOpenId(null), onUpdate: data => updateSetlist(openId, data), onDelete: () => deleteSetlist(openId), onDuplicate: () => duplicateSetlist(openId), onStartGigMode: onStartGigMode ? () => onStartGigMode(openId) : null, siblingIds: orderedIds, onNavigate: (id) => setOpenId(id)});
   }
   return h("div",null,
     h("div",{className:"flex items-center justify-between mb-4 flex-wrap gap-2"},
@@ -4088,8 +4163,12 @@ const SetlistsView = ({setlists, songs, events, member, mutate, settings, onStar
       )
     ),
     all.length===0 && !creating && h("div",{className:"card p-6 text-center"}, h("p",{className:"display text-xl"},"No setlists yet.")),
-    h("div",{className:"space-y-3"},
-      all.map(sl => {
+    // v0.19.0 (feedback item 3): split setlists into Upcoming (or unpinned) vs Past.
+    // A setlist is "past" only if pinned to a gig whose date has already passed; setlists
+    // pinned to upcoming gigs sort to the top by gig date (soonest first); unpinned setlists
+    // come after upcoming-pinned ones, sorted by createdAt desc.
+    (() => {
+      const renderSetlistButton = (sl) => {
         const songCount = setlistSongCount(sl);
         const slLen = setlistTotals(sl, songs);
         const setCount = (sl.sets || []).length;
@@ -4104,8 +4183,34 @@ const SetlistsView = ({setlists, songs, events, member, mutate, settings, onStar
             h("span",{className:"ticker text-[var(--berry)]"},"Open ▸")
           )
         );
-      })
-    )
+      };
+      const upcoming = [];
+      const past = [];
+      all.forEach(sl => {
+        const gig = sl.gigEventId && events && events[sl.gigEventId];
+        if (gig && isPast(gig.date)) past.push({sl, gig});
+        else upcoming.push({sl, gig});
+      });
+      // Upcoming: pinned-to-future gigs first (soonest gig date asc), then unpinned by createdAt desc.
+      upcoming.sort((a, b) => {
+        if (a.gig && !b.gig) return -1;
+        if (!a.gig && b.gig) return 1;
+        if (a.gig && b.gig) return (a.gig.date || "").localeCompare(b.gig.date || "");
+        return (b.sl.createdAt || 0) - (a.sl.createdAt || 0);
+      });
+      // Past: most recently played first.
+      past.sort((a, b) => (b.gig.date || "").localeCompare(a.gig.date || ""));
+      return h(React.Fragment, null,
+        upcoming.length > 0 && h("div",{className:"space-y-3 mb-6"},
+          h("div",{className:"ticker text-[var(--berry)] mb-1"},"Upcoming & active"),
+          upcoming.map(({sl}) => renderSetlistButton(sl))
+        ),
+        past.length > 0 && h("div",{className:"space-y-3"},
+          h("div",{className:"ticker text-[var(--ink-soft)] mb-1 pt-3 border-t border-[var(--line)]/30"},"Past · " + past.length),
+          past.map(({sl}) => renderSetlistButton(sl))
+        )
+      );
+    })()
   );
 };
 
