@@ -119,7 +119,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.16.0";
+const APP_VERSION = "0.17.0";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 // Instruments for member profiles (multi-select). Order is the display order.
 // Icons are emoji — render natively on iOS/macOS/Android. Bass uses 🪕 (banjo) as the closest
@@ -678,6 +678,120 @@ const osmEmbedUrl = (lat, lng, boxDeg) => {
 };
 // === END calendar/maps helpers ===
 
+// === Rehearsal recap ===
+// Generates a plain-text summary of a rehearsal that the user can copy/paste into
+// their band chat (Slack, WhatsApp, email). Pulls from the event's agendaSongIds /
+// playedSongIds / rehearsalNotes plus the song-level practice statuses set during
+// the session. Plain text by design — works in every messaging app without weird
+// formatting carrying over.
+const buildRehearsalRecap = (event, songs, opts) => {
+  if (!event || event.type !== "rehearsal") return "";
+  const songLookup = (id) => {
+    const s = songs && songs[id];
+    return s ? (s.title || "(untitled)") : "(deleted song)";
+  };
+  const agenda = Array.isArray(event.agendaSongIds) ? event.agendaSongIds : [];
+  const played = Array.isArray(event.playedSongIds) ? event.playedSongIds : [];
+  const playedFromAgenda = agenda.filter(id => played.includes(id));
+  const missedFromAgenda = agenda.filter(id => !played.includes(id));
+  const offPlan = played.filter(id => !agenda.includes(id));
+
+  // Date and timing line
+  const lines = [];
+  const dateLabel = event.date ? fmtDate(event.date) : "(no date)";
+  const timeLabel = (event.startTime && event.endTime) ? (" " + event.startTime + "–" + event.endTime) : "";
+  const venueLabel = event.location ? (" · " + event.location) : "";
+  const titlePart = event.title ? (" — " + event.title) : "";
+  lines.push("🎵 Rehearsal " + dateLabel + timeLabel + venueLabel + titlePart);
+  lines.push("");
+
+  // Played list (combined: agenda hits first, then off-plan)
+  const allPlayed = playedFromAgenda.concat(offPlan);
+  if (allPlayed.length > 0) {
+    lines.push("Played (" + allPlayed.length + "):");
+    allPlayed.forEach(id => {
+      const isOffPlan = offPlan.includes(id);
+      lines.push("  • " + songLookup(id) + (isOffPlan ? " (off-plan)" : ""));
+    });
+    lines.push("");
+  } else {
+    lines.push("Played: nothing logged.");
+    lines.push("");
+  }
+
+  // Missed from agenda
+  if (missedFromAgenda.length > 0) {
+    lines.push("Didn't get to (" + missedFromAgenda.length + "):");
+    missedFromAgenda.forEach(id => lines.push("  • " + songLookup(id)));
+    lines.push("");
+  }
+
+  // Practice statuses logged during this session — gathered from the songs that
+  // were played and have practice entries. Note: this captures CURRENT practice
+  // statuses, not statuses set specifically during this rehearsal. The app doesn't
+  // timestamp per-rehearsal practice changes, so we surface what's there now.
+  const practiceLines = [];
+  allPlayed.forEach(id => {
+    const s = songs && songs[id];
+    if (!s || !s.practice) return;
+    const tags = MEMBERS
+      .map(m => {
+        const v = s.practice[m.id];
+        return v ? (m.name[0] + ":" + PRACTICE_LABEL[v]) : null;
+      })
+      .filter(Boolean);
+    if (tags.length > 0) {
+      practiceLines.push("  • " + (s.title || "(untitled)") + " — " + tags.join(", "));
+    }
+  });
+  if (practiceLines.length > 0) {
+    lines.push("Practice statuses:");
+    practiceLines.forEach(l => lines.push(l));
+    lines.push("");
+  }
+
+  // Notes
+  const notes = (event.rehearsalNotes || "").trim();
+  if (notes) {
+    lines.push("Notes:");
+    notes.split("\n").forEach(l => lines.push("  " + l));
+    lines.push("");
+  }
+
+  // Footer
+  lines.push("— from Sourberry");
+
+  // Trim trailing blank lines.
+  while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  return lines.join("\n");
+};
+// Copy text to clipboard. Returns a Promise<boolean> — true on success.
+// Modern browsers prefer navigator.clipboard.writeText (requires HTTPS context).
+// Falls back to a hidden textarea + execCommand("copy") for older Safari etc.
+const copyTextToClipboard = async (text) => {
+  if (!text) return false;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (_) { /* fall through to legacy path */ }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    ta.setAttribute("readonly", "");
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return !!ok;
+  } catch (_) { return false; }
+};
+// === END rehearsal recap ===
+
+
 // validateBackupShape: returns null if valid, otherwise an error string.
 const validateBackupShape = obj => {
   if (!obj || typeof obj !== "object") return "Not a valid JSON object.";
@@ -768,6 +882,8 @@ const sumLengths = (songIds, songs) => {
 const setlistAllSongIds = (sl) => {
   const ids = [];
   (sl.sets || []).forEach(set => (set.songIds || []).forEach(id => ids.push(id)));
+  // Include encores so set-pickers don't suggest songs already in the encore list.
+  if (Array.isArray(sl.encoreSongIds)) sl.encoreSongIds.forEach(id => ids.push(id));
   return ids;
 };
 // Build a map of songId -> ISO date string of the most recent rehearsal where it was marked played.
@@ -1967,7 +2083,7 @@ const AvailabilityButtons = ({ev, member, onSet}) => {
   }, label);
   return h("div",{className:"flex gap-1.5"}, opt("yes","✓ Yes","var(--good)"), opt("maybe","? Maybe","var(--rusty)"), opt("no","✗ No","var(--learn)"));
 };
-const blankEvent = (type, defaultLocation) => ({date: todayISO(), startTime:"18:00", endTime:"21:00", type: type||"rehearsal", venueType:"in-person-studio", location: defaultLocation || "", bookingOwner:"", confirmed:false, status:"proposed", title:"", comments:"", recordingUrl:"", gigNotes:"", actualSetlistId:null});
+const blankEvent = (type, defaultLocation) => ({date: todayISO(), startTime:"18:00", endTime:"21:00", type: type||"rehearsal", venueType:"in-person-studio", location: defaultLocation || "", bookingOwner:"", confirmed:false, status:"proposed", title:"", comments:"", recordingUrl:"", gigNotes:"", actualSetlistId:null, accessCodes:[]});
 
 const EventForm = ({initial, onSave, onCancel, onDelete, locationSuggestions, savedRehearsalLocations, songs}) => {
   const [f, setF] = useState(initial || blankEvent());
@@ -2033,6 +2149,49 @@ const EventForm = ({initial, onSave, onCancel, onDelete, locationSuggestions, sa
       }),
       isRehearsal && h("label",{className:"text-sm md:col-span-2"}, h("div",{className:"ticker mb-1"},"Rehearsal notes (during / after)"),
         h("textarea",{className:"input",rows:"3",value:f.rehearsalNotes||"",onChange:e=>set("rehearsalNotes",e.target.value),placeholder:"What went well, what to fix, ideas to try next time…"})),
+      // Access codes: free-form list of {label, code} pairs. Pirate Studios sends these
+      // in their booking confirmation (front door + studio number). Gigs sometimes
+      // have stage door codes too. Stored on the event so they're not in the same
+      // settings store as repeating data.
+      h("div",{className:"text-sm md:col-span-2"},
+        h("div",{className:"ticker mb-1"},"Access codes (optional)"),
+        h("p",{className:"text-xs text-[var(--ink-soft)] mb-2"},
+          "Door codes, studio access codes etc. Only band members with the URL can see these."
+        ),
+        Array.isArray(f.accessCodes) && f.accessCodes.length > 0 && h("div",{className:"space-y-1 mb-2"},
+          f.accessCodes.map((ac, i) => h("div",{key:i, className:"flex gap-2 items-center"},
+            h("input",{
+              type:"text", value: ac.label || "", placeholder:"e.g. Front door",
+              onChange:e=>{
+                const next = (f.accessCodes||[]).slice();
+                next[i] = Object.assign({}, next[i], {label: e.target.value});
+                set("accessCodes", next);
+              },
+              className:"input text-sm flex-1", style:{minWidth:"8rem"}
+            }),
+            h("input",{
+              type:"text", value: ac.code || "", placeholder:"e.g. *315375",
+              onChange:e=>{
+                const next = (f.accessCodes||[]).slice();
+                next[i] = Object.assign({}, next[i], {code: e.target.value});
+                set("accessCodes", next);
+              },
+              className:"input text-sm flex-1 font-mono", style:{minWidth:"8rem"}
+            }),
+            h("button",{
+              type:"button",
+              onClick:()=>set("accessCodes", (f.accessCodes||[]).filter((_, j) => j !== i)),
+              className:"pill px-2 py-1 text-xs bg-white text-[var(--berry)] font-bold",
+              title:"Remove"
+            },"×")
+          ))
+        ),
+        h("button",{
+          type:"button",
+          onClick:()=>set("accessCodes", (Array.isArray(f.accessCodes)?f.accessCodes:[]).concat([{label:"", code:""}])),
+          className:"btn bg-white px-3 py-1 text-xs font-semibold"
+        }, (Array.isArray(f.accessCodes) && f.accessCodes.length > 0) ? "+ Another code" : "+ Add code")
+      ),
       f.type === "gig" && h("label",{className:"text-sm md:col-span-2"}, h("div",{className:"ticker mb-1"},"Recording URL"),
         h("input",{className:"input",type:"url",value:f.recordingUrl||"",onChange:e=>set("recordingUrl",e.target.value),placeholder:"https://… (YouTube, Drive, Dropbox, etc.)"})),
       f.type === "gig" && h("label",{className:"text-sm md:col-span-2"}, h("div",{className:"ticker mb-1"},"Gig notes (post-gig)"),
@@ -2066,6 +2225,9 @@ const EventCard = ({ev, member, memberProfiles, songs, events, pinnedSetlist, on
     // We intentionally only depend on the event id, location, and past flag.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ev.id, ev.location, past]);
+  // Recap state for past rehearsals — same pattern as Run Mode but lives on the card.
+  const [recapText, setRecapText] = useState(null);
+  const [recapCopyState, setRecapCopyState] = useState("idle");
   const d = new Date(ev.date + "T00:00:00");
   const yr = d.getFullYear();
   // Rehearsal summary
@@ -2210,6 +2372,24 @@ const EventCard = ({ev, member, memberProfiles, songs, events, pinnedSetlist, on
             h(AvailabilityRow,{ev:ev, memberProfiles:memberProfiles}),
             h("span",{className:"text-xs text-[var(--ink-soft)]"}, yesCount + "/" + MEMBERS.length + " can make it")
           ),
+          // Access codes — shown for upcoming events. Prominent because people
+          // are reading these on their phone outside a locked door, in the rain,
+          // five minutes before they're meant to be playing. Big monospace text.
+          Array.isArray(ev.accessCodes) && ev.accessCodes.filter(ac => ac && (ac.code || ac.label)).length > 0 && h("div",{
+            className:"mt-2 card-flat p-2",
+            style:{background:"#fef9c3", borderColor:"#fde047"}
+          },
+            h("div",{className:"ticker text-[var(--ink)] mb-1.5 flex items-center gap-1.5"},
+              h("span",null,"🔑"),
+              h("span",null,"Access codes")
+            ),
+            h("div",{className:"grid grid-cols-1 sm:grid-cols-2 gap-1.5"},
+              ev.accessCodes.filter(ac => ac && (ac.code || ac.label)).map((ac, i) => h("div",{key:i, className:"flex items-baseline gap-2"},
+                h("span",{className:"text-xs text-[var(--ink-soft)] shrink-0", style:{minWidth:"5rem"}}, ac.label || "Code"),
+                h("span",{className:"font-mono font-bold text-base text-[var(--ink)]"}, ac.code || "—")
+              ))
+            )
+          ),
           // Calendar export + map links (only when there's something useful to point at)
           (ev.location || ev.startTime) && h("div",{className:"mt-2 flex items-center gap-3 flex-wrap text-xs"},
             h("button",{
@@ -2234,9 +2414,41 @@ const EventCard = ({ev, member, memberProfiles, songs, events, pinnedSetlist, on
             h("button",{onClick:onEdit,className:"ticker " + (isRehearsal && onStartRehearsal ? "" : "ml-auto") + " text-[var(--ink-soft)] hover:text-[var(--berry)]"},"Edit ▸")
           )
         ),
-        past && h("div",{className:"mt-3 flex items-center gap-2"},
+        past && h("div",{className:"mt-3 flex items-center gap-2 flex-wrap"},
           h("button",{onClick:onEdit,className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)]"},"Edit ▸"),
-          h("button",{onClick:onDelete,className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)] ml-auto"},"Delete ✕")
+          isRehearsal && (agendaIds.length > 0 || playedIds.length > 0 || ev.rehearsalNotes) && h("button",{
+            onClick: () => { setRecapText(buildRehearsalRecap(ev, songs)); setRecapCopyState("idle"); },
+            className:"ticker text-[var(--berry)] hover:underline ml-auto",
+            title:"Generate a paste-ready summary"
+          }, "📋 Recap"),
+          h("button",{onClick:onDelete,className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)] " + (isRehearsal && (agendaIds.length > 0 || playedIds.length > 0 || ev.rehearsalNotes) ? "" : "ml-auto")},"Delete ✕")
+        ),
+        // Recap modal for past rehearsals
+        recapText !== null && h("div",{className:"modal-bg",onClick:()=>setRecapText(null)},
+          h("div",{className:"card p-5 max-w-lg w-full max-h-[90vh] overflow-y-auto",onClick:e=>e.stopPropagation()},
+            h("div",{className:"flex items-center justify-between mb-2"},
+              h("h3",{className:"display text-2xl"},"Rehearsal recap"),
+              h("button",{onClick:()=>setRecapText(null),className:"ticker text-[var(--ink-soft)]"},"Close ✕")
+            ),
+            h("p",{className:"text-xs text-[var(--ink-soft)] mb-2"},"Edit if you'd like, then copy and paste into your band chat."),
+            h("textarea",{
+              className:"input font-mono text-xs",
+              rows:"14",
+              value: recapText,
+              onChange: e => { setRecapText(e.target.value); setRecapCopyState("idle"); }
+            }),
+            h("div",{className:"mt-3 flex gap-2 items-center"},
+              h("button",{
+                onClick: async () => {
+                  const ok = await copyTextToClipboard(recapText);
+                  setRecapCopyState(ok ? "copied" : "fail");
+                  if (ok) setTimeout(() => setRecapCopyState("idle"), 2000);
+                },
+                className:"btn berry-bg px-4 py-2 text-sm font-semibold"
+              }, recapCopyState === "copied" ? "✓ Copied!" : recapCopyState === "fail" ? "Couldn't copy — select all and copy manually" : "📋 Copy to clipboard"),
+              h("button",{onClick:()=>setRecapText(null),className:"btn bg-white px-3 py-2 text-sm ml-auto"},"Done")
+            )
+          )
         )
       ),
       // Embedded OSM map — only for upcoming events with cached coordinates.
@@ -3126,18 +3338,30 @@ const SongMultiPicker = ({songs, selected, onChange, label, helpText}) => {
   );
 };
 
-const SongPicker = ({songs, excludeIds, onPick, onClose}) => {
+const SongPicker = ({songs, excludeIds, onPick, onClose, destinationLabel}) => {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const rootRef = useRef(null);
+  // Scroll into view when the picker mounts. Without this, tapping "+ Songs" on
+  // Set 2 (way down the page) made the picker appear at the top of the page —
+  // off-screen, looking like the tap did nothing.
+  useEffect(() => {
+    if (rootRef.current && rootRef.current.scrollIntoView) {
+      rootRef.current.scrollIntoView({behavior: "smooth", block: "start"});
+    }
+  }, []);
   const all = songsList(songs).filter(s => !excludeIds.includes(s.id));
   const list = all.filter(s => {
     if (statusFilter !== "all" && s.status !== statusFilter) return false;
     return songMatchesQuery(s, query);
   }).sort((a,b) => (a.title||"").localeCompare(b.title||""));
-  return h("div",{className:"card p-4 mb-4"},
-    h("div",{className:"flex items-center justify-between mb-3"},
-      h("h3",{className:"display text-xl"},"Pick songs to add"),
-      h("button",{onClick:onClose,className:"ticker text-[var(--ink-soft)]"},"Done ▸")
+  return h("div",{ref:rootRef, className:"card p-4 mb-4", style:{borderColor:"var(--berry)", borderWidth:"2px"}},
+    h("div",{className:"flex items-center justify-between mb-3 flex-wrap gap-2"},
+      h("div",null,
+        h("h3",{className:"display text-xl"}, destinationLabel ? ("Pick a song — " + destinationLabel) : "Pick songs to add"),
+        destinationLabel && h("p",{className:"text-xs text-[var(--ink-soft)] mt-0.5"},"Tap a song to add it. Tap Done when finished.")
+      ),
+      h("button",{onClick:onClose,className:"btn berry-bg px-3 py-1.5 text-sm font-semibold"},"Done ▸")
     ),
     h("input",{className:"input mb-2",value:query,onChange:e=>setQuery(e.target.value),placeholder:"Search by title or artist (fuzzy)…"}),
     h("div",{className:"flex gap-1.5 flex-wrap mb-3"},
@@ -3265,7 +3489,7 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack
   const [editingSetIdx, setEditingSetIdx] = useState(null);
   const [editingSetName, setEditingSetName] = useState("");
   const [picker, setPicker] = useState(null); // null | {kind:"set", index:n} | {kind:"soundcheck"}
-  const [viewMode, setViewMode] = useState("detailed");
+  const [viewMode, setViewMode] = useState("summary");
   const sets = setlist.sets || [];
   const soundcheckId = setlist.soundcheckSongId || null;
   const gigOptions = eventsList(events).filter(e => e.type === "gig");
@@ -3357,16 +3581,36 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack
   };
   const setSoundcheck = id => onUpdate({soundcheckSongId: id});
   const clearSoundcheck = () => onUpdate({soundcheckSongId: null});
+  // Encores: small list of songs played after the main sets. Stored as encoreSongIds[].
+  const encoreIds = Array.isArray(setlist.encoreSongIds) ? setlist.encoreSongIds : [];
+  const addEncore = (songId) => {
+    if (encoreIds.includes(songId)) return;
+    onUpdate({encoreSongIds: encoreIds.concat([songId])});
+  };
+  const removeEncore = (songId) => {
+    onUpdate({encoreSongIds: encoreIds.filter(x => x !== songId)});
+  };
+  const moveEncore = (idx, dir) => {
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= encoreIds.length) return;
+    const next = encoreIds.slice();
+    const [moved] = next.splice(idx, 1);
+    next.splice(newIdx, 0, moved);
+    onUpdate({encoreSongIds: next});
+  };
 
   // Picker handlers
   const handlePick = (songId) => {
     if (!picker) return;
     if (picker.kind === "soundcheck") setSoundcheck(songId);
+    else if (picker.kind === "encore") addEncore(songId);
     else if (picker.kind === "set") addSongToSet(picker.index, songId);
     setPicker(null);
   };
   const pickerExcludeIds = picker
-    ? (picker.kind === "soundcheck" ? (soundcheckId ? [soundcheckId] : []) : setlistAllSongIds(setlist))
+    ? (picker.kind === "soundcheck" ? (soundcheckId ? [soundcheckId] : [])
+       : picker.kind === "encore" ? encoreIds
+       : setlistAllSongIds(setlist))
     : [];
 
   const [editingSongId, setEditingSongId] = useState(null);
@@ -3487,8 +3731,17 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack
       )
     ),
 
-    // Picker modal
-    picker && h(SongPicker,{songs:songs, excludeIds: pickerExcludeIds, onPick: handlePick, onClose: () => setPicker(null)}),
+    // Picker modal — auto-scrolls into view and shows which destination it's for.
+    picker && (() => {
+      let destinationLabel = "";
+      if (picker.kind === "soundcheck") destinationLabel = "Soundcheck";
+      else if (picker.kind === "encore") destinationLabel = "Encore";
+      else if (picker.kind === "set") {
+        const s = sets[picker.index];
+        destinationLabel = (s && s.name) ? s.name : ("Set " + (picker.index + 1));
+      }
+      return h(SongPicker,{songs:songs, excludeIds: pickerExcludeIds, onPick: handlePick, onClose: () => setPicker(null), destinationLabel: destinationLabel});
+    })(),
 
     // SUMMARY VIEW
     viewMode === "summary" && h("div",{className:"card p-5 space-y-5"},
@@ -3532,6 +3785,23 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack
               )
         );
       }),
+      // Encore in summary
+      encoreIds.length > 0 && h("div",null,
+        h("div",{className:"ticker text-[var(--berry)] mb-2"},"Encore"),
+        h("ol",{className:"space-y-1 text-sm"},
+          encoreIds.map((sid, i) => {
+            const s = songs && songs[sid];
+            if (!s) return h("li",{key:sid+"-"+i,className:"text-[var(--ink-soft)] italic"}, (i+1) + ". (deleted song)");
+            const sLen = formatDuration(s.lengthSec);
+            return h("li",{key:sid+"-"+i,className:"flex gap-2 items-baseline"},
+              h("span",{className:"text-[var(--berry)] font-semibold w-6 shrink-0"}, (i+1) + "."),
+              h("span",{className:"font-semibold"}, s.title),
+              s.artist && h("span",{className:"text-[var(--ink-soft)] italic"},"— " + s.artist),
+              sLen && h("span",{className:"ticker text-[var(--ink-soft)] ml-auto shrink-0"}, sLen)
+            );
+          })
+        )
+      ),
       h("p",{className:"text-xs text-[var(--ink-soft)] italic pt-3 border-t border-[var(--line)]/20"}, totalsLabel + ".")
     ),
 
@@ -3608,6 +3878,37 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack
             : h("ol",{className:"space-y-2"}, setIds.map((sid, i) => renderSongRow(sid, si, i, i === setIds.length - 1)))
         );
       }),
+      // Encore section
+      h("section",null,
+        h("div",{className:"flex items-center justify-between gap-2 mb-2 flex-wrap"},
+          h("div",{className:"ticker text-[var(--berry)]"},"Encore"),
+          h("button",{onClick:()=>setPicker({kind:"encore"}),className:"btn bg-white px-3 py-1 text-xs"},"+ Add encore song")
+        ),
+        encoreIds.length === 0
+          ? h("p",{className:"text-xs italic text-[var(--ink-soft)]"},"No encore yet.")
+          : h("ol",{className:"space-y-1.5"}, encoreIds.map((sid, i) => {
+              const s = songs && songs[sid];
+              if (!s) return h("li",{key:sid+"-"+i,className:"card-flat p-2 text-sm flex items-center gap-2"},
+                h("span",{className:"text-[var(--ink-soft)] w-6 text-right shrink-0 text-xs"}, (i+1) + "."),
+                h("span",{className:"flex-1 italic text-[var(--ink-soft)]"},"(deleted song)"),
+                h("button",{onClick:()=>removeEncore(sid),className:"pill px-2 py-0.5 text-xs bg-white text-[var(--berry)] font-bold"},"×")
+              );
+              const sLen = formatDuration(s.lengthSec);
+              return h("li",{key:sid+"-"+i,className:"card-flat p-2 text-sm flex items-center gap-2"},
+                h("span",{className:"text-[var(--ink-soft)] w-6 text-right shrink-0 text-xs"}, (i+1) + "."),
+                h("div",{className:"flex-1 min-w-0"},
+                  h("div",null,
+                    h("span",{className:"font-semibold"}, s.title),
+                    s.artist && h("span",{className:"text-[var(--ink-soft)] italic ml-2"},"— " + s.artist)
+                  ),
+                  sLen && h("span",{className:"ticker text-[var(--ink-soft)] text-[10px]"}, sLen)
+                ),
+                h("button",{onClick:()=>moveEncore(i, -1),disabled:i===0,className:"pill px-1.5 py-0.5 text-xs bg-white disabled:opacity-30",title:"Move up"},"↑"),
+                h("button",{onClick:()=>moveEncore(i, 1),disabled:i===encoreIds.length-1,className:"pill px-1.5 py-0.5 text-xs bg-white disabled:opacity-30",title:"Move down"},"↓"),
+                h("button",{onClick:()=>removeEncore(sid),className:"pill px-1.5 py-0.5 text-xs bg-white text-[var(--berry)] font-bold",title:"Remove"},"×")
+              );
+            }))
+      ),
       // Add set button at bottom
       h("div",{className:"pt-2"},
         h("button",{onClick:addSet,className:"btn bg-white px-3 py-2 text-sm font-semibold w-full sm:w-auto"},"+ Add a new set")
@@ -4578,6 +4879,11 @@ const RehearsalRunMode = ({event, songs, member, memberProfiles, mutate, onClose
   const [currentIdx, setCurrentIdx] = useState(initialIdx);
   // pickerMode: null when picker closed, "agenda" to add to agenda, "played" to log unplanned/played
   const [pickerMode, setPickerMode] = useState(null);
+  // Recap state: when a recap modal is shown, recapText holds the draft (which the
+  // user can edit before copying). copyState is "idle" | "copied" | "fail" — used
+  // to flash a transient "Copied!" hint on the button.
+  const [recapText, setRecapText] = useState(null);
+  const [copyState, setCopyState] = useState("idle");
   // Notes are debounced so typing doesn't fire mutate every keystroke.
   const [notesDraft, setNotesDraft] = useState(event.rehearsalNotes || "");
   const notesTimerRef = useRef(null);
@@ -4861,8 +5167,47 @@ const RehearsalRunMode = ({event, songs, member, memberProfiles, mutate, onClose
       }),
       h("p",{className:"text-xs text-[var(--ink-soft)] italic mt-1"},"Saves automatically.")
     ),
+    // Recap action — generate a copyable summary that anyone can paste into Slack/WhatsApp/email.
+    h("div",{className:"card p-3 mb-3"},
+      h("div",{className:"ticker text-[var(--berry)] mb-1"},"Share recap"),
+      h("p",{className:"text-xs text-[var(--ink-soft)] italic mb-2"},"Generate a paste-ready summary of this rehearsal."),
+      h("button",{
+        onClick: () => {
+          setRecapText(buildRehearsalRecap(event, songs));
+          setCopyState("idle");
+        },
+        className:"btn bg-white px-3 py-2 text-sm font-semibold w-full"
+      }, "📋 Generate recap")
+    ),
     h("div",{className:"mt-4"},
       h("button",{onClick:onClose,className:"btn berry-bg px-5 py-2.5 text-sm font-semibold w-full"},"End rehearsal")
+    ),
+    // Recap modal
+    recapText !== null && h("div",{className:"modal-bg",onClick:()=>setRecapText(null)},
+      h("div",{className:"card p-5 max-w-lg w-full max-h-[90vh] overflow-y-auto",onClick:e=>e.stopPropagation()},
+        h("div",{className:"flex items-center justify-between mb-2"},
+          h("h3",{className:"display text-2xl"},"Rehearsal recap"),
+          h("button",{onClick:()=>setRecapText(null),className:"ticker text-[var(--ink-soft)]"},"Close ✕")
+        ),
+        h("p",{className:"text-xs text-[var(--ink-soft)] mb-2"},"Edit if you'd like, then copy and paste into your band chat."),
+        h("textarea",{
+          className:"input font-mono text-xs",
+          rows:"14",
+          value: recapText,
+          onChange: e => { setRecapText(e.target.value); setCopyState("idle"); }
+        }),
+        h("div",{className:"mt-3 flex gap-2 items-center"},
+          h("button",{
+            onClick: async () => {
+              const ok = await copyTextToClipboard(recapText);
+              setCopyState(ok ? "copied" : "fail");
+              if (ok) setTimeout(() => setCopyState("idle"), 2000);
+            },
+            className:"btn berry-bg px-4 py-2 text-sm font-semibold"
+          }, copyState === "copied" ? "✓ Copied!" : copyState === "fail" ? "Couldn't copy — select all and copy manually" : "📋 Copy to clipboard"),
+          h("button",{onClick:()=>setRecapText(null),className:"btn bg-white px-3 py-2 text-sm ml-auto"},"Done")
+        )
+      )
     )
   );
 };
@@ -4915,6 +5260,40 @@ const App = () => {
   const memberProfiles = sync.state.memberProfiles || {};
   const settings = sync.state.settings || {};
   const feedback = sync.state.feedback || {};
+
+  // "Who are you?" gate. If a fresh visitor opens the URL on a new device, member
+  // identity is null (each device has its own localStorage). Without this gate, the
+  // app renders normally but with no member selected — meaning their availability,
+  // votes, practice statuses etc would all silently no-op. Worse, if they tap something
+  // assuming it's "them", it'd be misattributed. So we block the app until they pick.
+  if (!member) {
+    return h("div",{className:"max-w-md mx-auto px-4 py-12"},
+      h(Wordmark, {className:"h-12 mb-6 mx-auto"}),
+      h("div",{className:"card p-5"},
+        h("h2",{className:"display text-2xl mb-2"},"Who are you?"),
+        h("p",{className:"text-sm text-[var(--ink-soft)] mb-4"},
+          "Pick yourself from the band so we know whose votes, availability, and notes belong to whom. You can change this later in settings."
+        ),
+        h("div",{className:"space-y-2"},
+          MEMBERS.map(m => {
+            const photo = (memberProfiles[m.id] && memberProfiles[m.id].photoUrl) || "";
+            return h("button",{
+              key:m.id, onClick:()=>setMemberId(m.id),
+              className:"btn bg-white hover:bg-[var(--acid)] w-full px-4 py-3 text-left flex items-center gap-3"
+            },
+              h("div",{className:"shrink-0 rounded-full border border-[var(--line)]/40 overflow-hidden bg-white flex items-center justify-center",style:{width:40,height:40}},
+                photo ? h("img",{src:photo,alt:"",className:"w-full h-full object-cover"}) : h("span",{className:"display text-lg text-[var(--ink-soft)]"}, m.name[0])
+              ),
+              h("span",{className:"display text-xl"}, "I'm " + m.name)
+            );
+          })
+        ),
+        h("p",{className:"text-xs text-[var(--ink-soft)] italic mt-4"},
+          "Each device remembers separately. If you switch iPads, you'll be asked again."
+        )
+      )
+    );
+  }
 
   // Iteration C.1: full-page takeover for the rehearsal runner.
   if (runRehearsalId && events[runRehearsalId] && events[runRehearsalId].type === "rehearsal") {
