@@ -83,7 +83,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.3.0";
+const APP_VERSION = "0.4.0";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 const SONG_STATUSES = [
   {id:"suggested",label:"Suggested",desc:"In the voting pool"},
@@ -1057,9 +1057,9 @@ const BackupsSection = ({binId, state, onRestore}) => {
   };
   const totalSize = backups.reduce((sum, b) => sum + (b.sizeBytes || 0), 0);
   return h("div",{className:"mt-5 pt-4 border-t border-[var(--line)]/15"},
-    h("div",{className:"ticker text-[var(--berry)] mb-2"},"Backups"),
+    h("div",{className:"ticker text-[var(--berry)] mb-2"},"Local backups"),
     h("p",{className:"text-xs text-[var(--ink-soft)] mb-3"},
-      "Snapshots of the band's data, saved automatically on this device whenever you save a change (max one snapshot every 2 minutes). Each device keeps its own history of up to ", BACKUP_MAX_COUNT, " snapshots. Restoring a snapshot replaces the live data for everyone."
+      "Snapshots stored ", h("span",{className:"font-semibold"},"only on this device"), " (in this browser's local storage). Saved automatically whenever you change something — max one snapshot every 2 minutes. Each device keeps its own history of up to ", BACKUP_MAX_COUNT, " snapshots. ", h("span",{className:"font-semibold"},"Restoring replaces the band's live data for everyone."), " Use Download to keep a copy off-device."
     ),
     h("div",{className:"flex flex-wrap gap-2 mb-3"},
       h("button",{onClick:onSnapshotNow,className:"btn bg-white px-3 py-1.5 text-xs font-semibold"},"Snapshot now"),
@@ -1789,14 +1789,19 @@ const SongsView = ({songs, events, member, mutate}) => {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkProgress, setBulkProgress] = useState(null); // {current, total, song}
   const [bulkResult, setBulkResult] = useState(null); // {filled, skipped, failed, total}
+  // When true, bulk fill operates on every song with title+artist (regardless of whether
+  // it already has metadata) and overwrites existing fields. Default false: only blanks get filled.
+  const [bulkRefetchAll, setBulkRefetchAll] = useState(false);
   const bulkCancelRef = useRef(false);
 
   const all = songsList(songs);
   const counts = {}; SONG_STATUSES.forEach(s => { counts[s.id] = all.filter(x => x.status === s.id).length; });
   // Iteration B.1: how many repertoire songs are stale (never or 4+ weeks since last rehearsed).
   const repertoireStaleCount = useMemo(() => all.filter(s => s.status === "repertoire" && isStaleSong(lastRehearsedMap[s.id])).length, [all, lastRehearsedMap]);
-  // Candidates for bulk fill: have title+artist, are missing core metadata
-  const bulkCandidates = all.filter(s => s.title && s.artist && (!s.lengthSec || !s.coverArtUrl || !s.album || !s.iTunesUrl));
+  // Candidates for bulk fill (default mode: only songs with at least one missing core field).
+  const bulkCandidatesMissing = all.filter(s => s.title && s.artist && (!s.lengthSec || !s.coverArtUrl || !s.album || !s.iTunesUrl));
+  // Candidates when re-fetching all: every song that has enough info to look up.
+  const bulkCandidatesAll = all.filter(s => s.title && s.artist);
 
   const list = view === "all" ? all.slice() : all.filter(s => s.status === view);
   list.sort((a, b) => {
@@ -1843,13 +1848,19 @@ const SongsView = ({songs, events, member, mutate}) => {
   const promoteSong = (id) => mutate(prev => Object.assign({}, prev, {songs: Object.assign({}, prev.songs||{}, {[id]: Object.assign({}, (prev.songs && prev.songs[id])||{}, {status:"shortlist", votes:{}})})}));
 
   // ---- Bulk fill from Apple Music
-  const startBulkFill = async () => {
-    setBulkOpen(true);
+  // Two-step: openBulkFill shows a confirmation panel where the user picks the mode;
+  // runBulkFill is what actually executes when they tap Start.
+  const openBulkFill = () => {
     setBulkResult(null);
+    setBulkProgress(null);
     bulkCancelRef.current = false;
-    const candidates = bulkCandidates.slice();
+    setBulkOpen(true);
+  };
+  const runBulkFill = async () => {
+    bulkCancelRef.current = false;
+    const candidates = (bulkRefetchAll ? bulkCandidatesAll : bulkCandidatesMissing).slice();
     if (candidates.length === 0) {
-      setBulkResult({filled:0, skipped:0, failed:0, total:0});
+      setBulkResult({filled:0, skipped:0, failed:0, total:0, mode: bulkRefetchAll ? "refetchAll" : "missingOnly"});
       return;
     }
     let filled = 0, skipped = 0, failed = 0;
@@ -1862,17 +1873,24 @@ const SongsView = ({songs, events, member, mutate}) => {
         const top = results[0];
         if (!top || !confidenceMatch(song, top)) { skipped++; continue; }
         const updates = {};
-        if (!song.lengthSec && top.lengthSec) updates.lengthSec = top.lengthSec;
-        if (!song.album && top.album) updates.album = top.album;
-        if (!song.year && top.year) updates.year = top.year;
-        if (!song.coverArtUrl && top.coverArtUrl) updates.coverArtUrl = top.coverArtUrl;
-        if (!song.iTunesUrl && top.iTunesUrl) updates.iTunesUrl = top.iTunesUrl;
+        // In missing-only mode, never overwrite existing values.
+        // In re-fetch-all mode, overwrite when the API returns a value.
+        const writeIf = (key) => {
+          const apiVal = top[key];
+          if (!apiVal) return;
+          if (bulkRefetchAll || !song[key]) updates[key] = apiVal;
+        };
+        writeIf("lengthSec");
+        writeIf("album");
+        writeIf("year");
+        writeIf("coverArtUrl");
+        writeIf("iTunesUrl");
         if (Object.keys(updates).length > 0) { updateSong(song.id, updates); filled++; } else { skipped++; }
       } catch (e) { failed++; }
       await new Promise(r => setTimeout(r, 220));
     }
     setBulkProgress(null);
-    setBulkResult({filled, skipped, failed, total: candidates.length, cancelled: bulkCancelRef.current});
+    setBulkResult({filled, skipped, failed, total: candidates.length, cancelled: bulkCancelRef.current, mode: bulkRefetchAll ? "refetchAll" : "missingOnly"});
   };
   const cancelBulk = () => { bulkCancelRef.current = true; };
   const closeBulk = () => { setBulkOpen(false); setBulkProgress(null); setBulkResult(null); };
@@ -1886,6 +1904,36 @@ const SongsView = ({songs, events, member, mutate}) => {
     bulkOpen && h("div",{className:"modal-bg",onClick: bulkProgress ? null : closeBulk},
       h("div",{className:"card p-5 max-w-md w-full",onClick:e=>e.stopPropagation()},
         h("h3",{className:"display text-2xl mb-2"},"Auto-fill from Apple Music"),
+        // Step 1: confirmation panel — shown before run starts.
+        !bulkProgress && !bulkResult && h(React.Fragment,null,
+          h("p",{className:"text-sm text-[var(--ink-soft)] mb-3"},
+            "Looks up each song's metadata (length, album, year, cover art, link) on Apple Music."
+          ),
+          h("div",{className:"space-y-2 mb-4"},
+            h("label",{className:"flex items-start gap-2 cursor-pointer p-2 rounded border " + (!bulkRefetchAll ? "border-[var(--berry)] bg-[var(--berry)]/5" : "border-[var(--line)]/30")},
+              h("input",{type:"radio",name:"bulkMode",checked:!bulkRefetchAll,onChange:()=>setBulkRefetchAll(false),className:"mt-1"}),
+              h("div",null,
+                h("div",{className:"text-sm font-semibold"},"Fill blanks only ", h("span",{className:"text-xs text-[var(--ink-soft)] font-normal"},"(", bulkCandidatesMissing.length, " song", bulkCandidatesMissing.length===1?"":"s", ")")),
+                h("div",{className:"text-xs text-[var(--ink-soft)] mt-0.5"},"Only songs missing details. Existing values are kept.")
+              )
+            ),
+            h("label",{className:"flex items-start gap-2 cursor-pointer p-2 rounded border " + (bulkRefetchAll ? "border-[var(--berry)] bg-[var(--berry)]/5" : "border-[var(--line)]/30")},
+              h("input",{type:"radio",name:"bulkMode",checked:bulkRefetchAll,onChange:()=>setBulkRefetchAll(true),className:"mt-1"}),
+              h("div",null,
+                h("div",{className:"text-sm font-semibold"},"Re-fetch all ", h("span",{className:"text-xs text-[var(--ink-soft)] font-normal"},"(", bulkCandidatesAll.length, " song", bulkCandidatesAll.length===1?"":"s", ")")),
+                h("div",{className:"text-xs text-[var(--ink-soft)] mt-0.5"},
+                  h("span",{className:"text-[var(--berry)] font-semibold"},"Overwrites"), " existing length, album, year, cover, and link with whatever Apple Music returns. Use if data looks wrong."
+                )
+              )
+            )
+          ),
+          h("p",{className:"text-xs text-[var(--ink-soft)] italic mb-3"},"Songs with no confident match are skipped — you can review them after."),
+          h("div",{className:"flex gap-2"},
+            h("button",{onClick:closeBulk,className:"btn bg-white px-4 py-2 text-sm"},"Cancel"),
+            h("button",{onClick:runBulkFill,className:"btn berry-bg px-4 py-2 text-sm font-semibold ml-auto",disabled: (bulkRefetchAll ? bulkCandidatesAll.length : bulkCandidatesMissing.length) === 0},"Start")
+          )
+        ),
+        // Step 2: progress.
         bulkProgress && h(React.Fragment,null,
           h("p",{className:"text-sm text-[var(--ink-soft)]"}, "Looking up " + bulkProgress.current + " of " + bulkProgress.total),
           h("p",{className:"text-sm font-semibold mt-1 truncate"}, bulkProgress.song),
@@ -1895,10 +1943,16 @@ const SongsView = ({songs, events, member, mutate}) => {
           h("div",{className:"mt-4"},
             h("button",{onClick:cancelBulk,className:"btn bg-white px-4 py-2 text-sm"},"Cancel")
           ),
-          h("p",{className:"text-xs text-[var(--ink-soft)] italic mt-3"},"Existing fields are never overwritten. Only blank fields get filled.")
+          h("p",{className:"text-xs text-[var(--ink-soft)] italic mt-3"},
+            bulkRefetchAll ? "Re-fetch mode: existing values are being overwritten." : "Existing fields are never overwritten. Only blank fields get filled."
+          )
         ),
+        // Step 3: results.
         !bulkProgress && bulkResult && h(React.Fragment,null,
           h("p",{className:"text-sm font-semibold"}, bulkResult.cancelled ? "Cancelled." : "Done."),
+          h("p",{className:"text-xs text-[var(--ink-soft)] mt-0.5"},
+            "Mode: ", bulkResult.mode === "refetchAll" ? "Re-fetched all songs (overwrote existing values)." : "Filled blanks only (existing values kept)."
+          ),
           h("div",{className:"mt-3 space-y-1 text-sm"},
             h("div",null, h("span",{className:"text-[var(--good)] font-semibold"},"✓ Filled: "), bulkResult.filled),
             h("div",null, h("span",{className:"text-[var(--ink-soft)] font-semibold"},"— Skipped: "), bulkResult.skipped, " ", h("span",{className:"text-xs text-[var(--ink-soft)] italic"},"(no confident match)")),
@@ -1908,9 +1962,6 @@ const SongsView = ({songs, events, member, mutate}) => {
           h("div",{className:"mt-4 flex gap-2"},
             h("button",{onClick:closeBulk,className:"btn berry-bg px-4 py-2 text-sm font-semibold"},"Close")
           )
-        ),
-        !bulkProgress && !bulkResult && h(React.Fragment,null,
-          h("p",{className:"text-sm text-[var(--ink-soft)]"},"Preparing…")
         )
       )
     ),
@@ -1957,9 +2008,13 @@ const SongsView = ({songs, events, member, mutate}) => {
         }, (staleOnly ? "✓ " : "") + "⚠ Stale only", repertoireStaleCount > 0 && h("span",{className:"ml-1 opacity-70"}, "(" + repertoireStaleCount + ")")),
         repertoireStaleCount === 0 && !staleOnly && h("span",{className:"text-xs text-[var(--ink-soft)] italic"},"No stale songs — nothing's been gathering dust.")
       ),
-      bulkCandidates.length > 0 && h("div",{className:"mt-2 pt-2 border-t border-[var(--line)]/15 flex items-center gap-2 flex-wrap"},
-        h("span",{className:"text-xs text-[var(--ink-soft)]"}, bulkCandidates.length + " song" + (bulkCandidates.length===1?"":"s") + " missing details"),
-        h("button",{onClick:startBulkFill,className:"btn bg-white px-2.5 py-1 text-xs font-semibold ml-auto"},"🔍 Auto-fill from Apple Music")
+      bulkCandidatesAll.length > 0 && h("div",{className:"mt-2 pt-2 border-t border-[var(--line)]/15 flex items-center gap-2 flex-wrap"},
+        h("span",{className:"text-xs text-[var(--ink-soft)]"},
+          bulkCandidatesMissing.length > 0
+            ? (bulkCandidatesMissing.length + " song" + (bulkCandidatesMissing.length===1?"":"s") + " missing details")
+            : "All songs have details — re-fetch available"
+        ),
+        h("button",{onClick:openBulkFill,className:"btn bg-white px-2.5 py-1 text-xs font-semibold ml-auto"},"🔍 Auto-fill from Apple Music")
       )
     ),
     adding && h(SongForm,{onSave: createSong, onCancel: () => setAdding(false)}),
@@ -2095,6 +2150,25 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, onBack, onUpdate
     arr.splice(songIdx, 1);
     updateSet(setIdx, {songIds: arr});
   };
+  // Move a song from one set to another (appends to the destination, no duplicates).
+  const moveSongToSet = (fromSetIdx, songIdx, toSetIdx) => {
+    if (fromSetIdx === toSetIdx) return;
+    const fromArr = (sets[fromSetIdx].songIds || []).slice();
+    const [sid] = fromArr.splice(songIdx, 1);
+    if (!sid) return;
+    const toArr = (sets[toSetIdx].songIds || []).slice();
+    if (toArr.includes(sid)) {
+      // Already there — just remove from origin so the move still feels right.
+      onUpdate({sets: sets.map((s, i) => i === fromSetIdx ? Object.assign({}, s, {songIds: fromArr}) : s)});
+      return;
+    }
+    toArr.push(sid);
+    onUpdate({sets: sets.map((s, i) => {
+      if (i === fromSetIdx) return Object.assign({}, s, {songIds: fromArr});
+      if (i === toSetIdx) return Object.assign({}, s, {songIds: toArr});
+      return s;
+    })});
+  };
   const addSongToSet = (setIdx, songId) => {
     const cur = sets[setIdx].songIds || [];
     if (cur.includes(songId)) return;
@@ -2173,6 +2247,16 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, onBack, onUpdate
       h("div",{className:"flex flex-col gap-1 shrink-0 pt-3"},
         h("button",{onClick:()=>moveSongInSet(setIdx, songIdx, -1),disabled:songIdx===0,className:"pill px-2 py-0.5 text-xs bg-white disabled:opacity-30",title:"Move up"},"↑"),
         h("button",{onClick:()=>moveSongInSet(setIdx, songIdx, 1),disabled:isLast,className:"pill px-2 py-0.5 text-xs bg-white disabled:opacity-30",title:"Move down"},"↓"),
+        sets.length > 1 && h("select",{
+          value:"",
+          onChange:e=>{ const v = e.target.value; if (v !== "") { moveSongToSet(setIdx, songIdx, parseInt(v,10)); } e.target.value=""; },
+          className:"pill px-1 py-0.5 text-xs bg-white",
+          title:"Move to another set",
+          style:{maxWidth:"68px"}
+        },
+          h("option",{value:""},"→ Set"),
+          sets.map((s, i) => i === setIdx ? null : h("option",{key:i,value:i}, s.name || ("Set " + (i+1))))
+        ),
         h("button",{onClick:()=>removeSongFromSet(setIdx, songIdx),className:"pill px-2 py-0.5 text-xs bg-white text-[var(--berry)]",title:"Remove from setlist"},"×")
       )
     );
