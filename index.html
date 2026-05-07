@@ -116,6 +116,96 @@
   <div id="root"></div>
 
   <script>
+/* =============================================================================
+ * SOURBERRY — single-file React UMD app
+ * =============================================================================
+ *
+ * Search anchors are stable; line numbers are not. To navigate, use your
+ * editor's find for "// ===" or the unique component declarations below.
+ *
+ * --- 1. CONSTANTS & SEED DATA -----------------------------------------------
+ *   APP_VERSION                 — version string (semver, bump per release)
+ *   MEMBERS / INSTRUMENTS       — band roster + instrument options
+ *   SONG_STATUSES / VENUE_TYPES / EQUIPMENT_CATEGORIES — enums
+ *   SEED_EVENTS / SEED_SONGS / SEED_SETLISTS / SEED_EQUIPMENT — first-run data
+ *   buildSeedState              — assembled initial bin contents
+ *
+ * --- 2. SCHEMA MIGRATION ----------------------------------------------------
+ *   migrate(data)               — forward-only migrations from v1 to v11
+ *
+ * --- 3. JSONBin SYNC LAYER --------------------------------------------------
+ *   jbCreateBin / jbReadBin / jbUpdateBin
+ *   useSyncedState              — main sync hook: poll + write + conflict detect
+ *                                 (pre-flight read, updatedAt comparison, banner)
+ *
+ * --- 4. LOCAL BACKUPS (per-device, localStorage) ----------------------------
+ *   loadBackups / saveBackup / deleteBackup / writeBackups
+ *   downloadJSON                — export current state as .json
+ *   validateBackupShape         — defensive check before restore/import
+ *   forceSnapshot (App-level)   — bypass the 2-min throttle for destructive ops
+ *
+ * --- 5. CALENDAR & MAPS HELPERS ---------------------------------------------
+ *   buildICS / buildVEvent / downloadICS — calendar export (.ics)
+ *   geocodeLocation             — Nominatim lookup (cached on event)
+ *   osmEmbedUrl / mapsUrlFor    — map embed + maps.apple.com link
+ *
+ * --- 6. APPLE MUSIC LOOKUP --------------------------------------------------
+ *   jsonpFetch                  — JSONP wrapper to dodge CORS on iTunes API
+ *   itunesSearch                — search by query, returns top N matches
+ *   confidenceMatch             — title+artist fuzzy compare for auto-fill
+ *
+ * --- 7. DOMAIN HELPERS ------------------------------------------------------
+ *   fmtDate / fmtDateLong / todayISO / isPast    — date formatting
+ *   parseDuration / formatDuration / sumLengths  — song length utilities
+ *   buildLastRehearsedMap / staleSongsForSetlist / isStaleSong
+ *   computeGigSchedule          — gig timing planner (arrival, sets, breaks)
+ *   buildRehearsalRecap         — paste-ready rehearsal summary
+ *   getSetting / getRehearsalLocations           — band-shared settings reader
+ *
+ * --- 8. CHROME COMPONENTS ---------------------------------------------------
+ *   SetupScreen                 — first-run JSONBin key entry
+ *   ShareScreen                 — post-create "share this URL" panel
+ *   ConflictBanner              — "someone else saved" → keep mine / use theirs
+ *   SyncPanel / SyncBadge       — sync status modal + persistent badge
+ *   SettingsModal + BackupsSection + BandSettingsSection + MemberInstrumentsSection
+ *   PhotoCropper                — touch-friendly profile photo crop UI
+ *
+ * --- 9. EVENTS (gigs + rehearsals) ------------------------------------------
+ *   EventForm                   — create / edit one event
+ *   EventCard                   — event display with availability, schedule, map
+ *   TypedScheduleView           — list view filtered by gig/rehearsal
+ *
+ * --- 10. SONGS --------------------------------------------------------------
+ *   SongForm + SongCard         — edit / display a single song
+ *   SongsView                   — full library with status tabs + bulk fill
+ *   SongMultiPicker             — search-as-you-type multi-select for forms
+ *   SongPicker                  — modal picker used by setlist detail
+ *
+ * --- 11. SETLISTS -----------------------------------------------------------
+ *   GigModeView                 — full-screen / printable on-stage setlist
+ *   SetlistDetail               — edit one setlist (sets, soundcheck, encore)
+ *   SetlistsView                — index split into Upcoming & Past
+ *
+ * --- 12. PRACTICE PLANNER ---------------------------------------------------
+ *   PracticeView                — month calendar of band availability
+ *   DayDetailPanel              — modal for one day's marks + book button
+ *
+ * --- 13. EQUIPMENT & WISHLIST -----------------------------------------------
+ *   EquipmentForm + EquipmentCard + OwnedEquipmentView
+ *   WishItemForm + WishItemCard + WishlistView
+ *   EquipmentView               — kit / wishlist tab switcher
+ *
+ * --- 14. FEEDBACK BOARD -----------------------------------------------------
+ *   FeedbackView                — kanban-style comments / bugs / features
+ *
+ * --- 15. REHEARSAL RUN MODE -------------------------------------------------
+ *   RehearsalRunMode            — focused step-through during a rehearsal
+ *
+ * --- 16. APP ROOT -----------------------------------------------------------
+ *   App                         — top-level routing, identity gate, tabs
+ *
+ * =============================================================================
+ */
 const _React = React,
   useState = _React.useState,
   useEffect = _React.useEffect,
@@ -124,7 +214,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.19.0";
+const APP_VERSION = "0.20.0";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 // Instruments for member profiles (multi-select). Order is the display order.
 // Icons are emoji — render natively on iOS/macOS/Android. Bass uses 🪕 (banjo) as the closest
@@ -2519,7 +2609,7 @@ const EventCard = ({ev, member, memberProfiles, songs, events, pinnedSetlist, on
   );
 };
 
-const TypedScheduleView = ({events, songs, setlists, member, memberProfiles, mutate, eventType, onStartRehearsal, settings}) => {
+const TypedScheduleView = ({events, songs, setlists, member, memberProfiles, mutate, eventType, onStartRehearsal, settings, onForceSnapshot}) => {
   const [editingId, setEditingId] = useState(null);
   const [adding, setAdding] = useState(false);
   const [showPast, setShowPast] = useState(false);
@@ -2559,6 +2649,8 @@ const TypedScheduleView = ({events, songs, setlists, member, memberProfiles, mut
   const clearAllPast = () => {
     if (past.length === 0) return;
     if (!confirm("Delete " + past.length + " past " + eventType + (past.length===1?"":"s") + "?")) return;
+    // v0.20.0: safety snapshot before bulk delete (could wipe dozens of past events).
+    if (onForceSnapshot) onForceSnapshot();
     mutate(prev => { const events = Object.assign({}, prev.events||{}); past.forEach(e => delete events[e.id]); return Object.assign({}, prev, {events}); });
   };
   const addLabel = eventType === "gig" ? "+ Gig" : "+ Rehearsal";
@@ -4107,7 +4199,7 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack
   );
 };
 
-const SetlistsView = ({setlists, songs, events, member, mutate, settings, onStartGigMode}) => {
+const SetlistsView = ({setlists, songs, events, member, mutate, settings, onStartGigMode, onForceSnapshot}) => {
   const [openId, setOpenId] = useState(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -4118,7 +4210,13 @@ const SetlistsView = ({setlists, songs, events, member, mutate, settings, onStar
     setOpenId(id); setCreating(false); setNewName("");
   };
   const updateSetlist = (id, data) => mutate(prev => Object.assign({}, prev, {setlists: Object.assign({}, prev.setlists||{}, {[id]: Object.assign({}, (prev.setlists && prev.setlists[id])||{}, data)})}));
-  const deleteSetlist = id => { mutate(prev => { const sl = Object.assign({}, prev.setlists||{}); delete sl[id]; return Object.assign({}, prev, {setlists: sl}); }); setOpenId(null); };
+  // v0.20.0: safety snapshot before deleting a setlist (deletes the setlist plus all its
+  // sets, soundcheck, encore — meaningful to be able to undo via Restore).
+  const deleteSetlist = id => {
+    if (onForceSnapshot) onForceSnapshot();
+    mutate(prev => { const sl = Object.assign({}, prev.setlists||{}); delete sl[id]; return Object.assign({}, prev, {setlists: sl}); });
+    setOpenId(null);
+  };
   const duplicateSetlist = id => {
     const src = setlists && setlists[id];
     if (!src) return;
@@ -4233,7 +4331,7 @@ const dayCellColor = (yesCount, totalMembers) => {
 };
 
 // v8: month-by-month calendar, compact intro
-const PracticeView = ({practiceAvail, events, member, mutate, onGoToSchedule}) => {
+const PracticeView = ({practiceAvail, events, member, mutate, onGoToSchedule, onForceSnapshot}) => {
   const [monthOffset, setMonthOffset] = useState(0); // 0 = current month
   const [openDate, setOpenDate] = useState(null);
   const [showBulk, setShowBulk] = useState(false);
@@ -4310,6 +4408,8 @@ const PracticeView = ({practiceAvail, events, member, mutate, onGoToSchedule}) =
   const clearAllMyMarks = () => {
     if (!member) return;
     if (!confirm("Clear all your availability marks for " + monthLabel + "?")) return;
+    // v0.20.0: safety snapshot before wiping a whole month of personal marks.
+    if (onForceSnapshot) onForceSnapshot();
     bulkApply(() => true, null);
   };
 
@@ -5500,6 +5600,14 @@ const App = () => {
   const settings = sync.state.settings || {};
   const feedback = sync.state.feedback || {};
 
+  // v0.20.0: force-snapshot helper for high-risk destructive ops (bulk delete past events,
+  // delete setlist, clear all my marks). Bypasses the 2-minute auto-snapshot throttle so that
+  // even if the throttled snapshot just fired, the destructive action still gets its own
+  // safety point. Silent failure — backup errors must never block the action itself.
+  const forceSnapshot = useCallback(() => {
+    try { saveBackup(binId, sync.state, {force: true}); } catch (_) {}
+  }, [binId, sync.state]);
+
   // "Who are you?" gate. If a fresh visitor opens the URL on a new device, member
   // identity is null (each device has its own localStorage). Without this gate, the
   // app renders normally but with no member selected — meaning their availability,
@@ -5581,11 +5689,11 @@ const App = () => {
         )
       )
     ),
-    tab==="gigs" && h(TypedScheduleView,{events:events,songs:songs,setlists:setlists,member:member,memberProfiles:memberProfiles,mutate:sync.mutate,eventType:"gig",settings:settings}),
-    tab==="rehearsals" && h(TypedScheduleView,{events:events,songs:songs,setlists:setlists,member:member,memberProfiles:memberProfiles,mutate:sync.mutate,eventType:"rehearsal",settings:settings,onStartRehearsal: (id) => setRunRehearsalId(id)}),
-    tab==="practice" && h(PracticeView,{practiceAvail:practiceAvail,events:events,member:member,mutate:sync.mutate,onGoToSchedule:()=>setTab("rehearsals")}),
+    tab==="gigs" && h(TypedScheduleView,{events:events,songs:songs,setlists:setlists,member:member,memberProfiles:memberProfiles,mutate:sync.mutate,eventType:"gig",settings:settings,onForceSnapshot:forceSnapshot}),
+    tab==="rehearsals" && h(TypedScheduleView,{events:events,songs:songs,setlists:setlists,member:member,memberProfiles:memberProfiles,mutate:sync.mutate,eventType:"rehearsal",settings:settings,onStartRehearsal: (id) => setRunRehearsalId(id),onForceSnapshot:forceSnapshot}),
+    tab==="practice" && h(PracticeView,{practiceAvail:practiceAvail,events:events,member:member,mutate:sync.mutate,onGoToSchedule:()=>setTab("rehearsals"),onForceSnapshot:forceSnapshot}),
     tab==="songs" && h(SongsView,{songs:songs,events:events,member:member,memberProfiles:memberProfiles,mutate:sync.mutate,settings:settings}),
-    tab==="setlists" && h(SetlistsView,{setlists:setlists,songs:songs,events:events,member:member,mutate:sync.mutate,settings:settings,onStartGigMode:(id)=>setGigSetlistId(id)}),
+    tab==="setlists" && h(SetlistsView,{setlists:setlists,songs:songs,events:events,member:member,mutate:sync.mutate,settings:settings,onStartGigMode:(id)=>setGigSetlistId(id),onForceSnapshot:forceSnapshot}),
     tab==="equipment" && h(EquipmentView,{equipment:equipment,wishlist:wishlist,member:member,memberProfiles:memberProfiles,mutate:sync.mutate}),
     tab==="feedback" && h(FeedbackView,{feedback:feedback,member:member,memberProfiles:memberProfiles,mutate:sync.mutate}),
     h("footer",{className:"mt-12 pt-6 border-t border-[var(--line)]/30 text-xs text-[var(--ink-soft)] flex justify-between flex-wrap gap-2"},
