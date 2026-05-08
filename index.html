@@ -84,6 +84,15 @@
     @media (min-width: 640px) {
       .sb-dot { width: 10px; height: 10px; }
     }
+    /* v0.18.0: brief flash to draw attention to a just-added song or just-navigated-to gig.
+       Using box-shadow rather than background so it works on cards that already have backgrounds. */
+    .flash-target {
+      animation: sb-flash 1.4s ease-out 1;
+    }
+    @keyframes sb-flash {
+      0%   { box-shadow: 0 0 0 4px rgba(233, 60, 163, 0.55); background: rgba(233, 60, 163, 0.15); }
+      100% { box-shadow: 0 0 0 0 rgba(233, 60, 163, 0);     background: transparent; }
+    }
     /* v0.23.0 / v0.24.0: sticky modal header. The day-detail modal can be tall on mobile, so the
        close button stays reachable when scrolling. v0.24.0: removed the negative-margin trick that
        v0.23.0 used — it left a gap above the header where scrolling content showed through.
@@ -243,46 +252,44 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.24.0";
+const APP_VERSION = "0.25.0";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 
-// v0.24.0: random musician quotes for the footer. Picked once per app load. Mix of
-// real attributed quotes and a few that are widely circulated as "by X" online —
-// I've kept these to the safer, well-documented ones. If anything here is
-// misattributed, blame the internet's collective memory.
+// v0.24.0/v0.25.0: random musician quotes for the footer. Picked once per app load.
+// v0.25.0: refreshed lineup — heavily crude/rude/racy, leaning into rockstar misanthropy.
+// Real attributed quotes where verifiable; "widely attributed" caveat where not. If anything
+// is wildly misattributed, blame the internet's collective memory and tell me.
 const MUSICIAN_QUOTES = [
-  {q: "Without music, life would be a mistake.", who: "Friedrich Nietzsche"},
-  {q: "Hell is full of musical amateurs.", who: "George Bernard Shaw"},
-  {q: "I don't know anything about music. In my line, you don't have to.", who: "Elvis Presley"},
-  {q: "Music is the strongest form of magic.", who: "Marilyn Manson"},
-  {q: "If it sounds good, it is good.", who: "Duke Ellington"},
-  {q: "There are only two kinds of music: good and bad.", who: "Louis Armstrong"},
-  {q: "Talking about music is like dancing about architecture.", who: "Often attributed to Frank Zappa"},
-  {q: "Music is what feelings sound like.", who: "Anonymous"},
-  {q: "The only truth is music.", who: "Jack Kerouac"},
-  {q: "I'd rather be hated for who I am, than loved for who I am not.", who: "Kurt Cobain"},
-  {q: "Rock and roll is the hamburger that ate the world.", who: "Peter York"},
-  {q: "Music is the silence between the notes.", who: "Claude Debussy"},
+  {q: "I want to make records that, when you put them on at a party, everybody fucks.", who: "Rick Rubin"},
+  {q: "Of course I'm out of my mind. It's dark and scary in there.", who: "Ozzy Osbourne"},
+  {q: "If it's too loud, you're too old.", who: "Ted Nugent"},
+  {q: "I'm not the best singer, and I'm not the best guitar player, but I'm not afraid to sing the highest note or play the dirtiest chord.", who: "Lemmy Kilmister"},
+  {q: "Some people get embarrassed by their genitals. I never have.", who: "Iggy Pop"},
+  {q: "I never had any problem with drugs. I had problems with the police.", who: "Keith Richards"},
+  {q: "Rock 'n' roll: the most brutal, ugly, desperate, vicious form of expression it has been my misfortune to hear.", who: "Frank Sinatra (in 1957, hating it)"},
+  {q: "Without deviation from the norm, progress is not possible.", who: "Frank Zappa"},
+  {q: "I look like I should hand you a cocktail, but I sing like I should hand you a sword.", who: "Janis Joplin (widely attributed)"},
+  {q: "I'd rather have ten years of superhypermost than live to be seventy by sitting in some goddamn chair watching TV.", who: "Janis Joplin"},
+  {q: "Bass players are like the wedgie of the band — uncomfortable but essential.", who: "Anonymous bassist, every bassist"},
+  {q: "Tonight, the part of Liam Gallagher will be played by a tetchy man who is mildly disappointed in you.", who: "Liam Gallagher (paraphrased, basically every interview)"},
+  {q: "Rock journalism is people who can't write interviewing people who can't talk for people who can't read.", who: "Frank Zappa"},
+  {q: "I'd rather be sailing through the air on a guitar string than sitting through one more meeting.", who: "Anonymous, but probably you"},
+  {q: "Drummers are basically just failed musicians who learned to count to four.", who: "Said by every non-drummer about every drummer"},
+  {q: "Talent is a long patience, and originality an effort of will and intense observation.", who: "Gustave Flaubert (sneaks in because it's actually true)"},
+  {q: "I'd rather be hated for who I am than loved for who I am not.", who: "Kurt Cobain"},
+  {q: "When music fails to agree to the ear, to soothe the ear and the heart and the senses, then it has missed its point.", who: "Maria Callas (judging your jam)"},
   {q: "Wagner's music is better than it sounds.", who: "Mark Twain"},
-  {q: "I think music in itself is healing.", who: "Billy Joel"},
-  {q: "When words fail, music speaks.", who: "Hans Christian Andersen"},
-  {q: "Music is enough for a lifetime, but a lifetime is not enough for music.", who: "Sergei Rachmaninoff"},
-  {q: "If you have to ask what jazz is, you'll never know.", who: "Louis Armstrong"},
-  {q: "I hate music, especially when it's played.", who: "Jimmy Durante"},
-  {q: "A painter paints pictures on canvas. But musicians paint their pictures on silence.", who: "Leopold Stokowski"},
-  {q: "The piano keys are black and white but they sound like a million colors.", who: "María Cristina Mena"},
-  {q: "Music expresses that which cannot be put into words and that which cannot remain silent.", who: "Victor Hugo"},
-  {q: "Information is not knowledge. Knowledge is not wisdom. Wisdom is not truth. Truth is not beauty. Beauty is not love. Love is not music. Music is THE BEST.", who: "Frank Zappa"},
-  {q: "My music will go on forever. Maybe it's a fool say that, but when me know facts me can say facts.", who: "Bob Marley"},
-  {q: "All you need in life is ignorance and confidence, and then success is sure.", who: "Mark Twain (not about music, but suspiciously rehearsal-coded)"},
-  {q: "If music be the food of love, play on.", who: "Shakespeare, Twelfth Night"},
-  {q: "I'm not arguing, I'm just explaining why I'm right.", who: "Every band member ever"},
-  {q: "Practice doesn't make perfect. Perfect practice makes perfect.", who: "Vince Lombardi (often misquoted at music students)"},
-  {q: "Music is the wine which inspires one to new generative processes.", who: "Ludwig van Beethoven"},
-  {q: "Don't play what's there, play what's not there.", who: "Miles Davis"},
-  {q: "It ain't what you don't know that gets you into trouble. It's what you know for sure that just ain't so.", who: "Mark Twain"},
-  {q: "I'd love to tell you that what we did musically was carefully thought out and intellectualised. We just turned up and played.", who: "John Lennon"},
-  {q: "Tomorrow is the most important thing in life. Comes into us at midnight very clean.", who: "John Wayne (irrelevant but oddly motivating before a gig)"}
+  {q: "All the best stories in the world are but one story in reality — the story of escape. It is the only thing which interests us all and at all times — how to escape.", who: "Walter Bagehot (basically a rehearsal)"},
+  {q: "I'm shy, paranoid, whatever word you want to use. I hate fame. I've done everything I can to avoid it.", who: "Johnny Depp (says the man with thirty films)"},
+  {q: "If you're going to do something tonight that you'll be sorry for tomorrow morning, sleep late.", who: "Henny Youngman"},
+  {q: "Be regular and orderly in your life so that you may be violent and original in your work.", who: "Gustave Flaubert"},
+  {q: "I am the world's forgotten boy, the one who searches and destroys.", who: "Iggy Pop, 'Search and Destroy'"},
+  {q: "Hope I die before I get old.", who: "The Who, 'My Generation' (still going at 80)"},
+  {q: "If you're not pissing somebody off, you're not doing it right.", who: "Anonymous, every garage band"},
+  {q: "I think people who can't believe in God can't believe in anything else either.", who: "Frank Sinatra (talking nonsense, included for vibes)"},
+  {q: "I have nothing to say, and I am saying it, and that is poetry.", who: "John Cage (aka every fifth band practice)"},
+  {q: "There's only one way to be intelligent. Listening to your own voice. People always think they know better than you.", who: "Lemmy Kilmister"},
+  {q: "When I die, I want to come back as me.", who: "Keith Richards"}
 ];
 
 // v0.24.0: rehearsal excuse generator. Tap a button on a rehearsal card → appends
@@ -327,6 +334,34 @@ const REHEARSAL_EXCUSE_FLOURISHES = [
 const pickRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const generateRehearsalExcuse = () => {
   return "Sorry I'm late — " + pickRandom(REHEARSAL_EXCUSE_REASONS) + ". " + pickRandom(REHEARSAL_EXCUSE_FLOURISHES);
+};
+
+// v0.25.0: rockstar moniker generator. Pure entertainment. Picks an adjective + noun and
+// optionally a suffix to construct a stage name like "Diamond Steel ${name}" or "${name} Thunderfingers".
+// Two patterns chosen randomly so it doesn't feel formulaic.
+const ROCKSTAR_ADJECTIVES = [
+  "Diamond","Velvet","Iron","Black","Crimson","Midnight","Electric","Wild","Reckless","Holy","Unholy",
+  "Smoky","Razor","Thunder","Liquid","Crooked","Moonlit","Howling","Gilded","Tarnished","Atomic",
+  "Tactical","Greasy","Naked","Fearsome","Sleazy","Salty","Filthy","Cosmic","Dirty","Long-Lost"
+];
+const ROCKSTAR_NOUNS = [
+  "Steel","Snake","Rose","Dagger","Lightning","Wolf","Crow","Velvet","Cyclone","Fury",
+  "Hammer","Wreckage","Heart","Rebellion","Disaster","Monsoon","Hangover","Switchblade","Avalanche","Saint",
+  "Outlaw","Ghost","Riot","Banshee","Highway","Inferno","Bones","Halo","Vampire","Smoke"
+];
+const ROCKSTAR_SUFFIXES = [
+  "Thunderfingers","the Magnificent","the Unrepentant","Junior","of the Damned","X","McGroove",
+  "the Third","of Mercy","Esquire","the Loud","Diamondback","de Luxe","Apocalypse","O'Neon",
+  "the Wretched","Übermensch","Maximus","of Soho","the Implausible"
+];
+const generateRockstarMoniker = (realName) => {
+  // Two construction patterns, picked randomly.
+  const pattern = Math.random() < 0.6 ? "prefix" : "suffix";
+  if (pattern === "prefix") {
+    return pickRandom(ROCKSTAR_ADJECTIVES) + " " + pickRandom(ROCKSTAR_NOUNS) + " " + (realName || "Anonymous");
+  } else {
+    return (realName || "Anonymous") + " \"" + pickRandom(ROCKSTAR_SUFFIXES) + "\"";
+  }
 };
 // Instruments for member profiles (multi-select). Order is the display order.
 // Icons are emoji — render natively on iOS/macOS/Android. Bass uses 🪕 (banjo) as the closest
@@ -2071,14 +2106,31 @@ const MemberInstrumentsSection = ({memberProfiles, mutate}) => {
       return Object.assign({}, prev, {memberProfiles: profiles});
     });
   };
+  // v0.25.0: per-member rockstar moniker generator. Local state only — not stored, not synced.
+  // Tap → generates a moniker. Tap again → re-rolls. Pure entertainment for warming up.
+  const [monikers, setMonikers] = useState({}); // {memberId: "Diamond Steel Veena"}
+  const rollMoniker = (memberId, name) => {
+    setMonikers(prev => Object.assign({}, prev, {[memberId]: generateRockstarMoniker(name)}));
+  };
   return h("div",{className:"mt-5 pt-4 border-t border-[var(--line)]/15"},
     h("div",{className:"ticker text-[var(--berry)] mb-2"},"Instruments"),
     h("p",{className:"text-xs text-[var(--ink-soft)] mb-3"},"Tap to toggle. Pick all that apply — most of us play more than one."),
     h("div",{className:"space-y-3"},
       MEMBERS.map(m => {
         const cur = (memberProfiles && memberProfiles[m.id] && Array.isArray(memberProfiles[m.id].instruments)) ? memberProfiles[m.id].instruments : [];
+        const moniker = monikers[m.id];
         return h("div",{key:m.id},
-          h("div",{className:"text-sm font-semibold mb-1"}, m.name),
+          h("div",{className:"flex items-baseline justify-between gap-2 mb-1 flex-wrap"},
+            h("div",{className:"text-sm font-semibold"}, m.name),
+            // v0.25.0: tiny rockstar moniker generator, tucked next to the name
+            h("button",{
+              type:"button",
+              onClick: () => rollMoniker(m.id, m.name),
+              className:"text-[10px] ticker text-[var(--ink-soft)] hover:text-[var(--berry)]",
+              title:"Generate a stage name"
+            }, moniker ? "🤘 re-roll" : "🤘 stage name")
+          ),
+          moniker && h("div",{className:"text-xs italic text-[var(--berry)] mb-1.5 -mt-0.5"}, "\u201C", moniker, "\u201D"),
           h("div",{className:"flex flex-wrap gap-1.5"},
             INSTRUMENTS.map(inst => {
               const on = cur.includes(inst.id);
@@ -2317,7 +2369,39 @@ const AvailabilityButtons = ({ev, member, onSet}) => {
 };
 const blankEvent = (type, defaultLocation) => ({date: todayISO(), startTime:"18:00", endTime:"21:00", type: type||"rehearsal", venueType:"in-person-studio", location: defaultLocation || "", bookingOwner:"", confirmed:false, status:"proposed", title:"", comments:"", recordingUrl:"", gigNotes:"", actualSetlistId:null, accessCodes:[]});
 
-const EventForm = ({initial, onSave, onCancel, onDelete, locationSuggestions, savedRehearsalLocations, songs}) => {
+// v0.25.0: tiny helper component used inside EventForm. A select + Add button — picks a setlist
+// and bulk-adds its songs (sets + soundcheck + encore, deduped) into the picker selection
+// below. Optimistic UI: re-selects the empty option after each add so the user can repeat
+// for multiple setlists if they want.
+const SetlistQuickAddRow = ({setlists, targetLabel, onAdd}) => {
+  const [picked, setPicked] = useState("");
+  const all = setlistsList(setlists);
+  if (all.length === 0) return null;
+  return h("div",{className:"text-sm md:col-span-2 -mb-2"},
+    h("div",{className:"flex flex-wrap items-center gap-2"},
+      h("span",{className:"ticker text-[var(--ink-soft)] text-[10px]"},"Add to " + targetLabel + " from setlist:"),
+      h("select",{
+        className:"input flex-1 min-w-[160px] py-1 text-xs",
+        value: picked,
+        onChange: e => setPicked(e.target.value)
+      },
+        h("option",{value:""},"— pick a setlist —"),
+        all.map(sl => {
+          const count = setlistSongCount(sl);
+          return h("option",{key:sl.id,value:sl.id}, (sl.name || "(untitled)") + " · " + count + " song" + (count===1?"":"s"));
+        })
+      ),
+      h("button",{
+        type:"button",
+        onClick: () => { if (picked) { onAdd(picked); setPicked(""); } },
+        disabled: !picked,
+        className:"btn berry-bg px-3 py-1 text-xs font-semibold"
+      }, "+ Add")
+    )
+  );
+};
+
+const EventForm = ({initial, onSave, onCancel, onDelete, locationSuggestions, savedRehearsalLocations, songs, setlists}) => {
   const [f, setF] = useState(initial || blankEvent());
   const set = (k, v) => setF(prev => Object.assign({}, prev, {[k]: v}));
   const isRehearsal = f.type === "rehearsal";
@@ -2365,12 +2449,42 @@ const EventForm = ({initial, onSave, onCancel, onDelete, locationSuggestions, sa
       ),
       h("label",{className:"text-sm md:col-span-2"}, h("div",{className:"ticker mb-1"},"Comments"),
         h("textarea",{className:"input",rows:"2",value:f.comments,onChange:e=>set("comments",e.target.value)})),
+      // v0.25.0 (feedback): "Add from setlist…" affordance for rehearsal song pickers.
+      // When a setlist is picked, all its songs (sets + soundcheck + encore) are added to
+      // the field's selection, deduped, preserving any songs already there. Stays in the form
+      // — the picker still works for free-form additions/removals afterwards.
+      isRehearsal && songs && h(SetlistQuickAddRow, {
+        setlists: setlists,
+        targetLabel: "agenda",
+        onAdd: (sourceSlId) => {
+          const sl = setlists && setlists[sourceSlId];
+          if (!sl) return;
+          const ids = setlistAllSongIds(sl);
+          const cur = Array.isArray(f.agendaSongIds) ? f.agendaSongIds : [];
+          const merged = cur.slice();
+          ids.forEach(id => { if (!merged.includes(id)) merged.push(id); });
+          set("agendaSongIds", merged);
+        }
+      }),
       isRehearsal && songs && h(SongMultiPicker,{
         songs: songs,
         selected: Array.isArray(f.agendaSongIds) ? f.agendaSongIds : [],
         onChange: v => set("agendaSongIds", v),
         label: "Agenda — songs to work on",
         helpText: "Plan ahead. Edit on the day if needed."
+      }),
+      isRehearsal && songs && h(SetlistQuickAddRow, {
+        setlists: setlists,
+        targetLabel: "played",
+        onAdd: (sourceSlId) => {
+          const sl = setlists && setlists[sourceSlId];
+          if (!sl) return;
+          const ids = setlistAllSongIds(sl);
+          const cur = Array.isArray(f.playedSongIds) ? f.playedSongIds : [];
+          const merged = cur.slice();
+          ids.forEach(id => { if (!merged.includes(id)) merged.push(id); });
+          set("playedSongIds", merged);
+        }
       }),
       isRehearsal && songs && h(SongMultiPicker,{
         songs: songs,
@@ -2669,35 +2783,40 @@ const EventCard = ({ev, member, memberProfiles, songs, events, pinnedSetlist, on
               ))
             )
           ),
-          // Calendar export + map links (only when there's something useful to point at)
+          // v0.25.0 (feedback): Availability gets its own bordered card to make it obvious
+          // that this is where members tap to mark Yes/Maybe/No. Calendar export and map
+          // links now live UNDER it so they don't visually compete for attention.
+          h("div",{className:"mt-3 p-3 border-2 border-dashed border-[var(--berry)]/40 rounded"},
+            h("div",{className:"ticker text-[var(--berry)] mb-1.5 text-xs"},"Your availability"),
+            h("div",{className:"flex flex-wrap items-center gap-2"},
+              h(AvailabilityButtons,{ev:ev, member:member, onSet:onSetAvailability}),
+              // Excuse generator + Start rehearsal stay alongside availability — they're action buttons.
+              isRehearsal && h("button",{
+                onClick:()=>{ setExcuseText(generateRehearsalExcuse()); setExcuseCopyState("idle"); },
+                className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)]",
+                title:"Generate a stupid excuse"
+              },"🎲 Excuse generator"),
+              isRehearsal && onStartRehearsal && h("button",{onClick:()=>onStartRehearsal(ev.id),className:"btn berry-bg px-3 py-1.5 text-xs font-semibold ml-auto",title:"Open the focused rehearsal runner"},"▶ Start rehearsal"),
+              h("button",{onClick:onEdit,className:"ticker " + (isRehearsal && onStartRehearsal ? "" : "ml-auto") + " text-[var(--ink-soft)] hover:text-[var(--berry)]"},"Edit ▸")
+            )
+          ),
+          // Calendar export + map links — moved BELOW the availability box (v0.25.0 feedback).
           (ev.location || ev.startTime) && h("div",{className:"mt-2 flex items-center gap-3 flex-wrap text-xs"},
             h("button",{
               onClick:()=>{
                 const ics = buildICS(ev, {});
-                if (ics) downloadICS(("sourberry-" + (ev.type||"event") + "-" + (ev.date||"") + ".ics"), ics);
+                if (ics) downloadICS(("sourberry-" + (ev.type||"event") + "-" + (ev.date||"")) + ".ics", ics);
               },
-              className:"ticker text-[var(--berry)] hover:underline",
+              className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)] hover:underline",
               title:"Download .ics — opens in your device's Calendar app"
             },"📅 Add to my local calendar"),
             ev.location && h("a",{
               href: mapsUrlFor(ev.location),
               target:"_blank",
               rel:"noopener",
-              className:"ticker text-[var(--berry)] hover:underline",
+              className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)] hover:underline",
               title:"Open in Maps"
             },"📍 View on map")
-          ),
-          h("div",{className:"mt-3 flex flex-wrap items-center gap-2"},
-            h(AvailabilityButtons,{ev:ev, member:member, onSet:onSetAvailability}),
-            // v0.24.0: rehearsal excuse generator. Tap → opens a modal with a prefilled
-            // apology message you can copy & paste into WhatsApp / wherever. Pure fun.
-            isRehearsal && h("button",{
-              onClick:()=>{ setExcuseText(generateRehearsalExcuse()); setExcuseCopyState("idle"); },
-              className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)]",
-              title:"Generate a stupid excuse"
-            },"🎲 Excuse"),
-            isRehearsal && onStartRehearsal && h("button",{onClick:()=>onStartRehearsal(ev.id),className:"btn berry-bg px-3 py-1.5 text-xs font-semibold ml-auto",title:"Open the focused rehearsal runner"},"▶ Start rehearsal"),
-            h("button",{onClick:onEdit,className:"ticker " + (isRehearsal && onStartRehearsal ? "" : "ml-auto") + " text-[var(--ink-soft)] hover:text-[var(--berry)]"},"Edit ▸")
           )
         ),
         past && h("div",{className:"mt-3 flex items-center gap-2 flex-wrap"},
@@ -2790,10 +2909,28 @@ const EventCard = ({ev, member, memberProfiles, songs, events, pinnedSetlist, on
   );
 };
 
-const TypedScheduleView = ({events, songs, setlists, member, memberProfiles, mutate, eventType, onStartRehearsal, settings, onForceSnapshot}) => {
+const TypedScheduleView = ({events, songs, setlists, member, memberProfiles, mutate, eventType, onStartRehearsal, settings, onForceSnapshot, highlightedEventId, onClearHighlight}) => {
   const [editingId, setEditingId] = useState(null);
   const [adding, setAdding] = useState(false);
   const [showPast, setShowPast] = useState(false);
+  // v0.25.0: when arriving here from a setlist's pinned-gig label, scroll to and flash the
+  // matching card. Then clear the highlight so subsequent re-renders don't keep flashing.
+  const highlightRef = useRef(null);
+  useEffect(() => {
+    if (!highlightedEventId) return;
+    // If the gig is in the past, switch to past view first.
+    const target = events && events[highlightedEventId];
+    if (target && isPast(target.date) && !showPast) setShowPast(true);
+    const t = setTimeout(() => {
+      if (highlightRef.current && highlightRef.current.scrollIntoView) {
+        highlightRef.current.scrollIntoView({behavior: "smooth", block: "center"});
+      }
+      // Clear after the flash animation (1.4s).
+      const c = setTimeout(() => { if (onClearHighlight) onClearHighlight(); }, 1600);
+      return () => clearTimeout(c);
+    }, 80);
+    return () => clearTimeout(t);
+  }, [highlightedEventId]);
   const all = eventsList(events).filter(e => e.type === eventType);
   const upcoming = all.filter(e => !isPast(e.date));
   const past = all.filter(e => isPast(e.date)).reverse();
@@ -2850,22 +2987,28 @@ const TypedScheduleView = ({events, songs, setlists, member, memberProfiles, mut
     adding && (() => {
       const savedLocs = eventType === "rehearsal" ? getRehearsalLocations(settings) : [];
       const defaultLoc = (eventType === "rehearsal" && savedLocs.length > 0) ? savedLocs[0] : "";
-      return h(EventForm,{initial: blankEvent(eventType, defaultLoc), onSave:createEvent, onCancel:()=>setAdding(false), locationSuggestions:locationSuggestions, savedRehearsalLocations: savedLocs, songs:songs});
+      return h(EventForm,{initial: blankEvent(eventType, defaultLoc), onSave:createEvent, onCancel:()=>setAdding(false), locationSuggestions:locationSuggestions, savedRehearsalLocations: savedLocs, songs:songs, setlists:setlists});
     })(),
     list.length===0 && !adding && h("div",{className:"card p-6 text-center"},
       h("p",{className:"display text-xl"}, showPast ? ("No past " + eventType + "s.") : ("No " + eventType + "s in the diary yet.")),
       !showPast && h("p",{className:"text-sm mt-2 text-[var(--ink-soft)]"},"Tap \"" + addLabel + "\" to add one.")
     ),
     h("div",{className:"space-y-3"},
-      list.map(ev => editingId===ev.id
-        ? h(EventForm,{key:ev.id, initial:ev, onSave: f => updateEvent(ev.id, f), onCancel:()=>setEditingId(null), onDelete:()=>deleteEvent(ev.id), locationSuggestions:locationSuggestions, savedRehearsalLocations: ev.type === "rehearsal" ? getRehearsalLocations(settings) : [], songs:songs})
-        : h(EventCard,{key:ev.id, ev:ev, member:member, memberProfiles:memberProfiles, songs:songs, events:events, pinnedSetlist: setlistByGig[ev.id], settings: settings, onEdit:()=>{setEditingId(ev.id); setAdding(false);}, onSetAvailability:setAvailability, onStartRehearsal: onStartRehearsal, onUpdateEvent: (data) => mutate(prev => Object.assign({}, prev, {events: Object.assign({}, prev.events||{}, {[ev.id]: Object.assign({}, (prev.events&&prev.events[ev.id])||{}, data)})})), onLocate: async () => {
-          if (!ev.location) return;
-          const geo = await geocodeLocation(ev.location);
-          if (!geo) { alert("Couldn't find that location on the map. Try editing it to be more specific (e.g. add the city)."); return; }
-          updateEvent(ev.id, {locationGeo: {lat: geo.lat, lng: geo.lng, geocodedAt: Date.now(), source: "nominatim"}});
-        }, onDelete:()=>{ if(confirm("Delete this past event?")) deleteEvent(ev.id); }})
-      )
+      list.map(ev => {
+        const isHighlighted = highlightedEventId && ev.id === highlightedEventId;
+        // v0.25.0: when this is the highlighted event (arrived from a setlist link), wrap the card
+        // in a div that owns the scroll-target ref + a flash class. flash-target uses the CSS
+        // animation we already have for the song-add flash in setlist detail.
+        const inner = editingId===ev.id
+          ? h(EventForm,{key:ev.id, initial:ev, onSave: f => updateEvent(ev.id, f), onCancel:()=>setEditingId(null), onDelete:()=>deleteEvent(ev.id), locationSuggestions:locationSuggestions, savedRehearsalLocations: ev.type === "rehearsal" ? getRehearsalLocations(settings) : [], songs:songs, setlists:setlists})
+          : h(EventCard,{key:ev.id, ev:ev, member:member, memberProfiles:memberProfiles, songs:songs, events:events, pinnedSetlist: setlistByGig[ev.id], settings: settings, onEdit:()=>{setEditingId(ev.id); setAdding(false);}, onSetAvailability:setAvailability, onStartRehearsal: onStartRehearsal, onUpdateEvent: (data) => mutate(prev => Object.assign({}, prev, {events: Object.assign({}, prev.events||{}, {[ev.id]: Object.assign({}, (prev.events&&prev.events[ev.id])||{}, data)})})), onLocate: async () => {
+            if (!ev.location) return;
+            const geo = await geocodeLocation(ev.location);
+            if (!geo) { alert("Couldn't find that location on the map. Try editing it to be more specific (e.g. add the city)."); return; }
+            updateEvent(ev.id, {locationGeo: {lat: geo.lat, lng: geo.lng, geocodedAt: Date.now(), source: "nominatim"}});
+          }, onDelete:()=>{ if(confirm("Delete this past event?")) deleteEvent(ev.id); }});
+        return h("div",{key:ev.id, ref: isHighlighted ? highlightRef : null, className: isHighlighted ? "flash-target rounded" : ""}, inner);
+      })
     )
   );
 };
@@ -3152,6 +3295,9 @@ const SongsView = ({songs, events, member, memberProfiles, mutate, settings}) =>
   // When true, bulk fill operates on every song with title+artist (regardless of whether
   // it already has metadata) and overwrites existing fields. Default false: only blanks get filled.
   const [bulkRefetchAll, setBulkRefetchAll] = useState(false);
+  // v0.25.0: status legend toggle. A small "?" beside the filter pills opens an inline
+  // legend showing what each status means + Practice (good/rusty/learn) terms.
+  const [showLegend, setShowLegend] = useState(false);
   const bulkCancelRef = useRef(false);
   // Iteration: review wizard for songs missing metadata (or skipped from bulk fill).
   // Goes through them one at a time, surfacing top Apple Music candidates so the user
@@ -3474,7 +3620,7 @@ const SongsView = ({songs, events, member, memberProfiles, mutate, settings}) =>
     })(),
 
     // Status pills
-    h("div",{className:"flex gap-2 overflow-x-auto pb-1 mb-3"},
+    h("div",{className:"flex gap-2 overflow-x-auto pb-1 mb-2 items-center"},
       h("button",{key:"all",onClick:()=>setView("all"),
         className:"pill px-3 py-1.5 text-sm font-semibold whitespace-nowrap shrink-0 " + (view==="all"?"berry-bg text-white":"bg-white hover:bg-[var(--acid)]")},
         "All ", h("span",{className:"opacity-70 ml-1"}, all.length)),
@@ -3483,7 +3629,40 @@ const SongsView = ({songs, events, member, memberProfiles, mutate, settings}) =>
         s.label, " ", h("span",{className:"opacity-70 ml-1"}, counts[s.id]),
         s.id==="suggested" && (allInSuggested + newSuggested > 0) && view!=="suggested" && h("span",{className:"ml-1 text-[10px] berry-bg text-white px-1 rounded-full"}, newSuggested>0 ? (newSuggested + " new") : (allInSuggested + "!")),
         s.id==="repertoire" && repertoireStaleCount > 0 && view!=="repertoire" && h("span",{className:"ml-1 text-[10px] px-1 rounded-full",style:{background:"#fcd34d",color:"#78350f"}}, "⚠ " + repertoireStaleCount)
-      ))
+      )),
+      // v0.25.0: legend toggle. Small "?" — minimal real estate, opt-in.
+      h("button",{
+        onClick:()=>setShowLegend(s => !s),
+        className:"pill px-2 py-1.5 text-sm font-bold whitespace-nowrap shrink-0 ml-1 " + (showLegend ? "berry-bg text-white" : "bg-white hover:bg-[var(--acid)] text-[var(--ink-soft)]"),
+        title:"What do these labels mean?",
+        "aria-label":"Show legend"
+      }, "?")
+    ),
+    // v0.25.0: inline legend, only visible when toggled on. Lists status meanings + practice terms.
+    showLegend && h("div",{className:"card-flat p-3 mb-3 text-xs"},
+      h("div",{className:"ticker text-[var(--berry)] mb-1.5"},"Status"),
+      h("div",{className:"grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5 mb-3"},
+        SONG_STATUSES.map(s => h("div",{key:s.id, className:"flex items-baseline gap-2"},
+          h("span",{className:"font-semibold shrink-0"}, s.label, ":"),
+          h("span",{className:"text-[var(--ink-soft)]"}, s.desc)
+        ))
+      ),
+      h("div",{className:"ticker text-[var(--berry)] mb-1.5"},"Practice (per-member)"),
+      h("div",{className:"grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5"},
+        h("div",{className:"flex items-baseline gap-2"},
+          h("span",{className:"font-semibold shrink-0"},"Good:"),
+          h("span",{className:"text-[var(--ink-soft)]"},"Confident — could play this in a gig.")
+        ),
+        h("div",{className:"flex items-baseline gap-2"},
+          h("span",{className:"font-semibold shrink-0"},"Rusty:"),
+          h("span",{className:"text-[var(--ink-soft)]"},"Used to know it; needs a refresh.")
+        ),
+        h("div",{className:"flex items-baseline gap-2"},
+          h("span",{className:"font-semibold shrink-0"},"Learn:"),
+          h("span",{className:"text-[var(--ink-soft)]"},"Still working on the parts.")
+        )
+      ),
+      h("p",{className:"text-[10px] italic text-[var(--ink-soft)] mt-2"},"A song can be in 'Repertoire' overall but still 'Rusty' for some members.")
     ),
     // Search + add
     h("div",{className:"flex items-center justify-between gap-2 mb-3 flex-wrap"},
@@ -4181,7 +4360,7 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack
       ),
       h("div",{className:"mt-3 sm:mt-4 flex gap-2 flex-wrap items-center"},
         h("div",{className:"flex gap-1"},
-          h("button",{onClick:()=>setViewMode("detailed"),className:"pill px-2.5 py-1 text-xs font-semibold " + (viewMode==="detailed"?"berry-bg text-white":"bg-white")},"Detailed"),
+          h("button",{onClick:()=>setViewMode("detailed"),className:"pill px-2.5 py-1 text-xs font-semibold " + (viewMode==="detailed"?"berry-bg text-white":"bg-white"),title:"Reorder and rename sets, edit songs"},"Edit"),
           h("button",{onClick:()=>setViewMode("summary"),className:"pill px-2.5 py-1 text-xs font-semibold " + (viewMode==="summary"?"berry-bg text-white":"bg-white")},"Summary")),
         totalSongs > 0 && onStartGigMode && h("button",{onClick:onStartGigMode,className:"btn berry-bg px-3 py-2 text-sm font-semibold sm:ml-auto",title:"Full-screen, big-type setlist for the stage. Includes Print / Save as PDF."},"▶ Gig mode / Print"),
         // v0.21.0: copy from another setlist into this one. Only shown if there's at least one other setlist.
@@ -4562,7 +4741,7 @@ const CopyFromSetlistModal = ({sourceCandidates, targetSetlist, onCancel, onConf
 };
 // === END COPY FROM SETLIST MODAL ===
 
-const SetlistsView = ({setlists, songs, events, member, mutate, settings, onStartGigMode, onForceSnapshot}) => {
+const SetlistsView = ({setlists, songs, events, member, mutate, settings, onStartGigMode, onForceSnapshot, onNavigateToGig}) => {
   const [openId, setOpenId] = useState(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -4727,11 +4906,34 @@ const SetlistsView = ({setlists, songs, events, member, mutate, settings, onStar
         const setCount = (sl.sets || []).length;
         const lenLabel = slLen.total > 0 ? (formatDuration(slLen.total) + (slLen.missing > 0 ? "+" : "")) : "";
         const gig = sl.gigEventId && events && events[sl.gigEventId];
-        return h("button",{key:sl.id,onClick:()=>setOpenId(sl.id),className:"card-flat p-4 w-full text-left hover:bg-[var(--acid)]/20 transition"},
+        // v0.25.0 (feedback): the card was a <button>, which prevented nesting an inner clickable
+        // pinned-gig label (HTML disallows nested buttons). Now it's a div with role=button and
+        // onClick; the pinned-gig label is its own button that stopPropagation-s so tapping it
+        // doesn't also open the setlist.
+        const baseInfo = songCount + " song" + (songCount===1?"":"s") + " in " + setCount + " set" + (setCount===1?"":"s") + (lenLabel ? (" · " + lenLabel) : "");
+        return h("div",{
+          key:sl.id,
+          onClick:()=>setOpenId(sl.id),
+          role:"button",
+          tabIndex:0,
+          onKeyDown:e=>{ if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpenId(sl.id); } },
+          className:"card-flat p-4 w-full text-left hover:bg-[var(--acid)]/20 transition cursor-pointer"
+        },
           h("div",{className:"flex items-center justify-between gap-3 flex-wrap"},
             h("div",{className:"flex-1 min-w-0"},
               h("div",{className:"display text-xl leading-tight"}, sl.name),
-              h("div",{className:"text-sm text-[var(--ink-soft)] mt-1"}, songCount + " song" + (songCount===1?"":"s") + " in " + setCount + " set" + (setCount===1?"":"s") + (lenLabel ? (" · " + lenLabel) : "") + (gig ? (" · pinned to " + (gig.title||"gig") + " on " + fmtDate(gig.date)) : ""))
+              h("div",{className:"text-sm text-[var(--ink-soft)] mt-1"},
+                baseInfo,
+                gig && h(React.Fragment, null,
+                  " · pinned to ",
+                  // v0.25.0: tappable pinned-gig label.
+                  onNavigateToGig ? h("button",{
+                    onClick: e => { e.stopPropagation(); onNavigateToGig(gig.id); },
+                    className:"underline text-[var(--berry)] hover:text-[var(--berry)]",
+                    title:"Open this gig"
+                  }, (gig.title || "gig") + " on " + fmtDate(gig.date)) : ((gig.title || "gig") + " on " + fmtDate(gig.date))
+                )
+              )
             ),
             h("span",{className:"ticker text-[var(--berry)]"},"Open ▸")
           )
@@ -6507,6 +6709,9 @@ const App = () => {
   // Lifted from SetlistDetail to App so Gig Mode is a full-page route, not an overlay.
   // Overlay approach kept rendering the App underneath which broke print and on-screen.
   const [gigSetlistId, setGigSetlistId] = useState(null);
+  // v0.25.0: when navigating from a setlist's pinned-gig label, App sets this so the
+  // gigs view can scroll to + flash the matching gig card. Cleared after the flash.
+  const [highlightedGigId, setHighlightedGigId] = useState(null);
   useEffect(() => { if (urlBin && urlBin !== storedBin) setStoredBinId(urlBin); }, [urlBin, storedBin]);
   const sync = useSyncedState(binId, member && member.id);
   // v0.24.0: pick a musician quote once per app load. useState initializer ensures
@@ -6626,7 +6831,7 @@ const App = () => {
             {id:"songs",label:"Songs"},
             {id:"setlists",label:"Setlists"},
             {id:"equipment",label:"Kit"},
-            {id:"feedback",label:"Feedback"}
+            {id:"feedback",label:"App feedback"}
           ].map(t => h("button",{key:t.id,onClick:()=>setTab(t.id),className:"px-3 sm:px-4 py-2 sm:py-2.5 ticker whitespace-nowrap text-[10px] sm:text-xs " + (tab===t.id?"tab-active":"hover:bg-[var(--acid)]")}, t.label)),
           h("div",{className:"ml-auto pl-2 pr-1 shrink-0 flex items-center gap-1.5"},
             !member && h("button",{onClick:()=>setShowSettings(true),className:"text-base px-1.5 py-0.5 hover:bg-[var(--acid)]/40 rounded",title:"Settings","aria-label":"Settings"},"⚙"),
@@ -6635,11 +6840,11 @@ const App = () => {
         )
       )
     ),
-    tab==="gigs" && h(TypedScheduleView,{events:events,songs:songs,setlists:setlists,member:member,memberProfiles:memberProfiles,mutate:sync.mutate,eventType:"gig",settings:settings,onForceSnapshot:forceSnapshot}),
+    tab==="gigs" && h(TypedScheduleView,{events:events,songs:songs,setlists:setlists,member:member,memberProfiles:memberProfiles,mutate:sync.mutate,eventType:"gig",settings:settings,onForceSnapshot:forceSnapshot, highlightedEventId: highlightedGigId, onClearHighlight: () => setHighlightedGigId(null)}),
     tab==="rehearsals" && h(TypedScheduleView,{events:events,songs:songs,setlists:setlists,member:member,memberProfiles:memberProfiles,mutate:sync.mutate,eventType:"rehearsal",settings:settings,onStartRehearsal: (id) => setRunRehearsalId(id),onForceSnapshot:forceSnapshot}),
     tab==="practice" && h(PracticeView,{practiceAvail:practiceAvail,events:events,member:member,mutate:sync.mutate,onGoToSchedule:()=>setTab("rehearsals"),onForceSnapshot:forceSnapshot}),
     tab==="songs" && h(SongsView,{songs:songs,events:events,member:member,memberProfiles:memberProfiles,mutate:sync.mutate,settings:settings}),
-    tab==="setlists" && h(SetlistsView,{setlists:setlists,songs:songs,events:events,member:member,mutate:sync.mutate,settings:settings,onStartGigMode:(id)=>setGigSetlistId(id),onForceSnapshot:forceSnapshot}),
+    tab==="setlists" && h(SetlistsView,{setlists:setlists,songs:songs,events:events,member:member,mutate:sync.mutate,settings:settings,onStartGigMode:(id)=>setGigSetlistId(id),onForceSnapshot:forceSnapshot, onNavigateToGig: (gigId) => { setHighlightedGigId(gigId); setTab("gigs"); }}),
     tab==="equipment" && h(EquipmentView,{equipment:equipment,wishlist:wishlist,member:member,memberProfiles:memberProfiles,mutate:sync.mutate}),
     tab==="feedback" && h(FeedbackView,{feedback:feedback,member:member,memberProfiles:memberProfiles,mutate:sync.mutate}),
     h("footer",{className:"mt-12 pt-6 border-t border-[var(--line)]/30 text-xs text-[var(--ink-soft)]"},
@@ -6648,6 +6853,22 @@ const App = () => {
         h("span",{className:"display-italic"},"\u201C", sessionQuote.q, "\u201D"),
         h("div",{className:"ticker text-[10px] mt-1 not-italic"},"— ", sessionQuote.who)
       ),
+      // v0.25.0: WhatsApp-discussions-saved counter. Counts total events created in the bin
+      // as a proxy for "things we'd otherwise have argued about in chat". Cheap, visible, fun.
+      // Each event tap-saved here is roughly 5–15 messages of "what about Tuesday? no Wednesday?".
+      // We multiply by a vibe-coefficient of 7 because that's what it actually feels like in WhatsApp.
+      (() => {
+        const eventCount = Object.keys(events || {}).length;
+        const setlistCount = Object.keys(setlists || {}).length;
+        // Vibe coefficient — generous enough to be funny, small enough to be plausible.
+        const saved = (eventCount * 7) + (setlistCount * 4);
+        if (saved === 0) return null;
+        return h("p",{className:"text-center text-[11px] italic mb-3 text-[var(--ink-soft)]"},
+          "Sourberry C.R.A.P. has saved you from approximately ",
+          h("span",{className:"font-semibold not-italic text-[var(--berry)]"}, saved.toLocaleString()),
+          " WhatsApp discussions."
+        );
+      })(),
       h("div",{className:"flex justify-between items-baseline flex-wrap gap-2"},
         h("div",null,
           h("span",null,"Sourberry \u00b7 ", h("span",{className:"opacity-70"},"v"+APP_VERSION)),
