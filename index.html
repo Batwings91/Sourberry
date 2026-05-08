@@ -255,7 +255,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.28.0";
+const APP_VERSION = "0.29.0";
 
 // v0.28.0: Supabase config. URL + publishable key are safe to ship in client code —
 // Row Level Security (set up on band_state) is the security boundary. Don't ever paste
@@ -696,7 +696,7 @@ const buildEquipmentSeed = () => {
   });
   return eq;
 };
-const buildSeedState = () => ({schemaVersion: 12, events: buildEventsSeed(), songs: buildSongsSeed(), setlists: buildSetlistsSeed(), polls: {}, equipment: buildEquipmentSeed(), wishlist: {}, practiceAvail: {}, memberProfiles: {}, updatedAt: 0, lastSavedBy: null, settings: {}});
+const buildSeedState = () => ({schemaVersion: 13, events: buildEventsSeed(), songs: buildSongsSeed(), setlists: buildSetlistsSeed(), polls: {}, equipment: buildEquipmentSeed(), wishlist: {}, practiceAvail: {}, memberProfiles: {}, updatedAt: 0, lastSavedBy: null, settings: {}});
 
 const migrate = data => {
   let migrated = false;
@@ -821,9 +821,7 @@ const migrate = data => {
         });
       });
     }
-    data.schemaVersion = 12; migrated = true;
-  }
-  return migrated;
+data.schemaVersion = 12; migrated = true; } if (data.schemaVersion < 13) { // v13: public-site fields. hidePublic on songs/events lets the maintainer // hide individual records from sourberry.co.uk without changing their status. // settings.publicSite holds the public site's copy fields. if (data.songs && typeof data.songs === "object") { Object.keys(data.songs).forEach(id => { const s = data.songs[id]; if (s && typeof s === "object" && typeof s.hidePublic === "undefined") { s.hidePublic = false; } }); } if (data.events && typeof data.events === "object") { Object.keys(data.events).forEach(id => { const e = data.events[id]; if (e && typeof e === "object" && typeof e.hidePublic === "undefined") { e.hidePublic = false; } }); } if (!data.settings || typeof data.settings !== "object") data.settings = {}; if (!data.settings.publicSite || typeof data.settings.publicSite !== "object") { data.settings.publicSite = { tagline: "", bookingEmail: "", region: "", travelRadius: "" }; } data.schemaVersion = 13; migrated = true; } return migrated;
 };
 
 // v0.28.0: data layer is now Supabase. The shape of these helpers (jbReadBin /
