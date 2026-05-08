@@ -68,6 +68,34 @@
     .modal-bg { position: fixed; inset: 0; background: rgba(26,10,20,0.5); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 1rem; }
     .blink { animation: blink 1.4s ease-in-out infinite; }
     @keyframes blink { 50% { opacity: 0.5; } }
+    /* v0.23.0: availability calendar dot. Inline-block + fixed size + border-box so
+       size is predictable across browsers; explicitly NOT a flex item so it can't be
+       squashed by a parent flex container on narrow iPhone screens. 8px on mobile,
+       10px on tablet/desktop. */
+    .sb-dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 9999px;
+      border: 1px solid;
+      box-sizing: border-box;
+      flex-shrink: 0;
+      vertical-align: middle;
+    }
+    @media (min-width: 640px) {
+      .sb-dot { width: 10px; height: 10px; }
+    }
+    /* v0.23.0: sticky modal header for tall modals (day-detail panel especially) so
+       the close button stays reachable when scrolling on small phones. Uses the modal's
+       own background colour to cover content scrolling underneath. */
+    .sb-modal-sticky-header {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: var(--bg-card);
+      margin: -1.25rem -1.25rem 0 -1.25rem;  /* counter the card's p-5 */
+      padding: 0.75rem 1.25rem;
+      border-bottom: 1px solid rgba(26,10,20,0.15);
+    }
     /* === PRINT STYLES === */
     /* Gig Mode is a full-page route (App early-returns the GigModeView), so when
        the user prints, only Gig Mode is in the DOM. Print rules just need to:
@@ -214,7 +242,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.22.0";
+const APP_VERSION = "0.23.0";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 // Instruments for member profiles (multi-select). Order is the display order.
 // Icons are emoji — render natively on iOS/macOS/Android. Bass uses 🪕 (banjo) as the closest
@@ -3507,6 +3535,11 @@ const SongPicker = ({songs, excludeIds, onPick, onClose, destinationLabel}) => {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const rootRef = useRef(null);
+  // v0.23.0 (feedback): focus the search field on mount so user can start typing immediately.
+  // Use a ref + manual focus rather than the autoFocus prop because we also do scrollIntoView
+  // on mount, and on iOS autoFocus can be ignored mid-scroll. A small timeout lets the scroll
+  // finish before we steal focus.
+  const searchRef = useRef(null);
   // Scroll into view when the picker mounts. Without this, tapping "+ Songs" on
   // Set 2 (way down the page) made the picker appear at the top of the page —
   // off-screen, looking like the tap did nothing.
@@ -3514,8 +3547,16 @@ const SongPicker = ({songs, excludeIds, onPick, onClose, destinationLabel}) => {
     if (rootRef.current && rootRef.current.scrollIntoView) {
       rootRef.current.scrollIntoView({behavior: "smooth", block: "start"});
     }
+    const t = setTimeout(() => {
+      if (searchRef.current && searchRef.current.focus) searchRef.current.focus();
+    }, 350);
+    return () => clearTimeout(t);
   }, []);
-  const all = songsList(songs).filter(s => !excludeIds.includes(s.id));
+  // v0.23.0 (feedback): show all matching songs, including ones already in the destination.
+  // Already-added ones render disabled with an "(already added)" tag so the user can still
+  // search by title and see they hit a real song — they just can't add it twice.
+  const excludeSet = new Set(excludeIds || []);
+  const all = songsList(songs);
   const list = all.filter(s => {
     if (statusFilter !== "all" && s.status !== statusFilter) return false;
     return songMatchesQuery(s, query);
@@ -3528,7 +3569,7 @@ const SongPicker = ({songs, excludeIds, onPick, onClose, destinationLabel}) => {
       ),
       h("button",{onClick:onClose,className:"btn berry-bg px-3 py-1.5 text-sm font-semibold"},"Done ▸")
     ),
-    h("input",{className:"input mb-2",value:query,onChange:e=>setQuery(e.target.value),placeholder:"Search by title or artist (fuzzy)…"}),
+    h("input",{ref:searchRef, className:"input mb-2",value:query,onChange:e=>setQuery(e.target.value),placeholder:"Search by title or artist (fuzzy)…"}),
     h("div",{className:"flex gap-1.5 flex-wrap mb-3"},
       h("button",{onClick:()=>setStatusFilter("all"),className:"pill px-2.5 py-1 text-xs font-semibold " + (statusFilter==="all"?"berry-bg text-white":"bg-white")},"All"),
       SONG_STATUSES.map(s => h("button",{key:s.id,onClick:()=>setStatusFilter(s.id),className:"pill px-2.5 py-1 text-xs font-semibold " + (statusFilter===s.id?"berry-bg text-white":"bg-white")}, s.label))
@@ -3536,15 +3577,26 @@ const SongPicker = ({songs, excludeIds, onPick, onClose, destinationLabel}) => {
     list.length===0
       ? h("p",{className:"text-sm italic text-[var(--ink-soft)]"},"No songs match.")
       : h("div",{className:"max-h-80 overflow-y-auto space-y-1.5"},
-          list.map(s => h("button",{key:s.id,onClick:()=>onPick(s.id),className:"card-flat p-2.5 w-full text-left hover:bg-[var(--acid)]/30 transition"},
-            h("div",{className:"flex items-center justify-between gap-2"},
-              h("div",{className:"min-w-0 flex-1"},
-                h("div",{className:"font-semibold truncate"}, s.title),
-                s.artist && h("div",{className:"text-xs text-[var(--ink-soft)] italic truncate"}, s.artist)
-              ),
-              h("span",{className:"ticker text-[var(--ink-soft)] shrink-0"}, (SONG_STATUSES.find(x=>x.id===s.status)||{}).label)
-            )
-          ))
+          list.map(s => {
+            const alreadyAdded = excludeSet.has(s.id);
+            return h("button",{
+              key:s.id,
+              onClick: alreadyAdded ? null : (()=>onPick(s.id)),
+              disabled: alreadyAdded,
+              className: "card-flat p-2.5 w-full text-left transition " + (alreadyAdded ? "opacity-50 cursor-not-allowed" : "hover:bg-[var(--acid)]/30"),
+              title: alreadyAdded ? "Already added to this setlist" : ""
+            },
+              h("div",{className:"flex items-center justify-between gap-2"},
+                h("div",{className:"min-w-0 flex-1"},
+                  h("div",{className:"font-semibold truncate"}, s.title),
+                  s.artist && h("div",{className:"text-xs text-[var(--ink-soft)] italic truncate"}, s.artist)
+                ),
+                alreadyAdded
+                  ? h("span",{className:"ticker text-[var(--berry)] shrink-0"},"✓ added")
+                  : h("span",{className:"ticker text-[var(--ink-soft)] shrink-0"}, (SONG_STATUSES.find(x=>x.id===s.status)||{}).label)
+              )
+            );
+          })
         )
   );
 };
@@ -5077,12 +5129,14 @@ const PracticeView = ({practiceAvail, events, member, mutate, onGoToSchedule, on
                 isHoliday && h("span",{className:"text-[8px] sm:text-[9px] ticker text-[var(--berry)] leading-none", title: bankHolidayMap[iso]}, "BH")
               ),
               // Slot mini-rows: each slot a row of member dots.
+              // v0.23.0: flex-nowrap on the inner row to stop dots reflowing onto a second line
+              // when the cell is narrow (was happening on iPhone). Dots shrink on mobile to fit.
               h("div",{className:"flex flex-col gap-0.5 mt-1"},
                 visibleSlots.map(sid => {
                   const slotYes = yesCountForSlot(practiceAvail, iso, sid);
-                  return h("div",{key:sid, className:"flex items-center gap-0.5"},
-                    visibleSlots.length > 1 && h("span",{className:"text-[7px] sm:text-[8px] text-[var(--ink-soft)] w-3 shrink-0", style:{lineHeight:1}}, SLOT_LABELS[sid][0]),
-                    h("div",{className:"flex gap-0.5"},
+                  return h("div",{key:sid, className:"flex items-center gap-0.5 flex-nowrap"},
+                    visibleSlots.length > 1 && h("span",{className:"text-[7px] sm:text-[8px] text-[var(--ink-soft)] w-2 sm:w-3 shrink-0", style:{lineHeight:1}}, SLOT_LABELS[sid][0]),
+                    h("div",{className:"flex gap-0.5 flex-nowrap shrink-0"},
                       MEMBERS.map(m => {
                         const slot = getSlot(practiceAvail, iso, m.id, sid);
                         const a = slot && slot.avail;
@@ -5090,13 +5144,13 @@ const PracticeView = ({practiceAvail, events, member, mutate, onGoToSchedule, on
                         const color = a ? "#fff" : "var(--ink-soft)";
                         return h("span",{
                           key:m.id+":"+sid,
-                          className:"inline-flex items-center justify-center text-[7px] font-bold rounded-full border border-[var(--line)]",
-                          style:{width:10,height:10,background:bg,color, lineHeight:1},
+                          className:"sb-dot",
+                          style:{background:bg,color, borderColor:"var(--line)"},
                           title: m.name + " " + SLOT_LABELS[sid] + ": " + (a || "—") + (slot && slot.mode ? (" · " + MODE_LABELS[slot.mode]) : "")
                         });
                       })
                     ),
-                    slotYes === MEMBERS.length && h("span",{className:"text-[var(--good)] text-[10px] font-bold leading-none ml-0.5", title:"Everyone available"},"✓")
+                    slotYes === MEMBERS.length && h("span",{className:"text-[var(--good)] text-[10px] font-bold leading-none ml-0.5 shrink-0", title:"Everyone available"},"✓")
                   );
                 })
               )
@@ -5142,10 +5196,13 @@ const DayDetailPanel = ({iso, practiceAvail, bankHolidayName, member, existingEv
 
   return h("div",{className:"modal-bg",onClick:onClose},
     h("div",{className:"card p-5 max-w-md w-full max-h-[90vh] overflow-y-auto",onClick:e=>e.stopPropagation()},
-      h("div",{className:"flex items-center justify-between mb-2"},
+      // v0.23.0 (feedback): sticky header so Close stays reachable while scrolling on phones.
+      h("div",{className:"sb-modal-sticky-header flex items-center justify-between"},
         h("h3",{className:"display text-2xl leading-tight"}, fmtDateLong(iso)),
-        h("button",{onClick:onClose,className:"ticker text-[var(--ink-soft)]"},"Close ✕")
+        h("button",{onClick:onClose,className:"btn bg-white px-3 py-1 text-sm font-semibold","aria-label":"Close"},"× Close")
       ),
+      // Re-introduce a small top margin since the sticky header has its own padding.
+      h("div",{className:"mt-2"}),
       isHoliday && h("p",{className:"ticker text-[var(--berry)] mb-1"},"🇬🇧 " + bankHolidayName),
       isWeekendDay && !isHoliday && h("p",{className:"ticker text-[var(--berry)]"},"Weekend"),
       !isWeekendDay && !isHoliday && h("p",{className:"ticker text-[var(--berry)]"}, expanded ? "Weekday — all-day view" : "Weekday — evening only"),
@@ -5188,6 +5245,11 @@ const DayDetailPanel = ({iso, practiceAvail, bankHolidayName, member, existingEv
           }, "Book " + SLOT_LABELS[sid] + " rehearsal →"))
         ),
         h("p",{className:"text-xs text-[var(--ink-soft)] italic mt-2"},"Creates a proposed rehearsal at default times. You'll be taken to the Schedule tab to fill in location and confirm.")
+      ),
+      // v0.23.0 (feedback): bottom Done button — second exit affordance so users
+      // who've scrolled all the way down don't have to scroll back up to close.
+      h("div",{className:"mt-4 pt-3 border-t border-[var(--line)]/15"},
+        h("button",{onClick:onClose,className:"btn berry-bg px-4 py-2 text-sm font-semibold w-full"},"Done")
       )
     )
   );
