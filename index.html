@@ -84,15 +84,16 @@
     @media (min-width: 640px) {
       .sb-dot { width: 10px; height: 10px; }
     }
-    /* v0.23.0: sticky modal header for tall modals (day-detail panel especially) so
-       the close button stays reachable when scrolling on small phones. Uses the modal's
-       own background colour to cover content scrolling underneath. */
+    /* v0.23.0 / v0.24.0: sticky modal header. The day-detail modal can be tall on mobile, so the
+       close button stays reachable when scrolling. v0.24.0: removed the negative-margin trick that
+       v0.23.0 used — it left a gap above the header where scrolling content showed through.
+       Now the modal card has p-0 with its own internal padding, and the sticky header lives
+       flush with the card's top edge. */
     .sb-modal-sticky-header {
       position: sticky;
       top: 0;
       z-index: 1;
       background: var(--bg-card);
-      margin: -1.25rem -1.25rem 0 -1.25rem;  /* counter the card's p-5 */
       padding: 0.75rem 1.25rem;
       border-bottom: 1px solid rgba(26,10,20,0.15);
     }
@@ -242,8 +243,91 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.23.0";
+const APP_VERSION = "0.24.0";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
+
+// v0.24.0: random musician quotes for the footer. Picked once per app load. Mix of
+// real attributed quotes and a few that are widely circulated as "by X" online —
+// I've kept these to the safer, well-documented ones. If anything here is
+// misattributed, blame the internet's collective memory.
+const MUSICIAN_QUOTES = [
+  {q: "Without music, life would be a mistake.", who: "Friedrich Nietzsche"},
+  {q: "Hell is full of musical amateurs.", who: "George Bernard Shaw"},
+  {q: "I don't know anything about music. In my line, you don't have to.", who: "Elvis Presley"},
+  {q: "Music is the strongest form of magic.", who: "Marilyn Manson"},
+  {q: "If it sounds good, it is good.", who: "Duke Ellington"},
+  {q: "There are only two kinds of music: good and bad.", who: "Louis Armstrong"},
+  {q: "Talking about music is like dancing about architecture.", who: "Often attributed to Frank Zappa"},
+  {q: "Music is what feelings sound like.", who: "Anonymous"},
+  {q: "The only truth is music.", who: "Jack Kerouac"},
+  {q: "I'd rather be hated for who I am, than loved for who I am not.", who: "Kurt Cobain"},
+  {q: "Rock and roll is the hamburger that ate the world.", who: "Peter York"},
+  {q: "Music is the silence between the notes.", who: "Claude Debussy"},
+  {q: "Wagner's music is better than it sounds.", who: "Mark Twain"},
+  {q: "I think music in itself is healing.", who: "Billy Joel"},
+  {q: "When words fail, music speaks.", who: "Hans Christian Andersen"},
+  {q: "Music is enough for a lifetime, but a lifetime is not enough for music.", who: "Sergei Rachmaninoff"},
+  {q: "If you have to ask what jazz is, you'll never know.", who: "Louis Armstrong"},
+  {q: "I hate music, especially when it's played.", who: "Jimmy Durante"},
+  {q: "A painter paints pictures on canvas. But musicians paint their pictures on silence.", who: "Leopold Stokowski"},
+  {q: "The piano keys are black and white but they sound like a million colors.", who: "María Cristina Mena"},
+  {q: "Music expresses that which cannot be put into words and that which cannot remain silent.", who: "Victor Hugo"},
+  {q: "Information is not knowledge. Knowledge is not wisdom. Wisdom is not truth. Truth is not beauty. Beauty is not love. Love is not music. Music is THE BEST.", who: "Frank Zappa"},
+  {q: "My music will go on forever. Maybe it's a fool say that, but when me know facts me can say facts.", who: "Bob Marley"},
+  {q: "All you need in life is ignorance and confidence, and then success is sure.", who: "Mark Twain (not about music, but suspiciously rehearsal-coded)"},
+  {q: "If music be the food of love, play on.", who: "Shakespeare, Twelfth Night"},
+  {q: "I'm not arguing, I'm just explaining why I'm right.", who: "Every band member ever"},
+  {q: "Practice doesn't make perfect. Perfect practice makes perfect.", who: "Vince Lombardi (often misquoted at music students)"},
+  {q: "Music is the wine which inspires one to new generative processes.", who: "Ludwig van Beethoven"},
+  {q: "Don't play what's there, play what's not there.", who: "Miles Davis"},
+  {q: "It ain't what you don't know that gets you into trouble. It's what you know for sure that just ain't so.", who: "Mark Twain"},
+  {q: "I'd love to tell you that what we did musically was carefully thought out and intellectualised. We just turned up and played.", who: "John Lennon"},
+  {q: "Tomorrow is the most important thing in life. Comes into us at midnight very clean.", who: "John Wayne (irrelevant but oddly motivating before a gig)"}
+];
+
+// v0.24.0: rehearsal excuse generator. Tap a button on a rehearsal card → appends
+// a plausibly-stupid excuse to your apology message. Pure entertainment. Two-part:
+// pick a reason, optionally pair with a flourish.
+const REHEARSAL_EXCUSE_REASONS = [
+  "my amp developed sentience and demanded its rights",
+  "the cat sat on my pedalboard and refused to move on principle",
+  "I got stuck behind a tractor for 40 minutes",
+  "my Uber driver wanted to talk about his mixtape",
+  "I lost track of time tuning a single string",
+  "the Tube ate my plans",
+  "my partner needed me to assemble flat-pack furniture and the assembly was structural",
+  "I was held hostage by a 6-disc CD changer",
+  "my metronome started giving me legal advice",
+  "I had a creative breakthrough involving the kettle",
+  "the dog learned a new chord and I had to celebrate",
+  "I got into an existential debate with a busker",
+  "my e-bike battery died on a hill in the rain",
+  "I mistook the rehearsal time for GMT and we are not in GMT",
+  "I was drafted into a flash mob",
+  "my upstairs neighbour was finally practicing scales and I had to listen",
+  "I dropped my plectrum into a parallel dimension",
+  "the local Tesco had ALL the snacks I'd been craving",
+  "I rewatched 'Almost Famous' and time stopped meaning anything",
+  "my guitar strap broke in a poetic way I had to journal about",
+  "I was momentarily a roadie for a school recital",
+  "the rehearsal space had a goose situation"
+];
+const REHEARSAL_EXCUSE_FLOURISHES = [
+  "I take full responsibility, mostly.",
+  "I'll bring biscuits.",
+  "Won't happen again until next time.",
+  "On the bright side I have a song idea now.",
+  "It built character.",
+  "Setlist suggestions available on request.",
+  "I owe the band a round.",
+  "I've already booked the next slot to make up for it.",
+  "Witnesses are available.",
+  "It was educational."
+];
+const pickRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const generateRehearsalExcuse = () => {
+  return "Sorry I'm late — " + pickRandom(REHEARSAL_EXCUSE_REASONS) + ". " + pickRandom(REHEARSAL_EXCUSE_FLOURISHES);
+};
 // Instruments for member profiles (multi-select). Order is the display order.
 // Icons are emoji — render natively on iOS/macOS/Android. Bass uses 🪕 (banjo) as the closest
 // distinct emoji from 🎸 (guitar); not perfect but better than identical icons for both.
@@ -2376,6 +2460,10 @@ const EventCard = ({ev, member, memberProfiles, songs, events, pinnedSetlist, on
   // Recap state for past rehearsals — same pattern as Run Mode but lives on the card.
   const [recapText, setRecapText] = useState(null);
   const [recapCopyState, setRecapCopyState] = useState("idle");
+  // v0.24.0: rehearsal excuse modal — pure entertainment for when you're going to be late.
+  // Only meaningful for rehearsals (not gigs — being late to a gig is not a joke).
+  const [excuseText, setExcuseText] = useState(null);
+  const [excuseCopyState, setExcuseCopyState] = useState("idle");
   const d = new Date(ev.date + "T00:00:00");
   const yr = d.getFullYear();
   // Rehearsal summary
@@ -2601,6 +2689,13 @@ const EventCard = ({ev, member, memberProfiles, songs, events, pinnedSetlist, on
           ),
           h("div",{className:"mt-3 flex flex-wrap items-center gap-2"},
             h(AvailabilityButtons,{ev:ev, member:member, onSet:onSetAvailability}),
+            // v0.24.0: rehearsal excuse generator. Tap → opens a modal with a prefilled
+            // apology message you can copy & paste into WhatsApp / wherever. Pure fun.
+            isRehearsal && h("button",{
+              onClick:()=>{ setExcuseText(generateRehearsalExcuse()); setExcuseCopyState("idle"); },
+              className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)]",
+              title:"Generate a stupid excuse"
+            },"🎲 Excuse"),
             isRehearsal && onStartRehearsal && h("button",{onClick:()=>onStartRehearsal(ev.id),className:"btn berry-bg px-3 py-1.5 text-xs font-semibold ml-auto",title:"Open the focused rehearsal runner"},"▶ Start rehearsal"),
             h("button",{onClick:onEdit,className:"ticker " + (isRehearsal && onStartRehearsal ? "" : "ml-auto") + " text-[var(--ink-soft)] hover:text-[var(--berry)]"},"Edit ▸")
           )
@@ -2638,6 +2733,39 @@ const EventCard = ({ev, member, memberProfiles, songs, events, pinnedSetlist, on
                 className:"btn berry-bg px-4 py-2 text-sm font-semibold"
               }, recapCopyState === "copied" ? "✓ Copied!" : recapCopyState === "fail" ? "Couldn't copy — select all and copy manually" : "📋 Copy to clipboard"),
               h("button",{onClick:()=>setRecapText(null),className:"btn bg-white px-3 py-2 text-sm ml-auto"},"Done")
+            )
+          )
+        ),
+        // v0.24.0: Excuse generator modal — shown when the user taps the 🎲 Excuse button.
+        // Editable textarea so they can tweak; copy button to send straight to clipboard;
+        // re-roll button if they don't like the one they got.
+        excuseText !== null && h("div",{className:"modal-bg",onClick:()=>setExcuseText(null)},
+          h("div",{className:"card p-5 max-w-md w-full",onClick:e=>e.stopPropagation()},
+            h("div",{className:"flex items-center justify-between mb-2"},
+              h("h3",{className:"display text-2xl"},"Stupid excuse generator"),
+              h("button",{onClick:()=>setExcuseText(null),className:"ticker text-[var(--ink-soft)]"},"Close ✕")
+            ),
+            h("p",{className:"text-xs text-[var(--ink-soft)] mb-2"},"Edit if you must. Or roll again."),
+            h("textarea",{
+              className:"input text-sm",
+              rows:"4",
+              value: excuseText,
+              onChange: e => { setExcuseText(e.target.value); setExcuseCopyState("idle"); }
+            }),
+            h("div",{className:"mt-3 flex gap-2 items-center flex-wrap"},
+              h("button",{
+                onClick: () => { setExcuseText(generateRehearsalExcuse()); setExcuseCopyState("idle"); },
+                className:"btn bg-white px-3 py-2 text-sm",
+                title:"Get a different one"
+              }, "🎲 Re-roll"),
+              h("button",{
+                onClick: async () => {
+                  const ok = await copyTextToClipboard(excuseText);
+                  setExcuseCopyState(ok ? "copied" : "fail");
+                  if (ok) setTimeout(() => setExcuseCopyState("idle"), 2000);
+                },
+                className:"btn berry-bg px-4 py-2 text-sm font-semibold"
+              }, excuseCopyState === "copied" ? "✓ Copied!" : excuseCopyState === "fail" ? "Couldn't copy — select & copy manually" : "📋 Copy")
             )
           )
         )
@@ -4825,6 +4953,14 @@ const PracticeView = ({practiceAvail, events, member, mutate, onGoToSchedule, on
   const [openDate, setOpenDate] = useState(null);
   const [showBulk, setShowBulk] = useState(false);
   const [isCompact, setIsCompact] = useState(() => typeof window !== "undefined" && window.innerWidth < 640);
+  // v0.24.0 (feedback): bulk form state. The user picks days-of-week, slot, avail, mode and
+  // hits Apply once. Initial selection: Mon+Thu evenings — a common pattern (weekday eve rehearsals).
+  // dowSet: Set of day-of-week ints (Sun=0, Mon=1, ..., Sat=6). Plus a separate boolean for bank holidays.
+  const [bulkDow, setBulkDow] = useState(() => new Set([1, 4])); // Mon, Thu
+  const [bulkBankHols, setBulkBankHols] = useState(false);
+  const [bulkSlot, setBulkSlot] = useState("eve"); // "am"|"pm"|"eve"|"all"
+  const [bulkAvail, setBulkAvail] = useState("yes"); // "yes"|"maybe"|"no"|"clear"
+  const [bulkMode, setBulkMode] = useState("unset"); // "person"|"virtual"|"either"|"unset"
   // v0.22.0: bank holidays. Map of iso → name. Loaded from cache or fetched on mount.
   // Initial value is a synchronous read of the localStorage cache; fetch fires asynchronously
   // and updates state if the result differs. Fallback to the hardcoded list ensures the
@@ -5049,54 +5185,127 @@ const PracticeView = ({practiceAvail, events, member, mutate, onGoToSchedule, on
         h("span",null,"Bulk mark my availability ▾"),
         h("span",{className:"text-xs italic"},"(" + member.name + ")")
       ),
-      h("div",{className:"mt-3"},
-        h("p",{className:"text-xs text-[var(--ink-soft)] mb-2"},
-          "Apply to all days in " + monthLabel + ". Sets ", h("strong",null,"availability only"), " — mode (in-person/virtual) you set per-day. Doesn't affect other people."
-        ),
-        h("div",{className:"overflow-x-auto"},
-          h("table",{className:"text-xs"},
-            h("thead",null,
-              h("tr",null,
-                h("th",{className:"text-left pr-3 py-1 ticker"}),
-                h("th",{className:"text-left pr-2 py-1 ticker"},"Slot"),
-                h("th",{className:"px-1 py-1 ticker"},"✓ Yes"),
-                h("th",{className:"px-1 py-1 ticker"},"? Maybe"),
-                h("th",{className:"px-1 py-1 ticker"},"✗ No"),
-                h("th",{className:"px-1 py-1 ticker"},"— Clear")
-              )
-            ),
-            h("tbody",null,
-              [
-                {label:"Weekday eves",      pred: (d, iso) => !isWeekend(d) && !bankHolidaySet.has(iso), slot:"eve"},
-                {label:"All Saturdays AM",  pred: d => d.getDay() === 6, slot:"am"},
-                {label:"All Saturdays PM",  pred: d => d.getDay() === 6, slot:"pm"},
-                {label:"All Saturdays Eve", pred: d => d.getDay() === 6, slot:"eve"},
-                {label:"All Sundays AM",    pred: d => d.getDay() === 0, slot:"am"},
-                {label:"All Sundays PM",    pred: d => d.getDay() === 0, slot:"pm"},
-                {label:"All Sundays Eve",   pred: d => d.getDay() === 0, slot:"eve"},
-                {label:"Bank holidays — all 3 slots", pred: (d, iso) => bankHolidaySet.has(iso), slot:"all"}
-              ].map(row => h("tr",{key: row.label + ":" + row.slot},
-                h("td",{className:"pr-3 py-1 font-semibold"}, row.label),
-                h("td",{className:"pr-2 py-1 text-[var(--ink-soft)]"}, row.slot === "all" ? "AM+PM+Eve" : SLOT_LABELS[row.slot]),
-                [
-                  {v:"yes", bg:"var(--good)"},
-                  {v:"maybe", bg:"var(--rusty)"},
-                  {v:"no", bg:"var(--learn)"},
-                  {v:null, bg:""}
-                ].map(cell => h("td",{key: String(cell.v),className:"px-1 py-1"},
-                  h("button",{onClick:()=>{
-                    if (row.slot === "all") {
-                      ["am","pm","eve"].forEach(s => bulkApply(row.pred, s, {avail: cell.v}));
-                    } else {
-                      bulkApply(row.pred, row.slot, {avail: cell.v});
-                    }
-                  },className:"pill px-2 py-1 text-xs font-semibold bg-white hover:bg-[var(--acid)]",style: cell.bg && cell.v ? {background: cell.bg, color:"#fff"} : {}},"Apply")
-                ))
-              ))
-            )
+      // v0.24.0 (feedback): redesigned bulk panel. Pick days-of-week, slot, avail, mode → one Apply.
+      // Replaces the static 8-row table that couldn't express things like "Mon+Thu eves, virtual".
+      h("div",{className:"mt-3 space-y-3"},
+        h("p",{className:"text-xs text-[var(--ink-soft)]"},"Apply to all matching days in " + monthLabel + ". Doesn't affect other people."),
+        // Day-of-week selector
+        h("div",null,
+          h("div",{className:"ticker text-[var(--berry)] mb-1.5"},"Which days"),
+          h("div",{className:"flex flex-wrap gap-1.5"},
+            // Days of week — Mon first to match the calendar
+            [{i:1,l:"Mon"},{i:2,l:"Tue"},{i:3,l:"Wed"},{i:4,l:"Thu"},{i:5,l:"Fri"},{i:6,l:"Sat"},{i:0,l:"Sun"}].map(({i,l}) => {
+              const sel = bulkDow.has(i);
+              return h("button",{
+                key:i,
+                onClick:()=>{
+                  const next = new Set(bulkDow);
+                  if (next.has(i)) next.delete(i); else next.add(i);
+                  setBulkDow(next);
+                },
+                className:"pill px-3 py-1 text-xs font-semibold " + (sel?"berry-bg text-white":"bg-white hover:bg-[var(--acid)]")
+              }, l);
+            }),
+            h("button",{
+              onClick:()=>setBulkBankHols(b => !b),
+              className:"pill px-3 py-1 text-xs font-semibold " + (bulkBankHols?"berry-bg text-white":"bg-white hover:bg-[var(--acid)]"),
+              title:"Apply to UK bank holidays in this month"
+            }, "🇬🇧 Bank hols")
+          ),
+          // Quick presets
+          h("div",{className:"flex flex-wrap gap-1.5 mt-2"},
+            h("button",{onClick:()=>{ setBulkDow(new Set([1,2,3,4,5])); setBulkBankHols(false); }, className:"pill px-2 py-0.5 text-[10px] bg-white hover:bg-[var(--acid)] text-[var(--ink-soft)]"},"All weekdays"),
+            h("button",{onClick:()=>{ setBulkDow(new Set([0,6])); setBulkBankHols(false); }, className:"pill px-2 py-0.5 text-[10px] bg-white hover:bg-[var(--acid)] text-[var(--ink-soft)]"},"Weekends"),
+            h("button",{onClick:()=>{ setBulkDow(new Set([1,4])); setBulkBankHols(false); }, className:"pill px-2 py-0.5 text-[10px] bg-white hover:bg-[var(--acid)] text-[var(--ink-soft)]"},"Mon + Thu"),
+            h("button",{onClick:()=>{ setBulkDow(new Set()); setBulkBankHols(true); }, className:"pill px-2 py-0.5 text-[10px] bg-white hover:bg-[var(--acid)] text-[var(--ink-soft)]"},"Bank hols only"),
+            h("button",{onClick:()=>{ setBulkDow(new Set()); setBulkBankHols(false); }, className:"pill px-2 py-0.5 text-[10px] bg-white hover:bg-[var(--acid)] text-[var(--ink-soft)]"},"Clear")
           )
         ),
-        h("button",{onClick:clearAllMyMarks,className:"mt-3 btn bg-white px-3 py-1.5 text-xs text-[var(--berry)]"},"Clear all my marks for this month")
+        // Slot picker
+        h("div",null,
+          h("div",{className:"ticker text-[var(--berry)] mb-1.5"},"Slot"),
+          h("div",{className:"flex flex-wrap gap-1.5"},
+            [{v:"am",l:"AM"},{v:"pm",l:"PM"},{v:"eve",l:"Eve"},{v:"all",l:"All 3 (AM+PM+Eve)"}].map(({v,l}) => h("button",{
+              key:v,
+              onClick:()=>setBulkSlot(v),
+              className:"pill px-3 py-1 text-xs font-semibold " + (bulkSlot===v?"berry-bg text-white":"bg-white hover:bg-[var(--acid)]")
+            }, l))
+          )
+        ),
+        // Availability picker
+        h("div",null,
+          h("div",{className:"ticker text-[var(--berry)] mb-1.5"},"Set availability to"),
+          h("div",{className:"flex flex-wrap gap-1.5"},
+            [
+              {v:"yes",   l:"✓ Yes",   bg:"var(--good)"},
+              {v:"maybe", l:"? Maybe", bg:"var(--rusty)"},
+              {v:"no",    l:"✗ No",    bg:"var(--learn)"},
+              {v:"clear", l:"— Clear", bg:""}
+            ].map(({v,l,bg}) => h("button",{
+              key:v,
+              onClick:()=>setBulkAvail(v),
+              className:"pill px-3 py-1 text-xs font-semibold " + (bulkAvail===v ? (v==="clear" ? "berry-bg text-white" : "text-white") : "bg-white hover:bg-[var(--acid)]"),
+              style: bulkAvail===v && bg ? {background: bg} : {}
+            }, l))
+          )
+        ),
+        // Mode picker — only meaningful for yes/maybe.
+        (bulkAvail === "yes" || bulkAvail === "maybe") && h("div",null,
+          h("div",{className:"ticker text-[var(--berry)] mb-1.5"},"Mode (optional)"),
+          h("div",{className:"flex flex-wrap gap-1.5"},
+            [
+              {v:"unset",   l:"— Leave unset"},
+              {v:"person",  l:"📍 In-person"},
+              {v:"virtual", l:"💻 Virtual only"},
+              {v:"either",  l:"📍💻 Either"}
+            ].map(({v,l}) => h("button",{
+              key:v,
+              onClick:()=>setBulkMode(v),
+              className:"pill px-3 py-1 text-xs font-semibold " + (bulkMode===v?"berry-bg text-white":"bg-white hover:bg-[var(--acid)]")
+            }, l))
+          ),
+          h("p",{className:"text-[10px] text-[var(--ink-soft)] italic mt-1"},"Pick \"Leave unset\" if you don't want to overwrite mode preferences you set per-day.")
+        ),
+        // Apply button + summary line
+        h("div",{className:"pt-2 border-t border-[var(--line)]/15"},
+          (() => {
+            // Build a human-readable summary of the action.
+            const dowNames = {0:"Sun",1:"Mon",2:"Tue",3:"Wed",4:"Thu",5:"Fri",6:"Sat"};
+            const dowList = Array.from(bulkDow).sort().map(i => dowNames[i]).join("+");
+            const dayLabel = (dowList && bulkBankHols) ? (dowList + " + bank hols") : (dowList || (bulkBankHols ? "bank hols" : "no days picked"));
+            const slotLabel = bulkSlot === "all" ? "AM+PM+Eve" : SLOT_LABELS[bulkSlot];
+            const availLabel = bulkAvail === "clear" ? "clear" : ({yes:"✓ Yes", maybe:"? Maybe", no:"✗ No"})[bulkAvail];
+            const modeLabel = (bulkAvail === "yes" || bulkAvail === "maybe") && bulkMode !== "unset" ? (" · " + MODE_LABELS[bulkMode]) : "";
+            const canApply = (bulkDow.size > 0 || bulkBankHols);
+            // Predicate factory for current selection
+            const buildPred = () => (d, iso) => {
+              if (bulkBankHols && bankHolidaySet.has(iso)) return true;
+              if (bulkDow.has(d.getDay())) return true;
+              return false;
+            };
+            const apply = () => {
+              if (!canApply) return;
+              const pred = buildPred();
+              const slots = bulkSlot === "all" ? ["am","pm","eve"] : [bulkSlot];
+              if (bulkAvail === "clear") {
+                slots.forEach(s => bulkApply(pred, s, {avail: null}));
+              } else {
+                const patch = {avail: bulkAvail};
+                if ((bulkAvail === "yes" || bulkAvail === "maybe") && bulkMode !== "unset") {
+                  patch.mode = bulkMode;
+                }
+                slots.forEach(s => bulkApply(pred, s, patch));
+              }
+            };
+            return h("div",{className:"flex items-center gap-3 flex-wrap"},
+              h("button",{onClick:apply,disabled:!canApply,className:"btn berry-bg px-4 py-2 text-sm font-semibold"},"Apply"),
+              h("span",{className:"text-xs text-[var(--ink-soft)] italic flex-1 min-w-0"},
+                canApply ? (dayLabel + " · " + slotLabel + " · " + availLabel + modeLabel) : "Pick at least one day."
+              )
+            );
+          })()
+        ),
+        h("button",{onClick:clearAllMyMarks,className:"btn bg-white px-3 py-1.5 text-xs text-[var(--berry)]"},"Clear all my marks for this month")
       )
     ),
 
@@ -5195,17 +5404,18 @@ const DayDetailPanel = ({iso, practiceAvail, bankHolidayName, member, existingEv
   }, {sid: "eve", count: -1});
 
   return h("div",{className:"modal-bg",onClick:onClose},
-    h("div",{className:"card p-5 max-w-md w-full max-h-[90vh] overflow-y-auto",onClick:e=>e.stopPropagation()},
-      // v0.23.0 (feedback): sticky header so Close stays reachable while scrolling on phones.
+    h("div",{className:"card max-w-md w-full max-h-[90vh] overflow-y-auto",style:{padding:0},onClick:e=>e.stopPropagation()},
+      // v0.23.0 / v0.24.0 (feedback): sticky header. Now flush with the card's top edge —
+      // the card has padding:0 and the body content gets its own padded wrapper below.
       h("div",{className:"sb-modal-sticky-header flex items-center justify-between"},
         h("h3",{className:"display text-2xl leading-tight"}, fmtDateLong(iso)),
         h("button",{onClick:onClose,className:"btn bg-white px-3 py-1 text-sm font-semibold","aria-label":"Close"},"× Close")
       ),
-      // Re-introduce a small top margin since the sticky header has its own padding.
-      h("div",{className:"mt-2"}),
-      isHoliday && h("p",{className:"ticker text-[var(--berry)] mb-1"},"🇬🇧 " + bankHolidayName),
-      isWeekendDay && !isHoliday && h("p",{className:"ticker text-[var(--berry)]"},"Weekend"),
-      !isWeekendDay && !isHoliday && h("p",{className:"ticker text-[var(--berry)]"}, expanded ? "Weekday — all-day view" : "Weekday — evening only"),
+      // Padded content wrapper — replaces the card's old p-5.
+      h("div",{className:"px-5 pt-3 pb-5"},
+        isHoliday && h("p",{className:"ticker text-[var(--berry)] mb-1"},"🇬🇧 " + bankHolidayName),
+        isWeekendDay && !isHoliday && h("p",{className:"ticker text-[var(--berry)]"},"Weekend"),
+        !isWeekendDay && !isHoliday && h("p",{className:"ticker text-[var(--berry)]"}, expanded ? "Weekday — all-day view" : "Weekday — evening only"),
 
       existingEvent && h("div",{className:"mt-3 p-3 bg-[var(--acid)]/30 border border-[var(--line)] text-sm"},
         h("strong",null,"Already on the schedule:"),
@@ -5251,6 +5461,7 @@ const DayDetailPanel = ({iso, practiceAvail, bankHolidayName, member, existingEv
       h("div",{className:"mt-4 pt-3 border-t border-[var(--line)]/15"},
         h("button",{onClick:onClose,className:"btn berry-bg px-4 py-2 text-sm font-semibold w-full"},"Done")
       )
+      ) // close padded content wrapper (v0.24.0)
     )
   );
 };
@@ -6298,6 +6509,9 @@ const App = () => {
   const [gigSetlistId, setGigSetlistId] = useState(null);
   useEffect(() => { if (urlBin && urlBin !== storedBin) setStoredBinId(urlBin); }, [urlBin, storedBin]);
   const sync = useSyncedState(binId, member && member.id);
+  // v0.24.0: pick a musician quote once per app load. useState initializer ensures
+  // it stays stable for this session (re-renders won't reroll the dice).
+  const [sessionQuote] = useState(() => pickRandom(MUSICIAN_QUOTES));
 
   // v0.20.1 (hotfix): forceSnapshot MUST be declared before any conditional early-returns
   // below (!binId, showShare, !sync.state, !member). React's Rules of Hooks require hooks
@@ -6428,9 +6642,20 @@ const App = () => {
     tab==="setlists" && h(SetlistsView,{setlists:setlists,songs:songs,events:events,member:member,mutate:sync.mutate,settings:settings,onStartGigMode:(id)=>setGigSetlistId(id),onForceSnapshot:forceSnapshot}),
     tab==="equipment" && h(EquipmentView,{equipment:equipment,wishlist:wishlist,member:member,memberProfiles:memberProfiles,mutate:sync.mutate}),
     tab==="feedback" && h(FeedbackView,{feedback:feedback,member:member,memberProfiles:memberProfiles,mutate:sync.mutate}),
-    h("footer",{className:"mt-12 pt-6 border-t border-[var(--line)]/30 text-xs text-[var(--ink-soft)] flex justify-between flex-wrap gap-2"},
-      h("span",null,"Sourberry ", h("span",{className:"opacity-70"},"v"+APP_VERSION)),
-      h("span",{className:"display-italic"},"made with bitter love")
+    h("footer",{className:"mt-12 pt-6 border-t border-[var(--line)]/30 text-xs text-[var(--ink-soft)]"},
+      // v0.24.0: random musician quote, picked once per session.
+      h("blockquote",{className:"mb-4 italic text-center max-w-xl mx-auto"},
+        h("span",{className:"display-italic"},"\u201C", sessionQuote.q, "\u201D"),
+        h("div",{className:"ticker text-[10px] mt-1 not-italic"},"— ", sessionQuote.who)
+      ),
+      h("div",{className:"flex justify-between items-baseline flex-wrap gap-2"},
+        h("div",null,
+          h("span",null,"Sourberry \u00b7 ", h("span",{className:"opacity-70"},"v"+APP_VERSION)),
+          // v0.24.0: C.R.A.P. acronym — Collaborative Rehearsal & Administration Platform.
+          h("div",{className:"display-italic text-[10px] mt-0.5 opacity-80"},"Collaborative Rehearsal & Administration Platform \u00b7 C.R.A.P.")
+        ),
+        h("span",{className:"display-italic"},"made with bitter love")
+      )
     )
   );
 };
