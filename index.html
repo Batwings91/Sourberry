@@ -1,4 +1,4 @@
-l<!DOCTYPE html>
+<!DOCTYPE html>
 
 <html lang="en">
 <head>
@@ -214,7 +214,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.21.0";
+const APP_VERSION = "0.21.1";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 // Instruments for member profiles (multi-select). Order is the display order.
 // Icons are emoji — render natively on iOS/macOS/Android. Bass uses 🪕 (banjo) as the closest
@@ -4361,6 +4361,12 @@ const SetlistsView = ({setlists, songs, events, member, mutate, settings, onStar
   const [openId, setOpenId] = useState(null);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
+  // v0.21.0: state for the copy-from-setlist modal.
+  // copyMode: null when closed, "create" when seeding a new setlist, "edit" when copying into the open one.
+  // v0.21.1 (hotfix): MUST be declared before the early return below — Rules of Hooks. Same class of
+  // bug as v0.20.0/v0.20.1: putting useState after a conditional return makes the hook order
+  // change between renders, React unmounts the tree, page goes blank when you tap a setlist.
+  const [copyMode, setCopyMode] = useState(null);
   const all = setlistsList(setlists).sort((a,b) => (b.createdAt||0) - (a.createdAt||0));
   const createSetlist = name => {
     const id = newId("sl");
@@ -4475,9 +4481,6 @@ const SetlistsView = ({setlists, songs, events, member, mutate, settings, onStar
     const copyCandidates = all.filter(s => s.id !== openId);
     return h(SetlistDetail,{setlist: Object.assign({id:openId}, setlists[openId]), songs:songs, events:events, member:member, mutate:mutate, settings:settings, onBack:()=>setOpenId(null), onUpdate: data => updateSetlist(openId, data), onDelete: () => deleteSetlist(openId), onDuplicate: () => duplicateSetlist(openId), onStartGigMode: onStartGigMode ? () => onStartGigMode(openId) : null, siblingIds: orderedIds, onNavigate: (id) => setOpenId(id), copySources: copyCandidates, onCopyFrom: ({sourceSlId, parts, strategy}) => copyIntoExistingSetlist(openId, sourceSlId, parts, strategy)});
   }
-  // v0.21.0: state for the copy-from-setlist modal.
-  // copyMode: null when closed, "create" when seeding a new setlist, "edit" when copying into the open one.
-  const [copyMode, setCopyMode] = useState(null);
   return h("div",null,
     h("div",{className:"flex items-center justify-between mb-4 flex-wrap gap-2"},
       h("p",{className:"text-sm text-[var(--ink-soft)]"},"Build a named setlist from your library, optionally pinned to a gig."),
