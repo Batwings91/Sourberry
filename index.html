@@ -252,7 +252,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.25.0";
+const APP_VERSION = "0.26.0";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 
 // v0.24.0/v0.25.0: random musician quotes for the footer. Picked once per app load.
@@ -293,32 +293,98 @@ const MUSICIAN_QUOTES = [
 ];
 
 // v0.24.0: rehearsal excuse generator. Tap a button on a rehearsal card → appends
-// a plausibly-stupid excuse to your apology message. Pure entertainment. Two-part:
-// pick a reason, optionally pair with a flourish.
-const REHEARSAL_EXCUSE_REASONS = [
+// a plausibly-stupid excuse to your apology message. Pure entertainment.
+// v0.26.0: personalised per band member. Each member's excuses lean on their job and
+// family situation (divorces, exes, kids, ages, careers) for maximum specificity. The
+// goal is "ridiculous but recognisably yours". Generic list kept as fallback for when
+// the user isn't logged in.
+const REHEARSAL_EXCUSE_REASONS_GENERIC = [
   "my amp developed sentience and demanded its rights",
   "the cat sat on my pedalboard and refused to move on principle",
   "I got stuck behind a tractor for 40 minutes",
   "my Uber driver wanted to talk about his mixtape",
   "I lost track of time tuning a single string",
   "the Tube ate my plans",
-  "my partner needed me to assemble flat-pack furniture and the assembly was structural",
   "I was held hostage by a 6-disc CD changer",
   "my metronome started giving me legal advice",
   "I had a creative breakthrough involving the kettle",
-  "the dog learned a new chord and I had to celebrate",
   "I got into an existential debate with a busker",
   "my e-bike battery died on a hill in the rain",
   "I mistook the rehearsal time for GMT and we are not in GMT",
   "I was drafted into a flash mob",
-  "my upstairs neighbour was finally practicing scales and I had to listen",
   "I dropped my plectrum into a parallel dimension",
-  "the local Tesco had ALL the snacks I'd been craving",
-  "I rewatched 'Almost Famous' and time stopped meaning anything",
-  "my guitar strap broke in a poetic way I had to journal about",
-  "I was momentarily a roadie for a school recital",
   "the rehearsal space had a goose situation"
 ];
+// Omar — product manager, ex-wife Emma, son Mason (7), daughter Amelie (10), guitar.
+const REHEARSAL_EXCUSE_REASONS_OMAR = [
+  "Mason superglued my plectrums to the kitchen ceiling and I'm still cataloguing the damage",
+  "Amelie's school project is a Tudor castle made of actual sponge cake and someone trod on the keep",
+  "Emma needed me to drive to Sevenoaks for a reason that became less convincing the further I drove",
+  "I tried to write a one-pager about putting on socks and three engineers raised concerns",
+  "Mason has decided he's a velociraptor this week and I cannot lawfully remove him from the car seat",
+  "my sprint planning meeting turned into a hostage situation over story points",
+  "Amelie's hamster is genuinely missing and there are persons of interest in this house",
+  "my JIRA notifications achieved consciousness and I had to negotiate terms",
+  "Mason's school called because he's been writing 'guitar solos' on the wall in highlighter",
+  "I got pulled into a roadmap review where someone said 'let's double-click on that' eleven times",
+  "Amelie wrote a strongly-worded letter to Emma about screen time and I was named as a witness",
+  "Mason hid my capo in something he won't tell me the location of and the leverage is considerable",
+  "my product team is doing a retrospective on the last retrospective and I'm in the breakout"
+];
+// Mike — sales executive, ex-wife Jessica, son Sam (15), daughter Sophie (11), bass.
+const REHEARSAL_EXCUSE_REASONS_MIKE = [
+  "Sam locked himself in his room with a Bluetooth speaker and is broadcasting drill music to the entire postcode",
+  "Jessica needs me to drop Sophie at a sleepover that's apparently in another county",
+  "I closed a deal at 5:58pm and now I have to pretend to be excited about it on a 90-minute call",
+  "Sam wants to borrow the car and we're in active negotiations with no neutral ground",
+  "Sophie's TikTok phase is now an art-direction phase and our living room is a 'set'",
+  "I got stuck on a discovery call with a prospect who started crying about Q4",
+  "Sam's mate vomited in our hallway and I'm still doing forensics",
+  "my bass case has been claimed as fort infrastructure and removing it constitutes an act of war",
+  "I'm in the middle of a renewal call where the CFO keeps calling me 'champ'",
+  "Sophie is hosting a craft afternoon and I have been assigned a glue gun station",
+  "Sam asked me what 'liquidity' meant and I was contractually obliged to take that seriously",
+  "my CRM ate a six-figure deal and I had to escalate it to someone whose job title is unclear",
+  "Jessica's new boyfriend tried to fix our boiler and now we have a different problem"
+];
+// James — lawyer, wife Tamsin, son Reuben (12), daughter Esmee (9).
+const REHEARSAL_EXCUSE_REASONS_JAMES = [
+  "Reuben's geography homework requires me to draft a legal opinion on whether Wales is a country",
+  "Tamsin has guests over and I am, regrettably, the host",
+  "I'm on a redline that's gone to its 14th round and the other side keeps using Track Changes wrong",
+  "Esmee's pet stick insect escaped and I have a duty of care",
+  "Reuben challenged me to prove the existence of free will before he'd put his shoes on and his argument is, frankly, watertight",
+  "I lost a Boggle match to my 9-year-old and I need to process this",
+  "a junior associate emailed me the words 'quick question' at 6:47pm and we both know what that means",
+  "Tamsin's parents are visiting and I am performing son-in-law",
+  "I'm reviewing an indemnity clause that is, on its face, a cry for help",
+  "Esmee has set up a courtroom in the living room and I am cross-examining a teddy",
+  "Reuben asked whether his pocket money is a salary or a stipend and I felt I owed him a proper answer",
+  "I got sent a 412-page PDF at 5pm with the word 'urgent' and an emoji",
+  "I'm still recovering from a deposition where the witness's lawyer kept saying 'with respect' and meant it"
+];
+// Veena — recruiter, divorced, daughter Leela (11).
+const REHEARSAL_EXCUSE_REASONS_VEENA = [
+  "Leela has invented a new dance and I am the legally required audience",
+  "I'm on the phone with a candidate who keeps saying 'circling back' and I want to circle myself into traffic",
+  "Leela's school WhatsApp is a war zone today and I'm trying not to be the parent who replies",
+  "a candidate ghosted a final-round interview and I am writing a haiku about it",
+  "Leela's friend's mum needs me to host a sleepover I do not remember agreeing to",
+  "I got rejected by my own LinkedIn search filter",
+  "Leela renamed all my Slack channels and the senior leadership one is now 'fart town'",
+  "I'm interviewing a man whose CV claims he 'launched the internet'",
+  "a hiring manager just asked me to find someone 'like the last one but cheaper and taller'",
+  "Leela has decided we're vegetarian as of 4pm and dinner needs reconceptualising",
+  "my candidate accepted a counter-offer in the carpark of the new office",
+  "Leela is sobbing because someone 'unfollowed' her and I have been briefed on the geopolitics",
+  "I just had to explain to a 23-year-old why 'salary expectations' isn't a trick question"
+];
+const REHEARSAL_EXCUSES_BY_MEMBER = {
+  omar:  REHEARSAL_EXCUSE_REASONS_OMAR,
+  mike:  REHEARSAL_EXCUSE_REASONS_MIKE,
+  james: REHEARSAL_EXCUSE_REASONS_JAMES,
+  veena: REHEARSAL_EXCUSE_REASONS_VEENA
+};
 const REHEARSAL_EXCUSE_FLOURISHES = [
   "I take full responsibility, mostly.",
   "I'll bring biscuits.",
@@ -332,8 +398,12 @@ const REHEARSAL_EXCUSE_FLOURISHES = [
   "It was educational."
 ];
 const pickRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
-const generateRehearsalExcuse = () => {
-  return "Sorry I'm late — " + pickRandom(REHEARSAL_EXCUSE_REASONS) + ". " + pickRandom(REHEARSAL_EXCUSE_FLOURISHES);
+// v0.26.0: takes the current member so we can pull from their personalised pool.
+// Falls back to the generic list if the user hasn't picked who they are yet.
+const generateRehearsalExcuse = (member) => {
+  const memberId = member && member.id;
+  const pool = (memberId && REHEARSAL_EXCUSES_BY_MEMBER[memberId]) || REHEARSAL_EXCUSE_REASONS_GENERIC;
+  return "Sorry I'm late — " + pickRandom(pool) + ". " + pickRandom(REHEARSAL_EXCUSE_FLOURISHES);
 };
 
 // v0.25.0: rockstar moniker generator. Pure entertainment. Picks an adjective + noun and
@@ -2093,7 +2163,10 @@ const BandSettingsSection = ({settings, mutate}) => {
 // === MEMBER INSTRUMENTS SECTION ===
 // Each band member can pick which instrument(s) they play. Multi-select. Stored on
 // memberProfiles[memberId].instruments as an array of instrument ids.
-const MemberInstrumentsSection = ({memberProfiles, mutate}) => {
+// v0.26.0: monikers state is now passed in (lifted to SettingsModal) so the same
+// session-stage-name displays both here and in the profile-photos row above. Local
+// state would have produced two independent monikers per member — confusing UX.
+const MemberInstrumentsSection = ({memberProfiles, mutate, monikers, onRollMoniker}) => {
   const toggleInstrument = (memberId, instId) => {
     mutate(prev => {
       const profiles = Object.assign({}, prev.memberProfiles || {});
@@ -2106,26 +2179,21 @@ const MemberInstrumentsSection = ({memberProfiles, mutate}) => {
       return Object.assign({}, prev, {memberProfiles: profiles});
     });
   };
-  // v0.25.0: per-member rockstar moniker generator. Local state only — not stored, not synced.
-  // Tap → generates a moniker. Tap again → re-rolls. Pure entertainment for warming up.
-  const [monikers, setMonikers] = useState({}); // {memberId: "Diamond Steel Veena"}
-  const rollMoniker = (memberId, name) => {
-    setMonikers(prev => Object.assign({}, prev, {[memberId]: generateRockstarMoniker(name)}));
-  };
   return h("div",{className:"mt-5 pt-4 border-t border-[var(--line)]/15"},
     h("div",{className:"ticker text-[var(--berry)] mb-2"},"Instruments"),
     h("p",{className:"text-xs text-[var(--ink-soft)] mb-3"},"Tap to toggle. Pick all that apply — most of us play more than one."),
     h("div",{className:"space-y-3"},
       MEMBERS.map(m => {
         const cur = (memberProfiles && memberProfiles[m.id] && Array.isArray(memberProfiles[m.id].instruments)) ? memberProfiles[m.id].instruments : [];
-        const moniker = monikers[m.id];
+        const moniker = (monikers && monikers[m.id]) || null;
         return h("div",{key:m.id},
           h("div",{className:"flex items-baseline justify-between gap-2 mb-1 flex-wrap"},
             h("div",{className:"text-sm font-semibold"}, m.name),
-            // v0.25.0: tiny rockstar moniker generator, tucked next to the name
+            // v0.25.0: tiny rockstar moniker generator, tucked next to the name.
+            // v0.26.0: button now uses lifted state (see SettingsModal).
             h("button",{
               type:"button",
-              onClick: () => rollMoniker(m.id, m.name),
+              onClick: () => onRollMoniker && onRollMoniker(m.id, m.name),
               className:"text-[10px] ticker text-[var(--ink-soft)] hover:text-[var(--berry)]",
               title:"Generate a stage name"
             }, moniker ? "🤘 re-roll" : "🤘 stage name")
@@ -2157,6 +2225,13 @@ const SettingsModal = ({memberProfiles, onClose, mutate, binId, state, onRestore
   const [error, setError] = useState("");
   // When set, opens the PhotoCropper for the given member with the chosen file's data URL.
   const [cropping, setCropping] = useState(null); // { memberId, srcDataUrl } | null
+  // v0.26.0: moniker state lifted from MemberInstrumentsSection so the 🤘 button can also
+  // render up here in the profile-photos row. Same state powers both spots so re-rolling
+  // anywhere updates both displays. Session-only by design — see note in v0.25.0.
+  const [monikers, setMonikers] = useState({}); // {memberId: "Diamond Steel Veena"}
+  const rollMoniker = (memberId, name) => {
+    setMonikers(prev => Object.assign({}, prev, {[memberId]: generateRockstarMoniker(name)}));
+  };
   const onUpload = async (memberId, file) => {
     setError(""); setBusy(memberId);
     try {
@@ -2207,12 +2282,24 @@ const SettingsModal = ({memberProfiles, onClose, mutate, binId, state, onRestore
         MEMBERS.map(m => {
           const photo = (memberProfiles && memberProfiles[m.id] && memberProfiles[m.id].photoUrl) || "";
           const isBusy = busy === m.id;
+          const moniker = monikers[m.id];
           return h("div",{key:m.id,className:"flex items-center gap-3 py-2 border-b border-[var(--line)]/15 last:border-0"},
             h("div",{className:"shrink-0 rounded-full border border-[var(--line)]/40 overflow-hidden bg-white flex items-center justify-center",style:{width:48,height:48}},
               photo ? h("img",{src:photo,alt:m.name,className:"w-full h-full object-cover"}) : h("span",{className:"display text-xl text-[var(--ink-soft)]"}, m.name[0])
             ),
             h("div",{className:"flex-1 min-w-0"},
-              h("div",{className:"font-semibold"}, m.name),
+              h("div",{className:"flex items-baseline gap-2 flex-wrap"},
+                h("span",{className:"font-semibold"}, m.name),
+                // v0.26.0: 🤘 moniker button mirrored up here next to the photo/initial.
+                // Same state as the instruments-section button below — re-rolling either updates both.
+                h("button",{
+                  type:"button",
+                  onClick: () => rollMoniker(m.id, m.name),
+                  className:"text-[10px] ticker text-[var(--ink-soft)] hover:text-[var(--berry)]",
+                  title:"Generate a stage name"
+                }, moniker ? "🤘 re-roll" : "🤘 stage name")
+              ),
+              moniker && h("div",{className:"text-xs italic text-[var(--berry)] mt-0.5"}, "\u201C", moniker, "\u201D"),
               (() => {
                 const profile = memberProfiles && memberProfiles[m.id];
                 const insts = (profile && Array.isArray(profile.instruments)) ? profile.instruments : [];
@@ -2241,7 +2328,7 @@ const SettingsModal = ({memberProfiles, onClose, mutate, binId, state, onRestore
         })
       ),
       error && h("div",{className:"mt-3 text-sm text-[var(--berry)]"}, error),
-      h(MemberInstrumentsSection, {memberProfiles: memberProfiles, mutate: mutate}),
+      h(MemberInstrumentsSection, {memberProfiles: memberProfiles, mutate: mutate, monikers: monikers, onRollMoniker: rollMoniker}),
       h(BandSettingsSection, {settings: settings, mutate: mutate}),
       binId && h(BackupsSection, {binId: binId, state: state, onRestore: onRestore})
     )
@@ -2369,14 +2456,135 @@ const AvailabilityButtons = ({ev, member, onSet}) => {
 };
 const blankEvent = (type, defaultLocation) => ({date: todayISO(), startTime:"18:00", endTime:"21:00", type: type||"rehearsal", venueType:"in-person-studio", location: defaultLocation || "", bookingOwner:"", confirmed:false, status:"proposed", title:"", comments:"", recordingUrl:"", gigNotes:"", actualSetlistId:null, accessCodes:[]});
 
-// v0.25.0: tiny helper component used inside EventForm. A select + Add button — picks a setlist
-// and bulk-adds its songs (sets + soundcheck + encore, deduped) into the picker selection
-// below. Optimistic UI: re-selects the empty option after each add so the user can repeat
-// for multiple setlists if they want.
-const SetlistQuickAddRow = ({setlists, targetLabel, onAdd}) => {
+// v0.25.0: tiny helper component used inside EventForm. Picks a setlist and adds songs
+// into the picker selection below. Optimistic UI: re-selects the empty option after
+// each add so the user can repeat for multiple setlists if they want.
+// v0.26.0 (feedback): we don't always want to practice an entire setlist's worth of songs.
+// Replaced bulk add with a modal that shows the chosen setlist's songs grouped by
+// section (Soundcheck / Sets / Encore), with checkboxes so you can pick a few.
+// Songs already in the target list show as 'already added' and can't be double-added.
+const SetlistSongPickerModal = ({setlist, songs, existingIds, onCancel, onConfirm}) => {
+  const allIds = setlistAllSongIds(setlist);
+  const soundcheckId = setlist && setlist.soundcheckSongId;
+  // Build de-duped, ordered display sections. The same song id can in theory appear in
+  // multiple sections (e.g. soundcheck + set 1) — we render each occurrence separately
+  // but use a single per-id selection state so picking it once is enough.
+  const sections = [];
+  if (soundcheckId && songs && songs[soundcheckId]) {
+    sections.push({ key:"soundcheck", title:"Soundcheck", songIds:[soundcheckId] });
+  }
+  (setlist && setlist.sets || []).forEach((s, i) => {
+    const songIds = Array.isArray(s.songIds) ? s.songIds.slice() : [];
+    if (songIds.length === 0) return;
+    sections.push({ key:"set-"+i, title: s.name || ("Set " + (i+1)), songIds });
+  });
+  if (Array.isArray(setlist && setlist.encoreSongIds) && setlist.encoreSongIds.length > 0) {
+    sections.push({ key:"encore", title:"Encore", songIds: setlist.encoreSongIds.slice() });
+  }
+  const existingSet = new Set(existingIds || []);
+  // Default: every selectable song (i.e. not already in the target) ticked. Most common
+  // case is "I want most but not all" — easier to untick a few than tick a lot.
+  const initial = {};
+  allIds.forEach(id => { if (!existingSet.has(id)) initial[id] = true; });
+  const [picked, setPicked] = useState(initial);
+  const togglePick = (id) => setPicked(prev => Object.assign({}, prev, {[id]: !prev[id]}));
+  const selectAllInSection = (songIds, on) => {
+    setPicked(prev => {
+      const next = Object.assign({}, prev);
+      songIds.forEach(id => { if (!existingSet.has(id)) next[id] = on; });
+      return next;
+    });
+  };
+  const allSelectable = allIds.filter(id => !existingSet.has(id));
+  const selectedCount = allSelectable.filter(id => picked[id]).length;
+  const confirm = () => {
+    // Preserve the source setlist's order. De-dupe within the picked set.
+    const seen = new Set();
+    const out = [];
+    allIds.forEach(id => {
+      if (existingSet.has(id)) return;
+      if (!picked[id]) return;
+      if (seen.has(id)) return;
+      seen.add(id);
+      out.push(id);
+    });
+    onConfirm(out);
+  };
+  return h("div",{className:"modal-bg",onClick:onCancel},
+    h("div",{className:"card p-5 max-w-md w-full max-h-[90vh] overflow-y-auto",onClick:e=>e.stopPropagation()},
+      h("div",{className:"flex items-center justify-between mb-2"},
+        h("h3",{className:"display text-2xl"},"Pick songs from setlist"),
+        h("button",{onClick:onCancel,className:"ticker text-[var(--ink-soft)]"},"Close ✕")
+      ),
+      h("p",{className:"text-xs text-[var(--ink-soft)] mb-3"},
+        "From ",
+        h("span",{className:"font-semibold text-[var(--ink)]"}, setlist.name || "(untitled)"),
+        ". Tick the songs you want to add. Anything already in your list shows as ‘already added’."
+      ),
+      sections.length === 0 && h("p",{className:"text-sm italic text-[var(--ink-soft)]"},"This setlist has no songs yet."),
+      h("div",{className:"space-y-3"},
+        sections.map(sec => {
+          const selectable = sec.songIds.filter(id => !existingSet.has(id));
+          const allOn = selectable.length > 0 && selectable.every(id => picked[id]);
+          return h("div",{key:sec.key,className:"border border-[var(--line)]/30 rounded p-2"},
+            h("div",{className:"flex items-baseline justify-between gap-2 mb-1"},
+              h("div",{className:"ticker text-[var(--berry)] text-xs"}, sec.title),
+              selectable.length > 0 && h("button",{
+                type:"button",
+                onClick: () => selectAllInSection(sec.songIds, !allOn),
+                className:"ticker text-[10px] text-[var(--ink-soft)] hover:text-[var(--berry)]"
+              }, allOn ? "Clear" : "Select all")
+            ),
+            h("div",{className:"space-y-1"},
+              sec.songIds.map((id, idx) => {
+                const song = songs && songs[id];
+                const title = (song && song.title) || "(unknown song)";
+                const artist = song && song.artist;
+                const already = existingSet.has(id);
+                const on = !!picked[id];
+                // Each row gets a unique key — we allow the same song to appear in two
+                // sections (e.g. soundcheck + set 1), so id alone isn't unique enough.
+                return h("label",{
+                  key: sec.key + "-" + idx + "-" + id,
+                  className:"flex items-center gap-2 text-sm py-1 " + (already ? "opacity-50" : "cursor-pointer")
+                },
+                  h("input",{
+                    type:"checkbox",
+                    className:"w-4 h-4 shrink-0",
+                    checked: already || on,
+                    disabled: already,
+                    onChange: () => { if (!already) togglePick(id); }
+                  }),
+                  h("span",{className:"flex-1 min-w-0 truncate"},
+                    h("span",{className: already ? "" : "font-medium"}, title),
+                    artist && h("span",{className:"text-xs text-[var(--ink-soft)] ml-1.5"}, "· " + artist)
+                  ),
+                  already && h("span",{className:"ticker text-[10px] text-[var(--ink-soft)]"},"already added")
+                );
+              })
+            )
+          );
+        })
+      ),
+      h("div",{className:"mt-4 flex items-center gap-2 flex-wrap"},
+        h("button",{onClick:onCancel,className:"btn bg-white px-3 py-2 text-sm"},"Cancel"),
+        h("button",{
+          onClick: confirm,
+          disabled: selectedCount === 0,
+          className:"btn berry-bg px-4 py-2 text-sm font-semibold ml-auto"
+        }, selectedCount > 0 ? ("+ Add " + selectedCount + " song" + (selectedCount===1?"":"s")) : "+ Add (none picked)")
+      )
+    )
+  );
+};
+
+const SetlistQuickAddRow = ({setlists, songs, targetLabel, existingIds, onAdd}) => {
   const [picked, setPicked] = useState("");
+  // v0.26.0: when set, opens the per-song picker modal for the chosen setlist.
+  const [pickerOpen, setPickerOpen] = useState(false);
   const all = setlistsList(setlists);
   if (all.length === 0) return null;
+  const pickedSetlist = picked ? (setlists && setlists[picked]) : null;
   return h("div",{className:"text-sm md:col-span-2 -mb-2"},
     h("div",{className:"flex flex-wrap items-center gap-2"},
       h("span",{className:"ticker text-[var(--ink-soft)] text-[10px]"},"Add to " + targetLabel + " from setlist:"),
@@ -2393,11 +2601,22 @@ const SetlistQuickAddRow = ({setlists, targetLabel, onAdd}) => {
       ),
       h("button",{
         type:"button",
-        onClick: () => { if (picked) { onAdd(picked); setPicked(""); } },
+        onClick: () => { if (picked) setPickerOpen(true); },
         disabled: !picked,
         className:"btn berry-bg px-3 py-1 text-xs font-semibold"
-      }, "+ Add")
-    )
+      }, "Pick songs…")
+    ),
+    pickerOpen && pickedSetlist && h(SetlistSongPickerModal, {
+      setlist: pickedSetlist,
+      songs: songs,
+      existingIds: existingIds,
+      onCancel: () => setPickerOpen(false),
+      onConfirm: (ids) => {
+        if (ids && ids.length > 0) onAdd(ids);
+        setPickerOpen(false);
+        setPicked("");
+      }
+    })
   );
 };
 
@@ -2450,16 +2669,14 @@ const EventForm = ({initial, onSave, onCancel, onDelete, locationSuggestions, sa
       h("label",{className:"text-sm md:col-span-2"}, h("div",{className:"ticker mb-1"},"Comments"),
         h("textarea",{className:"input",rows:"2",value:f.comments,onChange:e=>set("comments",e.target.value)})),
       // v0.25.0 (feedback): "Add from setlist…" affordance for rehearsal song pickers.
-      // When a setlist is picked, all its songs (sets + soundcheck + encore) are added to
-      // the field's selection, deduped, preserving any songs already there. Stays in the form
-      // — the picker still works for free-form additions/removals afterwards.
+      // v0.26.0: now opens a per-song picker so we can add a few songs from a setlist
+      // rather than the whole thing — practising 20 songs in 2 hours doesn't fit.
       isRehearsal && songs && h(SetlistQuickAddRow, {
         setlists: setlists,
+        songs: songs,
         targetLabel: "agenda",
-        onAdd: (sourceSlId) => {
-          const sl = setlists && setlists[sourceSlId];
-          if (!sl) return;
-          const ids = setlistAllSongIds(sl);
+        existingIds: Array.isArray(f.agendaSongIds) ? f.agendaSongIds : [],
+        onAdd: (ids) => {
           const cur = Array.isArray(f.agendaSongIds) ? f.agendaSongIds : [];
           const merged = cur.slice();
           ids.forEach(id => { if (!merged.includes(id)) merged.push(id); });
@@ -2475,11 +2692,10 @@ const EventForm = ({initial, onSave, onCancel, onDelete, locationSuggestions, sa
       }),
       isRehearsal && songs && h(SetlistQuickAddRow, {
         setlists: setlists,
+        songs: songs,
         targetLabel: "played",
-        onAdd: (sourceSlId) => {
-          const sl = setlists && setlists[sourceSlId];
-          if (!sl) return;
-          const ids = setlistAllSongIds(sl);
+        existingIds: Array.isArray(f.playedSongIds) ? f.playedSongIds : [],
+        onAdd: (ids) => {
           const cur = Array.isArray(f.playedSongIds) ? f.playedSongIds : [];
           const merged = cur.slice();
           ids.forEach(id => { if (!merged.includes(id)) merged.push(id); });
@@ -2790,15 +3006,24 @@ const EventCard = ({ev, member, memberProfiles, songs, events, pinnedSetlist, on
             h("div",{className:"ticker text-[var(--berry)] mb-1.5 text-xs"},"Your availability"),
             h("div",{className:"flex flex-wrap items-center gap-2"},
               h(AvailabilityButtons,{ev:ev, member:member, onSet:onSetAvailability}),
-              // Excuse generator + Start rehearsal stay alongside availability — they're action buttons.
+              // v0.26.0: Excuse generator stays inside the availability box because it's
+              // semantically an availability action ("I'm going to be late, here's why").
+              // Start rehearsal + Edit moved out — they're management actions, not yours-truly
+              // ones, and on mobile the row was wrapping awkwardly with all four. Member is
+              // passed so the excuse pulls from their personalised pool (jobs, kids, exes).
               isRehearsal && h("button",{
-                onClick:()=>{ setExcuseText(generateRehearsalExcuse()); setExcuseCopyState("idle"); },
+                onClick:()=>{ setExcuseText(generateRehearsalExcuse(member)); setExcuseCopyState("idle"); },
                 className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)]",
                 title:"Generate a stupid excuse"
-              },"🎲 Excuse generator"),
-              isRehearsal && onStartRehearsal && h("button",{onClick:()=>onStartRehearsal(ev.id),className:"btn berry-bg px-3 py-1.5 text-xs font-semibold ml-auto",title:"Open the focused rehearsal runner"},"▶ Start rehearsal"),
-              h("button",{onClick:onEdit,className:"ticker " + (isRehearsal && onStartRehearsal ? "" : "ml-auto") + " text-[var(--ink-soft)] hover:text-[var(--berry)]"},"Edit ▸")
+              },"🎲 Excuse generator")
             )
+          ),
+          // v0.26.0 (feedback): Edit + Start rehearsal moved out of the availability box.
+          // Edit is always shown for upcoming events; Start rehearsal only for rehearsals
+          // when the runner is wired up. Right-aligned on its own row → cleaner mobile.
+          h("div",{className:"mt-2 flex items-center gap-2 flex-wrap"},
+            h("button",{onClick:onEdit,className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)]"},"Edit \u25b8"),
+            isRehearsal && onStartRehearsal && h("button",{onClick:()=>onStartRehearsal(ev.id),className:"btn berry-bg px-3 py-1.5 text-xs font-semibold ml-auto",title:"Open the focused rehearsal runner"},"\u25b6 Start rehearsal")
           ),
           // Calendar export + map links — moved BELOW the availability box (v0.25.0 feedback).
           (ev.location || ev.startTime) && h("div",{className:"mt-2 flex items-center gap-3 flex-wrap text-xs"},
@@ -2873,7 +3098,9 @@ const EventCard = ({ev, member, memberProfiles, songs, events, pinnedSetlist, on
             }),
             h("div",{className:"mt-3 flex gap-2 items-center flex-wrap"},
               h("button",{
-                onClick: () => { setExcuseText(generateRehearsalExcuse()); setExcuseCopyState("idle"); },
+                // v0.26.0: re-roll also reads from the current member's pool so the modal
+                // stays consistently personalised after the first generation.
+                onClick: () => { setExcuseText(generateRehearsalExcuse(member)); setExcuseCopyState("idle"); },
                 className:"btn bg-white px-3 py-2 text-sm",
                 title:"Get a different one"
               }, "🎲 Re-roll"),
@@ -6703,6 +6930,10 @@ const App = () => {
   const [tab, setTab] = useState("gigs");
   const [showSyncPanel, setShowSyncPanel] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  // v0.26.0: footer stats modal — currently shows the WhatsApp-saved counter, reserved
+  // as the home for any future band stats we add. Hook lives at the top alongside other
+  // top-level UI state so it sits before the early-returns (Rules of Hooks).
+  const [showStats, setShowStats] = useState(false);
   // Iteration C.1: when set, App takes over with the focused Run Rehearsal page.
   const [runRehearsalId, setRunRehearsalId] = useState(null);
   // Iteration D.1 (rebuild): when set, App takes over with the full-screen Gig Mode.
@@ -6728,6 +6959,30 @@ const App = () => {
   const forceSnapshot = useCallback(() => {
     try { saveBackup(binId, sync.state, {force: true}); } catch (_) {}
   }, [binId, sync.state]);
+
+  // v0.26.0: WhatsApp-counter baseline auto-init. The user wanted the counter to start
+  // counting from "today" (i.e. the moment they share v0.26.0 with the band), not from
+  // the beginning of the bin. We snapshot current event/setlist counts as the baseline
+  // the first time we see settings without one. Display = currentCount − baseline,
+  // clamped at 0 so deletes don't push it negative. Reset button in the Stats modal
+  // lets the user re-baseline later (e.g. they want a fresh "since the new year").
+  // Effect must sit above the early-returns to satisfy Rules of Hooks.
+  useEffect(() => {
+    if (!sync.state) return;
+    const s = sync.state.settings || {};
+    if (s.whatsappBaseline) return;
+    sync.mutate(prev => {
+      const prevSettings = (prev && prev.settings) || {};
+      if (prevSettings.whatsappBaseline) return prev; // race-safe no-op if another tab beat us
+      const evCount = Object.keys((prev && prev.events) || {}).length;
+      const slCount = Object.keys((prev && prev.setlists) || {}).length;
+      return Object.assign({}, prev, {
+        settings: Object.assign({}, prevSettings, {
+          whatsappBaseline: { events: evCount, setlists: slCount, at: Date.now() }
+        })
+      });
+    });
+  }, [sync.state, sync.mutate]);
 
   if (!binId) return h(SetupScreen,{onCreated: id => { setStoredBinId(id); const url = new URL(window.location.href); url.searchParams.set("bin", id); window.history.replaceState({}, "", url.toString()); setBinId(id); setShowShare(true); }});
   if (showShare) return h(ShareScreen,{binId:binId,onContinue:()=>setShowShare(false)});
@@ -6851,33 +7106,69 @@ const App = () => {
       // v0.24.0: random musician quote, picked once per session.
       h("blockquote",{className:"mb-4 italic text-center max-w-xl mx-auto"},
         h("span",{className:"display-italic"},"\u201C", sessionQuote.q, "\u201D"),
-        h("div",{className:"ticker text-[10px] mt-1 not-italic"},"— ", sessionQuote.who)
+        h("div",{className:"ticker text-[10px] mt-1 not-italic"},"\u2014 ", sessionQuote.who)
       ),
-      // v0.25.0: WhatsApp-discussions-saved counter. Counts total events created in the bin
-      // as a proxy for "things we'd otherwise have argued about in chat". Cheap, visible, fun.
-      // Each event tap-saved here is roughly 5–15 messages of "what about Tuesday? no Wednesday?".
-      // We multiply by a vibe-coefficient of 7 because that's what it actually feels like in WhatsApp.
-      (() => {
-        const eventCount = Object.keys(events || {}).length;
-        const setlistCount = Object.keys(setlists || {}).length;
-        // Vibe coefficient — generous enough to be funny, small enough to be plausible.
-        const saved = (eventCount * 7) + (setlistCount * 4);
-        if (saved === 0) return null;
-        return h("p",{className:"text-center text-[11px] italic mb-3 text-[var(--ink-soft)]"},
-          "Sourberry C.R.A.P. has saved you from approximately ",
-          h("span",{className:"font-semibold not-italic text-[var(--berry)]"}, saved.toLocaleString()),
-          " WhatsApp discussions."
-        );
-      })(),
+      // v0.26.0 (feedback): the always-on counter line crowded the footer on mobile.
+      // Tucked it behind a 📊 stats button — keeps the footer clean while inviting taps.
+      // Single C.R.A.P. tagline now replaces both the old left-side subtitle and the
+      // right-side "bitter love" line — the user wanted the acronym front-and-centre.
       h("div",{className:"flex justify-between items-baseline flex-wrap gap-2"},
         h("div",null,
           h("span",null,"Sourberry \u00b7 ", h("span",{className:"opacity-70"},"v"+APP_VERSION)),
-          // v0.24.0: C.R.A.P. acronym — Collaborative Rehearsal & Administration Platform.
-          h("div",{className:"display-italic text-[10px] mt-0.5 opacity-80"},"Collaborative Rehearsal & Administration Platform \u00b7 C.R.A.P.")
+          h("button",{
+            type:"button",
+            onClick:()=>setShowStats(true),
+            className:"ml-2 ticker text-[10px] text-[var(--ink-soft)] hover:text-[var(--berry)]",
+            title:"Band stats"
+          },"\ud83d\udcca stats")
         ),
-        h("span",{className:"display-italic"},"made with bitter love")
+        h("span",{className:"display-italic text-right"},"Collaborative Rehearsal & Administration Platform \u00b7 C.R.A.P.")
       )
-    )
+    ),
+    // v0.26.0: Stats modal. Currently houses the WhatsApp-saved counter (delta from
+    // baseline) plus a Reset button to re-baseline. Designed to grow — easy to drop
+    // future cheap-and-fun stats in here (gigs played, songs run this month, etc).
+    showStats && (() => {
+      const baseline = (settings && settings.whatsappBaseline) || {events:0, setlists:0, at:0};
+      const eventsDelta = Math.max(0, Object.keys(events || {}).length - (baseline.events || 0));
+      const setlistsDelta = Math.max(0, Object.keys(setlists || {}).length - (baseline.setlists || 0));
+      // Vibe coefficient — generous enough to be funny, small enough to be plausible.
+      // Each event saves ~5–15 messages of "what about Tuesday? no Wednesday?"; ×7 felt right.
+      const saved = (eventsDelta * 7) + (setlistsDelta * 4);
+      const sinceISO = baseline.at ? new Date(baseline.at).toISOString().slice(0,10) : null;
+      const resetBaseline = () => {
+        if (!confirm("Reset the WhatsApp-saved counter back to zero from today?")) return;
+        sync.mutate(prev => Object.assign({}, prev, {
+          settings: Object.assign({}, prev.settings || {}, {
+            whatsappBaseline: { events: Object.keys(prev.events||{}).length, setlists: Object.keys(prev.setlists||{}).length, at: Date.now() }
+          })
+        }));
+      };
+      return h("div",{className:"modal-bg",onClick:()=>setShowStats(false)},
+        h("div",{className:"card p-5 max-w-md w-full max-h-[90vh] overflow-y-auto",onClick:e=>e.stopPropagation()},
+          h("div",{className:"flex items-center justify-between mb-3"},
+            h("h3",{className:"display text-2xl"},"Band stats"),
+            h("button",{onClick:()=>setShowStats(false),className:"ticker text-[var(--ink-soft)]"},"Close \u2715")
+          ),
+          h("div",{className:"py-3 border-y border-[var(--line)]/15"},
+            h("div",{className:"text-center"},
+              h("div",{className:"display text-4xl text-[var(--berry)]"}, saved.toLocaleString()),
+              h("p",{className:"text-sm italic text-[var(--ink-soft)] mt-1"},
+                "WhatsApp discussions Sourberry has saved you from"
+              ),
+              sinceISO && h("p",{className:"ticker text-[10px] text-[var(--ink-soft)] mt-1"},"since " + sinceISO)
+            ),
+            h("p",{className:"text-[11px] text-[var(--ink-soft)] mt-3 italic"},
+              "Counts events and setlists created since the baseline. Each event \u2248 7 messages avoided, each setlist \u2248 4. (Vibes-based.)"
+            )
+          ),
+          h("div",{className:"mt-3 flex items-center gap-2 flex-wrap"},
+            h("button",{onClick:resetBaseline,className:"btn bg-white px-3 py-2 text-sm"},"Reset to zero from today"),
+            h("button",{onClick:()=>setShowStats(false),className:"btn berry-bg px-4 py-2 text-sm font-semibold ml-auto"},"Done")
+          )
+        )
+      );
+    })()
   );
 };
 
