@@ -6692,6 +6692,249 @@ const fmtFeedbackDate = (ts) => {
   return d.toLocaleDateString(undefined, {day:"numeric", month:"short"}) + " " + d.toLocaleTimeString(undefined, {hour:"2-digit", minute:"2-digit"});
 };
 const newFeedbackId = () => "fb_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2,7);
+// v0.29.0: Public site management tab. Lets the maintainer control what appears
+// on sourberry.co.uk without touching code. Songs and gigs use a hidePublic flag
+// (schema v13). Settings (tagline, email, region, radius) write to
+// state.settings.publicSite, which the Postgres public_settings view exposes.
+const PublicSiteView = ({songs, events, settings, mutate}) => {
+  const ps = (settings && settings.publicSite) || {};
+  const [tagline, setTagline] = useState(ps.tagline || "");
+  const [bookingEmail, setBookingEmail] = useState(ps.bookingEmail || "");
+  const [region, setRegion] = useState(ps.region || "");
+  const [travelRadius, setTravelRadius] = useState(ps.travelRadius || "");
+  const [savedMsg, setSavedMsg] = useState("");
+
+  // Keep local form fields in sync if the parent settings change (e.g. another
+  // band member saves while this tab is open).
+  useEffect(() => {
+    const p = (settings && settings.publicSite) || {};
+    setTagline(p.tagline || "");
+    setBookingEmail(p.bookingEmail || "");
+    setRegion(p.region || "");
+    setTravelRadius(p.travelRadius || "");
+  }, [settings]);
+
+  const saveSettings = () => {
+    mutate(prev => {
+      const prevS = prev.settings || {};
+      return Object.assign({}, prev, {
+        settings: Object.assign({}, prevS, {
+          publicSite: { tagline: tagline.trim(), bookingEmail: bookingEmail.trim(), region: region.trim(), travelRadius: travelRadius.trim() }
+        })
+      });
+    });
+    setSavedMsg("Saved ✓");
+    setTimeout(() => setSavedMsg(""), 2500);
+  };
+
+  const toggleSongHide = (id) => {
+    mutate(prev => {
+      const updated = Object.assign({}, prev.songs || {});
+      updated[id] = Object.assign({}, updated[id], { hidePublic: !updated[id].hidePublic });
+      return Object.assign({}, prev, { songs: updated });
+    });
+  };
+
+  const toggleEventHide = (id) => {
+    mutate(prev => {
+      const updated = Object.assign({}, prev.events || {});
+      updated[id] = Object.assign({}, updated[id], { hidePublic: !updated[id].hidePublic });
+      return Object.assign({}, prev, { events: updated });
+    });
+  };
+
+  const repertoireSongs = useMemo(() =>
+    Object.keys(songs || {})
+      .map(id => Object.assign({id}, songs[id]))
+      .filter(s => s.status === "repertoire")
+      .sort((a, b) => (a.title || "").localeCompare(b.title || "")),
+    [songs]
+  );
+
+  const publicSongsCount = repertoireSongs.filter(s => !s.hidePublic).length;
+  const hiddenSongsCount = repertoireSongs.filter(s => s.hidePublic).length;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const twelveMonthsAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+  const publicGigs = useMemo(() =>
+    Object.keys(events || {})
+      .map(id => Object.assign({id}, events[id]))
+      .filter(e => e.type === "gig" && (e.status === "confirmed" || e.status === "cancelled") && e.date >= twelveMonthsAgo)
+      .sort((a, b) => b.date.localeCompare(a.date)),
+    [events, twelveMonthsAgo]
+  );
+
+  const upcomingConfirmed = publicGigs.filter(e => e.date >= today && e.status === "confirmed" && !e.hidePublic).length;
+  const hiddenGigsCount = publicGigs.filter(e => e.hidePublic).length;
+
+  // Label helper for gig display.
+  const gigLabel = (e) => {
+    const parts = [e.date, e.title, e.location].filter(Boolean);
+    return parts.join(" · ") || e.id;
+  };
+
+  return h("div", {className: "max-w-2xl mx-auto px-3 sm:px-4 py-6 space-y-6"},
+
+    // ── Header ──────────────────────────────────────────────────────────────
+    h("div", {className: "flex items-baseline justify-between flex-wrap gap-3"},
+      h("h1", {className: "display text-2xl font-bold"}, "Public site"),
+      h("a", {
+        href: "https://sourberry.co.uk",
+        target: "_blank",
+        rel: "noopener noreferrer",
+        className: "btn berry-bg text-white text-sm font-semibold px-4 py-2"
+      }, "View live site →")
+    ),
+
+    // ── At-a-glance status ───────────────────────────────────────────────────
+    h("div", {className: "card p-4"},
+      h("div", {className: "ticker text-[var(--berry)] mb-3"}, "Status"),
+      h("div", {className: "flex flex-wrap gap-3"},
+        h("div", {className: "card-flat px-4 py-3 flex-1 min-w-[120px]"},
+          h("div", {className: "text-2xl font-bold"}, publicSongsCount),
+          h("div", {className: "text-xs text-[var(--ink-soft)] mt-0.5"}, "songs public")
+        ),
+        hiddenSongsCount > 0 && h("div", {className: "card-flat px-4 py-3 flex-1 min-w-[120px]"},
+          h("div", {className: "text-2xl font-bold text-[var(--ink-soft)]"}, hiddenSongsCount),
+          h("div", {className: "text-xs text-[var(--ink-soft)] mt-0.5"}, "songs hidden")
+        ),
+        h("div", {className: "card-flat px-4 py-3 flex-1 min-w-[120px]"},
+          h("div", {className: "text-2xl font-bold"}, upcomingConfirmed),
+          h("div", {className: "text-xs text-[var(--ink-soft)] mt-0.5"}, "upcoming gigs")
+        ),
+        h("div", {className: "card-flat px-4 py-3 flex-1 min-w-[120px]"},
+          h("a", {
+            href: "https://sourberry.co.uk",
+            target: "_blank",
+            rel: "noopener noreferrer",
+            className: "ticker text-[var(--berry)] text-[10px] hover:underline"
+          }, "sourberry.co.uk ↗")
+        )
+      )
+    ),
+
+    // ── Site settings ────────────────────────────────────────────────────────
+    h("div", {className: "card p-4 space-y-4"},
+      h("div", {className: "ticker text-[var(--berry)] mb-1"}, "Site settings"),
+      h("p", {className: "text-xs text-[var(--ink-soft)]"},
+        "These fields appear as copy on the public site. Fill them in before launch."
+      ),
+      h("label", {className: "block"},
+        h("span", {className: "text-xs font-semibold"}, "Homepage tagline"),
+        h("input", {
+          className: "input mt-1",
+          value: tagline,
+          onChange: e => setTagline(e.target.value),
+          placeholder: "e.g. Make your party bounce!"
+        })
+      ),
+      h("label", {className: "block"},
+        h("span", {className: "text-xs font-semibold"}, "Booking email"),
+        h("input", {
+          type: "email",
+          className: "input mt-1",
+          value: bookingEmail,
+          onChange: e => setBookingEmail(e.target.value),
+          placeholder: "e.g. bookings@sourberry.co.uk"
+        })
+      ),
+      h("label", {className: "block"},
+        h("span", {className: "text-xs font-semibold"}, "Region"),
+        h("input", {
+          className: "input mt-1",
+          value: region,
+          onChange: e => setRegion(e.target.value),
+          placeholder: "e.g. London & South East"
+        })
+      ),
+      h("label", {className: "block"},
+        h("span", {className: "text-xs font-semibold"}, "Travel radius"),
+        h("input", {
+          className: "input mt-1",
+          value: travelRadius,
+          onChange: e => setTravelRadius(e.target.value),
+          placeholder: "e.g. Up to 2 hours from London"
+        })
+      ),
+      h("div", {className: "flex items-center gap-3"},
+        h("button", {
+          onClick: saveSettings,
+          className: "btn berry-bg text-white text-sm font-semibold px-4 py-2"
+        }, "Save settings"),
+        savedMsg && h("span", {className: "text-sm text-[var(--good)] font-semibold"}, savedMsg)
+      )
+    ),
+
+    // ── Song visibility ──────────────────────────────────────────────────────
+    h("div", {className: "card p-4"},
+      h("div", {className: "ticker text-[var(--berry)] mb-1"}, "Song visibility"),
+      h("p", {className: "text-xs text-[var(--ink-soft)] mb-3"},
+        "Only repertoire songs appear on the public site. Toggle to hide individual songs."
+      ),
+      repertoireSongs.length === 0
+        ? h("p", {className: "text-sm text-[var(--ink-soft)] italic"}, "No songs marked as repertoire yet.")
+        : h("div", {className: "divide-y divide-[var(--line)]/20"},
+            repertoireSongs.map(s =>
+              h("div", {key: s.id, className: "flex items-center justify-between py-2.5 gap-3"},
+                h("div", {className: "min-w-0"},
+                  h("div", {className: "text-sm font-semibold truncate " + (s.hidePublic ? "text-[var(--ink-soft)] line-through" : "")}, s.title),
+                  h("div", {className: "text-xs text-[var(--ink-soft)] truncate"}, s.artist)
+                ),
+                h("button", {
+                  onClick: () => toggleSongHide(s.id),
+                  className: "pill shrink-0 px-3 py-1.5 text-xs font-semibold whitespace-nowrap " +
+                    (s.hidePublic ? "bg-white hover:bg-[var(--acid)]" : "berry-bg text-white")
+                }, s.hidePublic ? "Hidden" : "Public")
+              )
+            )
+          )
+    ),
+
+    // ── Gig visibility ───────────────────────────────────────────────────────
+    h("div", {className: "card p-4"},
+      h("div", {className: "ticker text-[var(--berry)] mb-1"}, "Gig visibility"),
+      h("p", {className: "text-xs text-[var(--ink-soft)] mb-3"},
+        "Confirmed and cancelled gigs from the last 12 months appear on the public site. Toggle to hide individual gigs."
+      ),
+      publicGigs.length === 0
+        ? h("p", {className: "text-sm text-[var(--ink-soft)] italic"}, "No confirmed or cancelled gigs in the last 12 months.")
+        : h("div", {className: "divide-y divide-[var(--line)]/20"},
+            publicGigs.map(e =>
+              h("div", {key: e.id, className: "flex items-center justify-between py-2.5 gap-3"},
+                h("div", {className: "min-w-0"},
+                  h("div", {className: "text-sm font-semibold truncate " + (e.hidePublic ? "text-[var(--ink-soft)] line-through" : "")},
+                    gigLabel(e)
+                  ),
+                  h("div", {className: "text-xs text-[var(--ink-soft)]"},
+                    e.status === "cancelled"
+                      ? h("span", {className: "text-[var(--learn)]"}, "Cancelled")
+                      : e.date >= today ? "Upcoming" : "Past"
+                  )
+                ),
+                h("button", {
+                  onClick: () => toggleEventHide(e.id),
+                  className: "pill shrink-0 px-3 py-1.5 text-xs font-semibold whitespace-nowrap " +
+                    (e.hidePublic ? "bg-white hover:bg-[var(--acid)]" : "berry-bg text-white")
+                }, e.hidePublic ? "Hidden" : "Public")
+              )
+            )
+          )
+    ),
+
+    // ── Coming soon ──────────────────────────────────────────────────────────
+    h("div", {className: "card-flat p-4 opacity-50"},
+      h("div", {className: "ticker text-[var(--ink-soft)] mb-3"}, "Coming soon"),
+      h("div", {className: "space-y-2 text-sm text-[var(--ink-soft)]"},
+        h("div", null, "📷  Media (photos & video embeds)"),
+        h("div", null, "📣  Homepage messages & banners"),
+        h("div", null, "📄  Press kit"),
+        h("div", null, "📬  Booking enquiries inbox")
+      )
+    )
+  );
+};
+
 const FeedbackView = ({feedback, member, memberProfiles, mutate}) => {
   const [adding, setAdding] = useState(false);
   const [draftType, setDraftType] = useState("feature");
@@ -7507,6 +7750,7 @@ const App = () => {
             {id:"songs",label:"Songs"},
             {id:"setlists",label:"Setlists"},
             {id:"equipment",label:"Kit"},
+            {id:"publicsite",label:"Public site"},
             {id:"feedback",label:"App feedback"}
           ].map(t => h("button",{key:t.id,onClick:()=>setTab(t.id),className:"px-3 sm:px-4 py-2 sm:py-2.5 ticker whitespace-nowrap text-[10px] sm:text-xs " + (tab===t.id?"tab-active":"hover:bg-[var(--acid)]")}, t.label)),
           h("div",{className:"ml-auto pl-2 pr-1 shrink-0 flex items-center gap-1.5"},
@@ -7522,6 +7766,7 @@ const App = () => {
     tab==="songs" && h(SongsView,{songs:songs,events:events,member:member,memberProfiles:memberProfiles,mutate:sync.mutate,settings:settings}),
     tab==="setlists" && h(SetlistsView,{setlists:setlists,songs:songs,events:events,member:member,mutate:sync.mutate,settings:settings,onStartGigMode:(id)=>setGigSetlistId(id),onForceSnapshot:forceSnapshot, onNavigateToGig: (gigId) => { setHighlightedGigId(gigId); setTab("gigs"); }}),
     tab==="equipment" && h(EquipmentView,{equipment:equipment,wishlist:wishlist,member:member,memberProfiles:memberProfiles,mutate:sync.mutate}),
+    tab==="publicsite" && h(PublicSiteView,{songs:songs,events:events,settings:settings,mutate:sync.mutate}),
     tab==="feedback" && h(FeedbackView,{feedback:feedback,member:member,memberProfiles:memberProfiles,mutate:sync.mutate}),
     h("footer",{className:"mt-12 pt-6 border-t border-[var(--line)]/30 text-xs text-[var(--ink-soft)]"},
       // v0.24.0: random musician quote, picked once per session.
