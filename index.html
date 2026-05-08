@@ -214,7 +214,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.21.1";
+const APP_VERSION = "0.22.0";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 // Instruments for member profiles (multi-select). Order is the display order.
 // Icons are emoji — render natively on iOS/macOS/Android. Bass uses 🪕 (banjo) as the closest
@@ -454,7 +454,7 @@ const buildEquipmentSeed = () => {
   });
   return eq;
 };
-const buildSeedState = () => ({schemaVersion: 11, events: buildEventsSeed(), songs: buildSongsSeed(), setlists: buildSetlistsSeed(), polls: {}, equipment: buildEquipmentSeed(), wishlist: {}, practiceAvail: {}, memberProfiles: {}, updatedAt: 0, lastSavedBy: null, settings: {}});
+const buildSeedState = () => ({schemaVersion: 12, events: buildEventsSeed(), songs: buildSongsSeed(), setlists: buildSetlistsSeed(), polls: {}, equipment: buildEquipmentSeed(), wishlist: {}, practiceAvail: {}, memberProfiles: {}, updatedAt: 0, lastSavedBy: null, settings: {}});
 
 const migrate = data => {
   let migrated = false;
@@ -555,6 +555,31 @@ const migrate = data => {
     // live in state.settings as a band-shared slice. Old data keeps the defaults.
     if (!data.settings || typeof data.settings !== "object") data.settings = {};
     data.schemaVersion = 11; migrated = true;
+  }
+  if (data.schemaVersion < 12) {
+    // v0.22.0 (schema v12): availability marks become structured per-slot objects.
+    // Legacy: practiceAvail[iso][memberId] = "yes" | "maybe" | "no"  (single Eve slot, no mode).
+    // New:    practiceAvail[iso][memberId] = { slots: { am?, pm?, eve? }, expanded?: bool }
+    //         where slot = { avail: "yes"|"maybe"|"no", mode?: "person"|"virtual"|"either" }.
+    // The migration interprets every legacy string as Eve, mode unset.
+    if (data.practiceAvail && typeof data.practiceAvail === "object") {
+      Object.keys(data.practiceAvail).forEach(iso => {
+        const day = data.practiceAvail[iso];
+        if (!day || typeof day !== "object") return;
+        Object.keys(day).forEach(mid => {
+          const v = day[mid];
+          if (typeof v === "string") {
+            // Legacy string → eve slot, no mode set (so existing rehearsals don't get
+            // misclassified as "in-person only" or "virtual only" retrospectively).
+            day[mid] = { slots: { eve: { avail: v } } };
+          } else if (v && typeof v === "object" && !v.slots) {
+            // Defensive: an object without slots — treat as legacy garbage, drop.
+            delete day[mid];
+          }
+        });
+      });
+    }
+    data.schemaVersion = 12; migrated = true;
   }
   return migrated;
 };
@@ -1273,7 +1298,7 @@ const useSyncedState = (binId, memberId) => {
   }, [flushWrite]);
   const mutate = useCallback(updater => {
     setState(prev => {
-      const next = updater(prev || {schemaVersion:11, events:{}, songs:{}, setlists:{}, polls:{}, equipment:{}, wishlist:{}, practiceAvail:{}, memberProfiles:{}, updatedAt:0, lastSavedBy:null, settings:{}});
+      const next = updater(prev || {schemaVersion:12, events:{}, songs:{}, setlists:{}, polls:{}, equipment:{}, wishlist:{}, practiceAvail:{}, memberProfiles:{}, updatedAt:0, lastSavedBy:null, settings:{}});
       stateRef.current = next;
       return next;
     });
@@ -4580,12 +4605,193 @@ const dayCellColor = (yesCount, totalMembers) => {
   return {bg:"transparent",border:"rgba(26,10,20,0.15)"};
 };
 
+// === v0.22.0 AVAILABILITY HELPERS =========================================
+// Schema v12 model: practiceAvail[iso][memberId] = { slots: { am?, pm?, eve? }, expanded?: bool }
+// where slot = { avail: "yes"|"maybe"|"no", mode?: "person"|"virtual"|"either" }.
+// "expanded" only meaningful for weekdays — turns a normal Eve-only weekday into a 3-slot day
+// (e.g. someone's on annual leave and free all day).
+
+const SLOT_IDS = ["am", "pm", "eve"];
+const SLOT_LABELS = {am:"AM", pm:"PM", eve:"Eve"};
+const SLOT_DESCS = {am:"Morning", pm:"Afternoon", eve:"Evening (after 6pm)"};
+// Default times the rehearsal-booking flow uses when a particular slot was tapped.
+// These are sensible defaults the user can edit on the booking form.
+const SLOT_DEFAULT_TIMES = {
+  am:  {startTime:"10:00", endTime:"13:00"},
+  pm:  {startTime:"14:00", endTime:"17:00"},
+  eve: {startTime:"18:00", endTime:"21:00"}
+};
+
+const MODE_LABELS = {person:"In-person", virtual:"Virtual", either:"Either"};
+const MODE_SHORT = {person:"📍", virtual:"💻", either:"📍💻"};
+
+// Get a member's mark for a given day, normalised to the v12 object form. Returns
+// {slots: {...}, expanded?} — never null. Empty object if no marks at all.
+const getDayMark = (practiceAvail, iso, memberId) => {
+  const day = practiceAvail && practiceAvail[iso];
+  if (!day) return {slots: {}};
+  const v = day[memberId];
+  if (!v) return {slots: {}};
+  if (typeof v === "string") {
+    // Defensive: if migration somehow didn't run for this entry, treat as legacy Eve.
+    return {slots: {eve: {avail: v}}};
+  }
+  if (typeof v === "object" && v.slots) return v;
+  return {slots: {}};
+};
+
+// Get a single slot for a member on a day. Returns {avail, mode} or null.
+const getSlot = (practiceAvail, iso, memberId, slotId) => {
+  const mark = getDayMark(practiceAvail, iso, memberId);
+  return (mark.slots && mark.slots[slotId]) || null;
+};
+
+// Returns true if this weekday should render its full 3-slot view because
+// at least one member explicitly expanded it (set `expanded: true`).
+const isWeekdayExpanded = (practiceAvail, iso) => {
+  const day = practiceAvail && practiceAvail[iso];
+  if (!day) return false;
+  return Object.keys(day).some(mid => {
+    const v = day[mid];
+    return v && typeof v === "object" && v.expanded === true;
+  });
+};
+
+// Returns the array of slot IDs that are visible on a given date, in display order.
+//   weekend or bank holiday: ["am","pm","eve"]
+//   weekday: ["eve"] unless expanded
+// `bankHols` is the Set/array of ISO date strings flagged as holidays.
+const visibleSlotsFor = (date, iso, practiceAvail, bankHols) => {
+  if (isWeekend(date)) return SLOT_IDS;
+  if (bankHols && bankHols.has && bankHols.has(iso)) return SLOT_IDS;
+  if (isWeekdayExpanded(practiceAvail, iso)) return SLOT_IDS;
+  return ["eve"];
+};
+
+// Counts how many members are "yes" for a particular slot on a date.
+// Used to colour the calendar cell + power the "everyone's free" badge.
+const yesCountForSlot = (practiceAvail, iso, slotId) => {
+  const day = practiceAvail && practiceAvail[iso];
+  if (!day) return 0;
+  let count = 0;
+  MEMBERS.forEach(m => {
+    const v = day[m.id];
+    if (!v) return;
+    let slot = null;
+    if (typeof v === "string") {
+      if (slotId === "eve") slot = {avail: v};
+    } else if (v && typeof v === "object" && v.slots) {
+      slot = v.slots[slotId] || null;
+    }
+    if (slot && slot.avail === "yes") count++;
+  });
+  return count;
+};
+
+// Returns the highest yes-count across the visible slots of a day.
+// Used for the calendar cell's overall colour intensity.
+const bestYesCountForDay = (practiceAvail, iso, visibleSlots) => {
+  let best = 0;
+  visibleSlots.forEach(sid => {
+    const c = yesCountForSlot(practiceAvail, iso, sid);
+    if (c > best) best = c;
+  });
+  return best;
+};
+
+// === Bank holidays =========================================================
+// Source of truth: gov.uk's free JSON feed. Cached per device in localStorage,
+// refreshed at most once a day. Hardcoded fallback covers the next few years
+// in case fetch fails (e.g. air-gapped iPad). England & Wales division by default.
+const BANK_HOLIDAY_CACHE_KEY = "sourberry.bankHolidays.v1";
+const BANK_HOLIDAY_TTL_MS = 24 * 60 * 60 * 1000; // 24h
+// Hardcoded fallback: England & Wales bank holidays, 2025-2027.
+// Source: gov.uk, accurate as of v0.22.0 release. If fetch fails this keeps the feature
+// working; if it succeeds, the fresher list overrides this.
+const BANK_HOLIDAY_FALLBACK = {
+  "2025-01-01": "New Year's Day",
+  "2025-04-18": "Good Friday",
+  "2025-04-21": "Easter Monday",
+  "2025-05-05": "Early May bank holiday",
+  "2025-05-26": "Spring bank holiday",
+  "2025-08-25": "Summer bank holiday",
+  "2025-12-25": "Christmas Day",
+  "2025-12-26": "Boxing Day",
+  "2026-01-01": "New Year's Day",
+  "2026-04-03": "Good Friday",
+  "2026-04-06": "Easter Monday",
+  "2026-05-04": "Early May bank holiday",
+  "2026-05-25": "Spring bank holiday",
+  "2026-08-31": "Summer bank holiday",
+  "2026-12-25": "Christmas Day",
+  "2026-12-28": "Boxing Day (substitute day)",
+  "2027-01-01": "New Year's Day",
+  "2027-03-26": "Good Friday",
+  "2027-03-29": "Easter Monday",
+  "2027-05-03": "Early May bank holiday",
+  "2027-05-31": "Spring bank holiday",
+  "2027-08-30": "Summer bank holiday",
+  "2027-12-27": "Christmas Day (substitute day)",
+  "2027-12-28": "Boxing Day (substitute day)"
+};
+const loadCachedBankHolidays = () => {
+  try {
+    const raw = localStorage.getItem(BANK_HOLIDAY_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    if (typeof parsed.fetchedAt !== "number") return null;
+    if ((Date.now() - parsed.fetchedAt) > BANK_HOLIDAY_TTL_MS) return null;
+    if (!parsed.dates || typeof parsed.dates !== "object") return null;
+    return parsed.dates;
+  } catch (_) { return null; }
+};
+const saveCachedBankHolidays = (dates) => {
+  try {
+    localStorage.setItem(BANK_HOLIDAY_CACHE_KEY, JSON.stringify({fetchedAt: Date.now(), dates}));
+  } catch (_) {}
+};
+// Fetches the gov.uk bank holiday feed. Returns {iso: "name", ...} for England & Wales.
+// Resolves null on failure — caller falls back to cache or hardcoded list.
+const fetchBankHolidays = async () => {
+  try {
+    const r = await fetch("https://www.gov.uk/bank-holidays.json");
+    if (!r.ok) return null;
+    const j = await r.json();
+    const ew = j && j["england-and-wales"];
+    if (!ew || !Array.isArray(ew.events)) return null;
+    const out = {};
+    ew.events.forEach(ev => { if (ev && ev.date && ev.title) out[ev.date] = ev.title; });
+    return out;
+  } catch (_) { return null; }
+};
+// === END AVAILABILITY HELPERS ==============================================
+
 // v8: month-by-month calendar, compact intro
 const PracticeView = ({practiceAvail, events, member, mutate, onGoToSchedule, onForceSnapshot}) => {
   const [monthOffset, setMonthOffset] = useState(0); // 0 = current month
   const [openDate, setOpenDate] = useState(null);
   const [showBulk, setShowBulk] = useState(false);
   const [isCompact, setIsCompact] = useState(() => typeof window !== "undefined" && window.innerWidth < 640);
+  // v0.22.0: bank holidays. Map of iso → name. Loaded from cache or fetched on mount.
+  // Initial value is a synchronous read of the localStorage cache; fetch fires asynchronously
+  // and updates state if the result differs. Fallback to the hardcoded list ensures the
+  // feature never silently disappears.
+  const [bankHolidayMap, setBankHolidayMap] = useState(() => loadCachedBankHolidays() || BANK_HOLIDAY_FALLBACK);
+  const bankHolidaySet = useMemo(() => {
+    const s = new Set();
+    Object.keys(bankHolidayMap || {}).forEach(k => s.add(k));
+    return s;
+  }, [bankHolidayMap]);
+  useEffect(() => {
+    let cancelled = false;
+    fetchBankHolidays().then(fresh => {
+      if (cancelled || !fresh) return;
+      saveCachedBankHolidays(fresh);
+      setBankHolidayMap(fresh);
+    });
+    return () => { cancelled = true; };
+  }, []);
   useEffect(() => {
     const onResize = () => setIsCompact(window.innerWidth < 640);
     window.addEventListener("resize", onResize);
@@ -4629,27 +4835,98 @@ const PracticeView = ({practiceAvail, events, member, mutate, onGoToSchedule, on
   // Only the days in the current month are subject to bulk operations / clearing
   const inMonthDates = useMemo(() => weeks.flat().filter(c => c.inCurrentMonth), [weeks]);
 
-  const setMyAvail = (iso, val) => {
+  // Single mutation point for setting one slot's avail/mode for the current member.
+  // slotId: "am"|"pm"|"eve"; patch: {avail?, mode?}; passing avail=null clears the slot.
+  const setMySlot = (iso, slotId, patch) => {
     if (!member) return;
     mutate(prev => {
-      const pa = Object.assign({}, prev.practiceAvail||{});
-      const day = Object.assign({}, pa[iso]||{});
-      if (!val) delete day[member.id]; else day[member.id] = val;
-      if (Object.keys(day).length === 0) delete pa[iso]; else pa[iso] = day;
+      const pa = Object.assign({}, prev.practiceAvail || {});
+      const dayCopy = Object.assign({}, pa[iso] || {});
+      const myMark = (() => {
+        const v = dayCopy[member.id];
+        if (typeof v === "string") return {slots: {eve: {avail: v}}};
+        if (v && typeof v === "object" && v.slots) return Object.assign({}, v, {slots: Object.assign({}, v.slots)});
+        return {slots: {}};
+      })();
+      const slots = Object.assign({}, myMark.slots);
+      const cur = slots[slotId] || {};
+      const next = Object.assign({}, cur, patch);
+      // Clear the slot entirely if avail goes to null/undefined.
+      if (next.avail == null) {
+        delete slots[slotId];
+      } else {
+        slots[slotId] = next;
+      }
+      myMark.slots = slots;
+      // Drop the member entirely from this day if no slots remain AND they aren't keeping
+      // a weekday "expanded" flag set (rare but possible).
+      const hasAnySlot = Object.keys(slots).length > 0;
+      if (!hasAnySlot && !myMark.expanded) {
+        delete dayCopy[member.id];
+      } else {
+        dayCopy[member.id] = myMark;
+      }
+      // Drop the day entry if empty.
+      if (Object.keys(dayCopy).length === 0) {
+        delete pa[iso];
+      } else {
+        pa[iso] = dayCopy;
+      }
       return Object.assign({}, prev, {practiceAvail: pa});
     });
   };
 
-  const bulkApply = (predicate, val) => {
+  // Toggle the "expanded" flag on a day for the current member.
+  // The flag turns a weekday's display into AM/PM/Eve so they can mark a leave-day.
+  const toggleMyExpanded = (iso) => {
     if (!member) return;
     mutate(prev => {
-      const pa = Object.assign({}, prev.practiceAvail||{});
+      const pa = Object.assign({}, prev.practiceAvail || {});
+      const dayCopy = Object.assign({}, pa[iso] || {});
+      const v = dayCopy[member.id];
+      let myMark;
+      if (typeof v === "string") myMark = {slots: {eve: {avail: v}}};
+      else if (v && typeof v === "object" && v.slots) myMark = Object.assign({}, v, {slots: Object.assign({}, v.slots)});
+      else myMark = {slots: {}};
+      myMark.expanded = !myMark.expanded;
+      // If turning off and there are no slots either, drop entirely.
+      if (!myMark.expanded && Object.keys(myMark.slots || {}).length === 0) {
+        delete dayCopy[member.id];
+      } else {
+        dayCopy[member.id] = myMark;
+      }
+      if (Object.keys(dayCopy).length === 0) delete pa[iso];
+      else pa[iso] = dayCopy;
+      return Object.assign({}, prev, {practiceAvail: pa});
+    });
+  };
+
+  // Bulk apply for the current member: write a slot value across many days that match a predicate.
+  // datesPred: (date) => bool. slotId: "am"|"pm"|"eve". patch: {avail, mode?} or {avail: null} to clear.
+  const bulkApply = (datesPred, slotId, patch) => {
+    if (!member) return;
+    mutate(prev => {
+      const pa = Object.assign({}, prev.practiceAvail || {});
       inMonthDates.forEach(({date, iso}) => {
-        if (predicate(date)) {
-          const day = Object.assign({}, pa[iso]||{});
-          if (!val) delete day[member.id]; else day[member.id] = val;
-          if (Object.keys(day).length === 0) delete pa[iso]; else pa[iso] = day;
+        if (!datesPred(date, iso)) return;
+        const dayCopy = Object.assign({}, pa[iso] || {});
+        const v = dayCopy[member.id];
+        let myMark;
+        if (typeof v === "string") myMark = {slots: {eve: {avail: v}}};
+        else if (v && typeof v === "object" && v.slots) myMark = Object.assign({}, v, {slots: Object.assign({}, v.slots)});
+        else myMark = {slots: {}};
+        const slots = Object.assign({}, myMark.slots);
+        if (patch.avail == null) {
+          delete slots[slotId];
+        } else {
+          slots[slotId] = Object.assign({}, slots[slotId] || {}, patch);
         }
+        myMark.slots = slots;
+        const hasAnySlot = Object.keys(slots).length > 0;
+        if (!hasAnySlot && !myMark.expanded) delete dayCopy[member.id];
+        else dayCopy[member.id] = myMark;
+        if (Object.keys(dayCopy).length === 0) delete pa[iso];
+        else pa[iso] = dayCopy;
       });
       return Object.assign({}, prev, {practiceAvail: pa});
     });
@@ -4658,19 +4935,41 @@ const PracticeView = ({practiceAvail, events, member, mutate, onGoToSchedule, on
   const clearAllMyMarks = () => {
     if (!member) return;
     if (!confirm("Clear all your availability marks for " + monthLabel + "?")) return;
-    // v0.20.0: safety snapshot before wiping a whole month of personal marks.
     if (onForceSnapshot) onForceSnapshot();
-    bulkApply(() => true, null);
+    mutate(prev => {
+      const pa = Object.assign({}, prev.practiceAvail || {});
+      inMonthDates.forEach(({iso}) => {
+        const dayCopy = Object.assign({}, pa[iso] || {});
+        if (dayCopy[member.id] !== undefined) {
+          delete dayCopy[member.id];
+          if (Object.keys(dayCopy).length === 0) delete pa[iso];
+          else pa[iso] = dayCopy;
+        }
+      });
+      return Object.assign({}, prev, {practiceAvail: pa});
+    });
   };
 
-  const bookRehearsalOn = iso => {
+  // Book a rehearsal seeded from a particular slot's availability on the chosen date.
+  const bookRehearsalOn = (iso, slotId) => {
     const date = new Date(iso + "T00:00:00");
-    const t = defaultTimeForDate(date);
+    const t = SLOT_DEFAULT_TIMES[slotId] || defaultTimeForDate(date);
     const eId = newId("e");
-    const sourceAvail = (practiceAvail && practiceAvail[iso]) || {};
+    // Seed event-level availability from this slot's per-member availability.
+    // Convert {avail: "yes"} → "yes" for the legacy event.availability map.
+    const seedAvail = {};
+    MEMBERS.forEach(m => {
+      const slot = getSlot(practiceAvail, iso, m.id, slotId);
+      if (slot && slot.avail) seedAvail[m.id] = slot.avail;
+    });
     mutate(prev => {
       const events = Object.assign({}, prev.events||{});
-      events[eId] = {date: iso, startTime: t.startTime, endTime: t.endTime, type:"rehearsal", venueType:"in-person-studio", location:"", bookingOwner:"", confirmed:false, status:"proposed", title:"", comments:"", availability: Object.assign({}, sourceAvail), createdAt: Date.now()};
+      events[eId] = {
+        date: iso, startTime: t.startTime, endTime: t.endTime,
+        type:"rehearsal", venueType:"in-person-studio", location:"",
+        bookingOwner:"", confirmed:false, status:"proposed", title:"", comments:"",
+        availability: seedAvail, createdAt: Date.now()
+      };
       return Object.assign({}, prev, {events});
     });
     setOpenDate(null);
@@ -4681,8 +4980,7 @@ const PracticeView = ({practiceAvail, events, member, mutate, onGoToSchedule, on
   const todayIsoStr = todayISO();
 
   return h("div",null,
-    // v8: compact one-line intro (no big "When can we all jam?" headline)
-    h("p",{className:"text-sm text-[var(--ink-soft)] mb-3"},"Mark days you're free. Days where everyone's green = book a rehearsal."),
+    h("p",{className:"text-sm text-[var(--ink-soft)] mb-3"},"Mark days you're free. Tap a day for full detail (slots, in-person vs virtual)."),
 
     // Month navigation
     h("div",{className:"flex items-center justify-between mb-3 flex-wrap gap-2"},
@@ -4700,12 +4998,15 @@ const PracticeView = ({practiceAvail, events, member, mutate, onGoToSchedule, on
         h("span",{className:"text-xs italic"},"(" + member.name + ")")
       ),
       h("div",{className:"mt-3"},
-        h("p",{className:"text-xs text-[var(--ink-soft)] mb-2"},"Apply to all days in " + monthLabel + ". Doesn't affect other people's marks."),
+        h("p",{className:"text-xs text-[var(--ink-soft)] mb-2"},
+          "Apply to all days in " + monthLabel + ". Sets ", h("strong",null,"availability only"), " — mode (in-person/virtual) you set per-day. Doesn't affect other people."
+        ),
         h("div",{className:"overflow-x-auto"},
           h("table",{className:"text-xs"},
             h("thead",null,
               h("tr",null,
                 h("th",{className:"text-left pr-3 py-1 ticker"}),
+                h("th",{className:"text-left pr-2 py-1 ticker"},"Slot"),
                 h("th",{className:"px-1 py-1 ticker"},"✓ Yes"),
                 h("th",{className:"px-1 py-1 ticker"},"? Maybe"),
                 h("th",{className:"px-1 py-1 ticker"},"✗ No"),
@@ -4714,18 +5015,30 @@ const PracticeView = ({practiceAvail, events, member, mutate, onGoToSchedule, on
             ),
             h("tbody",null,
               [
-                {label:"All weekday evenings", pred: d => !isWeekend(d)},
-                {label:"All Saturdays", pred: d => d.getDay() === 6},
-                {label:"All Sundays", pred: d => d.getDay() === 0}
-              ].map(row => h("tr",{key:row.label},
+                {label:"Weekday eves",      pred: (d, iso) => !isWeekend(d) && !bankHolidaySet.has(iso), slot:"eve"},
+                {label:"All Saturdays AM",  pred: d => d.getDay() === 6, slot:"am"},
+                {label:"All Saturdays PM",  pred: d => d.getDay() === 6, slot:"pm"},
+                {label:"All Saturdays Eve", pred: d => d.getDay() === 6, slot:"eve"},
+                {label:"All Sundays AM",    pred: d => d.getDay() === 0, slot:"am"},
+                {label:"All Sundays PM",    pred: d => d.getDay() === 0, slot:"pm"},
+                {label:"All Sundays Eve",   pred: d => d.getDay() === 0, slot:"eve"},
+                {label:"Bank holidays — all 3 slots", pred: (d, iso) => bankHolidaySet.has(iso), slot:"all"}
+              ].map(row => h("tr",{key: row.label + ":" + row.slot},
                 h("td",{className:"pr-3 py-1 font-semibold"}, row.label),
+                h("td",{className:"pr-2 py-1 text-[var(--ink-soft)]"}, row.slot === "all" ? "AM+PM+Eve" : SLOT_LABELS[row.slot]),
                 [
                   {v:"yes", bg:"var(--good)"},
                   {v:"maybe", bg:"var(--rusty)"},
                   {v:"no", bg:"var(--learn)"},
                   {v:null, bg:""}
                 ].map(cell => h("td",{key: String(cell.v),className:"px-1 py-1"},
-                  h("button",{onClick:()=>bulkApply(row.pred, cell.v),className:"pill px-2 py-1 text-xs font-semibold bg-white hover:bg-[var(--acid)]",style: cell.bg && cell.v ? {background: cell.bg, color:"#fff"} : {}},"Apply")
+                  h("button",{onClick:()=>{
+                    if (row.slot === "all") {
+                      ["am","pm","eve"].forEach(s => bulkApply(row.pred, s, {avail: cell.v}));
+                    } else {
+                      bulkApply(row.pred, row.slot, {avail: cell.v});
+                    }
+                  },className:"pill px-2 py-1 text-xs font-semibold bg-white hover:bg-[var(--acid)]",style: cell.bg && cell.v ? {background: cell.bg, color:"#fff"} : {}},"Apply")
                 ))
               ))
             )
@@ -4745,12 +5058,12 @@ const PracticeView = ({practiceAvail, events, member, mutate, onGoToSchedule, on
       h("div",{className:"space-y-1"},
         weeks.map((week, wi) => h("div",{key:wi,className:"grid grid-cols-7 gap-1"},
           week.map(({date, iso, inCurrentMonth}, di) => {
-            const day = (practiceAvail && practiceAvail[iso]) || {};
-            const yesCount = MEMBERS.filter(m => day[m.id] === "yes").length;
-            const cellColor = dayCellColor(yesCount, MEMBERS.length);
+            const isHoliday = bankHolidaySet.has(iso);
+            const visibleSlots = visibleSlotsFor(date, iso, practiceAvail, bankHolidaySet);
+            const bestYes = bestYesCountForDay(practiceAvail, iso, visibleSlots);
+            const cellColor = dayCellColor(bestYes, MEMBERS.length);
             const isToday = iso === todayIsoStr;
             const isPastDate = iso < todayIsoStr;
-            // v8: dim leading/trailing days from adjacent months
             const dimClass = !inCurrentMonth ? "opacity-40" : (isPastDate ? "opacity-50" : "");
             return h("button",{
               key: iso,
@@ -4760,84 +5073,188 @@ const PracticeView = ({practiceAvail, events, member, mutate, onGoToSchedule, on
             },
               isToday && h("span",{className:"absolute top-0.5 right-1 text-[8px] ticker text-[var(--berry)] font-bold"},"●"),
               h("div",{className:"flex items-baseline gap-1"},
-                h("span",{className:"display text-base sm:text-lg leading-none"}, date.getDate())
+                h("span",{className:"display text-base sm:text-lg leading-none"}, date.getDate()),
+                isHoliday && h("span",{className:"text-[8px] sm:text-[9px] ticker text-[var(--berry)] leading-none", title: bankHolidayMap[iso]}, "BH")
               ),
-              h("div",{className:"text-[8px] sm:text-[9px] text-[var(--ink-soft)] mt-0.5 leading-none"}, slotLabelForDate(date)),
-              h("div",{className:"grid grid-cols-2 gap-0.5 mt-1 w-fit"},
-                MEMBERS.map(m => {
-                  const a = day[m.id];
-                  const bg = a==="yes"?"var(--good)":a==="no"?"var(--learn)":a==="maybe"?"var(--rusty)":"transparent";
-                  const color = a ? "#fff" : "var(--ink-soft)";
-                  return h("span",{key:m.id, className:"inline-flex items-center justify-center text-[7px] sm:text-[8px] font-bold rounded-full border border-[var(--line)]", style:{width:12,height:12,background:bg,color}, title: m.name + ": " + (a || "no answer")}, m.name[0]);
+              // Slot mini-rows: each slot a row of member dots.
+              h("div",{className:"flex flex-col gap-0.5 mt-1"},
+                visibleSlots.map(sid => {
+                  const slotYes = yesCountForSlot(practiceAvail, iso, sid);
+                  return h("div",{key:sid, className:"flex items-center gap-0.5"},
+                    visibleSlots.length > 1 && h("span",{className:"text-[7px] sm:text-[8px] text-[var(--ink-soft)] w-3 shrink-0", style:{lineHeight:1}}, SLOT_LABELS[sid][0]),
+                    h("div",{className:"flex gap-0.5"},
+                      MEMBERS.map(m => {
+                        const slot = getSlot(practiceAvail, iso, m.id, sid);
+                        const a = slot && slot.avail;
+                        const bg = a==="yes"?"var(--good)":a==="no"?"var(--learn)":a==="maybe"?"var(--rusty)":"transparent";
+                        const color = a ? "#fff" : "var(--ink-soft)";
+                        return h("span",{
+                          key:m.id+":"+sid,
+                          className:"inline-flex items-center justify-center text-[7px] font-bold rounded-full border border-[var(--line)]",
+                          style:{width:10,height:10,background:bg,color, lineHeight:1},
+                          title: m.name + " " + SLOT_LABELS[sid] + ": " + (a || "—") + (slot && slot.mode ? (" · " + MODE_LABELS[slot.mode]) : "")
+                        });
+                      })
+                    ),
+                    slotYes === MEMBERS.length && h("span",{className:"text-[var(--good)] text-[10px] font-bold leading-none ml-0.5", title:"Everyone available"},"✓")
+                  );
                 })
-              ),
-              yesCount === MEMBERS.length && h("div",{className:"absolute bottom-0.5 right-1 text-[var(--good)] text-sm font-bold leading-none"},"✓")
+              )
             );
           })
         ))
       )
     ),
 
-    // v8: legend moved here as a small footnote
     h("p",{className:"text-xs text-[var(--ink-soft)] italic mt-3 leading-snug"},
-      "Tap a day to set your availability or book a rehearsal. ",
-      h("strong",null,"Mon–Fri"), " = evenings (after 6pm) · ", h("strong",null,"Sat–Sun"), " = daytime. Brighter green = more of us free. Greyed-out days are from adjacent months."
+      "Tap a day to mark availability + mode (in-person / virtual) or book a rehearsal. ",
+      h("strong",null,"Mon–Fri"), " show evenings only — open a day to expand into AM/PM/Eve for leave days. ",
+      h("strong",null,"Sat / Sun / bank holidays"), " always show all 3 slots. ✓ marks slots where the whole band is free."
     ),
 
     openDate && h(DayDetailPanel,{
       iso: openDate,
-      day: (practiceAvail && practiceAvail[openDate]) || {},
+      practiceAvail: practiceAvail,
+      bankHolidayName: bankHolidayMap[openDate] || null,
       member: member,
       existingEvent: Object.values(events||{}).find(e => e.date === openDate),
-      onSetAvail: val => setMyAvail(openDate, val),
-      onBook: () => bookRehearsalOn(openDate),
+      onSetSlot: (slotId, patch) => setMySlot(openDate, slotId, patch),
+      onToggleExpanded: () => toggleMyExpanded(openDate),
+      onBook: (slotId) => bookRehearsalOn(openDate, slotId),
       onClose: () => setOpenDate(null)
     })
   );
 };
 
-const DayDetailPanel = ({iso, day, member, existingEvent, onSetAvail, onBook, onClose}) => {
+const DayDetailPanel = ({iso, practiceAvail, bankHolidayName, member, existingEvent, onSetSlot, onToggleExpanded, onBook, onClose}) => {
   const date = new Date(iso + "T00:00:00");
-  const slotDesc = slotDescForDate(date);
-  const yesCount = MEMBERS.filter(m => day[m.id] === "yes").length;
-  const cur = member ? day[member.id] : null;
+  const isHoliday = !!bankHolidayName;
+  const isWeekendDay = isWeekend(date);
+  const expanded = isWeekdayExpanded(practiceAvail, iso);
+  // Visible slots replicate the calendar logic.
+  const visibleSlots = (isWeekendDay || isHoliday || expanded) ? SLOT_IDS : ["eve"];
+  const canExpand = !isWeekendDay && !isHoliday;
+  // For the "everyone yes" booking nudge, find the slot with the highest yes-count.
+  const bestSlot = visibleSlots.reduce((best, sid) => {
+    const c = yesCountForSlot(practiceAvail, iso, sid);
+    return c > best.count ? {sid, count: c} : best;
+  }, {sid: "eve", count: -1});
+
   return h("div",{className:"modal-bg",onClick:onClose},
-    h("div",{className:"card p-5 max-w-md w-full",onClick:e=>e.stopPropagation()},
+    h("div",{className:"card p-5 max-w-md w-full max-h-[90vh] overflow-y-auto",onClick:e=>e.stopPropagation()},
       h("div",{className:"flex items-center justify-between mb-2"},
         h("h3",{className:"display text-2xl leading-tight"}, fmtDateLong(iso)),
         h("button",{onClick:onClose,className:"ticker text-[var(--ink-soft)]"},"Close ✕")
       ),
-      h("p",{className:"ticker text-[var(--berry)]"}, slotDesc),
+      isHoliday && h("p",{className:"ticker text-[var(--berry)] mb-1"},"🇬🇧 " + bankHolidayName),
+      isWeekendDay && !isHoliday && h("p",{className:"ticker text-[var(--berry)]"},"Weekend"),
+      !isWeekendDay && !isHoliday && h("p",{className:"ticker text-[var(--berry)]"}, expanded ? "Weekday — all-day view" : "Weekday — evening only"),
+
       existingEvent && h("div",{className:"mt-3 p-3 bg-[var(--acid)]/30 border border-[var(--line)] text-sm"},
         h("strong",null,"Already on the schedule:"),
         " " + (existingEvent.type === "gig" ? "Gig" : "Rehearsal") + (existingEvent.title ? (" · " + existingEvent.title) : "") + " " + existingEvent.startTime + "–" + existingEvent.endTime + "."
       ),
-      h("div",{className:"mt-4"},
-        h("div",{className:"ticker text-[var(--ink-soft)] mb-2"},"Who can do this " + (isWeekend(date) ? "day" : "evening")),
-        h("div",{className:"space-y-1.5"},
-          MEMBERS.map(m => {
-            const a = day[m.id];
-            const isMe = member && member.id === m.id;
-            return h("div",{key:m.id,className:"flex items-center justify-between gap-2 py-1.5 border-b border-[var(--line)]/10"},
-              h("span",{className:"font-semibold"}, m.name + (isMe ? " (you)" : "")),
-              isMe
-                ? h("div",{className:"flex gap-1"},
-                    [
-                      {v:"yes",label:"✓ Yes",bg:"var(--good)"},
-                      {v:"maybe",label:"? Maybe",bg:"var(--rusty)"},
-                      {v:"no",label:"✗ No",bg:"var(--learn)"}
-                    ].map(opt => h("button",{key:opt.v,onClick:()=>onSetAvail(cur===opt.v?null:opt.v),className:"pill px-3 py-1 text-xs font-semibold " + (cur===opt.v?"text-white":"bg-white hover:bg-[var(--acid)]"),style: cur===opt.v ? {background: opt.bg} : {}}, opt.label))
-                  )
-                : h("span",{className:"text-sm text-[var(--ink-soft)]"}, a==="yes"?"✓ Yes":a==="maybe"?"? Maybe":a==="no"?"✗ No":"— no answer")
-            );
-          })
+
+      // Expand toggle for weekdays
+      canExpand && h("div",{className:"mt-3 flex items-center gap-2 flex-wrap"},
+        h("button",{onClick:onToggleExpanded, className:"pill px-3 py-1 text-xs font-semibold " + (expanded?"berry-bg text-white":"bg-white hover:bg-[var(--acid)]")},
+          expanded ? "Collapse to evening only" : "Expand to AM / PM / Eve"
         ),
-        !member && h("p",{className:"text-xs text-[var(--ink-soft)] italic mt-2"},"Pick who you are above to mark your availability.")
+        h("span",{className:"text-xs text-[var(--ink-soft)] italic"}, expanded ? "Useful for leave days." : "Tap if you're on annual leave / free all day.")
       ),
+
+      // Slot rows
+      h("div",{className:"mt-4 space-y-3"},
+        visibleSlots.map(sid => h(SlotRow,{
+          key: sid,
+          slotId: sid,
+          iso: iso,
+          practiceAvail: practiceAvail,
+          member: member,
+          onSetSlot: onSetSlot
+        }))
+      ),
+
+      !member && h("p",{className:"text-xs text-[var(--ink-soft)] italic mt-3"},"Pick who you are above to mark your availability."),
+
+      // Book a rehearsal — defaults to the best slot
       !existingEvent && h("div",{className:"mt-4 pt-3 border-t border-[var(--line)]/20"},
-        h("p",{className:"text-xs text-[var(--ink-soft)] mb-2"}, yesCount + "/" + MEMBERS.length + " can make it."),
-        h("button",{onClick:onBook,className:"btn berry-bg px-4 py-2 text-sm font-semibold w-full"},"Book a rehearsal on this date →"),
-        h("p",{className:"text-xs text-[var(--ink-soft)] italic mt-2"},"Creates a proposed rehearsal with default times. You'll be taken to the Schedule tab to fill in location and confirm.")
+        h("p",{className:"text-xs text-[var(--ink-soft)] mb-2"}, bestSlot.count >= 0 ? (bestSlot.count + "/" + MEMBERS.length + " can do " + SLOT_LABELS[bestSlot.sid]) : "Nobody marked yet."),
+        h("div",{className:"flex flex-wrap gap-2"},
+          visibleSlots.map(sid => h("button",{
+            key:"book-"+sid,
+            onClick:()=>onBook(sid),
+            className:"btn berry-bg px-3 py-1.5 text-xs font-semibold flex-1 sm:flex-none"
+          }, "Book " + SLOT_LABELS[sid] + " rehearsal →"))
+        ),
+        h("p",{className:"text-xs text-[var(--ink-soft)] italic mt-2"},"Creates a proposed rehearsal at default times. You'll be taken to the Schedule tab to fill in location and confirm.")
+      )
+    )
+  );
+};
+
+// SlotRow: one row in the day-detail panel showing all members' availability + mode for a slot.
+// Self can edit; others are read-only chips.
+const SlotRow = ({slotId, iso, practiceAvail, member, onSetSlot}) => {
+  const myCur = member ? getSlot(practiceAvail, iso, member.id, slotId) : null;
+  const myAvail = myCur && myCur.avail;
+  const myMode = myCur && myCur.mode;
+  const showModeButtons = myAvail === "yes" || myAvail === "maybe";
+  return h("div",{className:"card-flat p-3"},
+    h("div",{className:"flex items-baseline justify-between gap-2 mb-2 flex-wrap"},
+      h("div",null,
+        h("span",{className:"display text-lg leading-tight"}, SLOT_LABELS[slotId]),
+        h("span",{className:"text-xs text-[var(--ink-soft)] ml-2"}, SLOT_DESCS[slotId])
+      ),
+      h("span",{className:"ticker text-[var(--ink-soft)]"}, yesCountForSlot(practiceAvail, iso, slotId) + " / " + MEMBERS.length + " yes")
+    ),
+
+    // Per-member readout
+    h("div",{className:"space-y-1.5 mb-2"},
+      MEMBERS.map(m => {
+        const slot = getSlot(practiceAvail, iso, m.id, slotId);
+        const a = slot && slot.avail;
+        const mode = slot && slot.mode;
+        const isMe = member && member.id === m.id;
+        const labelText = a ? (a === "yes" ? "✓ Yes" : a === "maybe" ? "? Maybe" : "✗ No") : "— no answer";
+        return h("div",{key:m.id, className:"flex items-center justify-between gap-2 py-1 border-b border-[var(--line)]/10 last:border-0 text-sm"},
+          h("span",{className:"font-semibold"}, m.name + (isMe ? " (you)" : "")),
+          h("span",{className:"text-[var(--ink-soft)] flex items-center gap-1.5"},
+            labelText,
+            mode && h("span",{className:"ticker text-[10px] pill px-1.5 py-0 bg-white", title: MODE_LABELS[mode]}, MODE_SHORT[mode])
+          )
+        );
+      })
+    ),
+
+    // Editable controls — only for self
+    member && h("div",{className:"pt-2 border-t border-[var(--line)]/15"},
+      h("div",{className:"ticker text-[var(--ink-soft)] mb-1"},"Your answer"),
+      h("div",{className:"flex flex-wrap gap-1.5 mb-2"},
+        [
+          {v:"yes",   label:"✓ Yes",   bg:"var(--good)"},
+          {v:"maybe", label:"? Maybe", bg:"var(--rusty)"},
+          {v:"no",    label:"✗ No",    bg:"var(--learn)"}
+        ].map(opt => h("button",{
+          key:opt.v,
+          onClick:()=> onSetSlot(slotId, {avail: myAvail === opt.v ? null : opt.v}),
+          className:"pill px-3 py-1 text-xs font-semibold " + (myAvail===opt.v?"text-white":"bg-white hover:bg-[var(--acid)]"),
+          style: myAvail===opt.v ? {background: opt.bg} : {}
+        }, opt.label))
+      ),
+      showModeButtons && h(React.Fragment,null,
+        h("div",{className:"ticker text-[var(--ink-soft)] mb-1"},"Mode"),
+        h("div",{className:"flex flex-wrap gap-1.5"},
+          [
+            {v:"person",  label:"📍 In-person"},
+            {v:"virtual", label:"💻 Virtual only"},
+            {v:"either",  label:"📍💻 Either"}
+          ].map(opt => h("button",{
+            key:opt.v,
+            onClick:()=> onSetSlot(slotId, {mode: myMode === opt.v ? null : opt.v}),
+            className:"pill px-3 py-1 text-xs font-semibold " + (myMode===opt.v?"berry-bg text-white":"bg-white hover:bg-[var(--acid)]")
+          }, opt.label))
+        )
       )
     )
   );
