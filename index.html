@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+l<!DOCTYPE html>
 
 <html lang="en">
 <head>
@@ -214,7 +214,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.20.2";
+const APP_VERSION = "0.21.0";
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 // Instruments for member profiles (multi-select). Order is the display order.
 // Icons are emoji — render natively on iOS/macOS/Android. Bass uses 🪕 (banjo) as the closest
@@ -3660,13 +3660,15 @@ const GigModeView = ({setlist, songs, events, onClose}) => {
 };
 // === END GIG MODE VIEW ===
 
-const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack, onUpdate, onDelete, onDuplicate, onStartGigMode, siblingIds, onNavigate}) => {
+const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack, onUpdate, onDelete, onDuplicate, onStartGigMode, siblingIds, onNavigate, onCopyFrom, copySources}) => {
   const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState(setlist.name);
   const [editingSetIdx, setEditingSetIdx] = useState(null);
   const [editingSetName, setEditingSetName] = useState("");
   const [picker, setPicker] = useState(null); // null | {kind:"set", index:n} | {kind:"soundcheck"}
   const [viewMode, setViewMode] = useState("summary");
+  // v0.21.0: copy-from-setlist modal state. Only meaningful when onCopyFrom is provided.
+  const [copyOpen, setCopyOpen] = useState(false);
   const sets = setlist.sets || [];
   const soundcheckId = setlist.soundcheckSongId || null;
   const gigOptions = eventsList(events).filter(e => e.type === "gig");
@@ -3977,10 +3979,23 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack
           h("button",{onClick:()=>setViewMode("detailed"),className:"pill px-2.5 py-1 text-xs font-semibold " + (viewMode==="detailed"?"berry-bg text-white":"bg-white")},"Detailed"),
           h("button",{onClick:()=>setViewMode("summary"),className:"pill px-2.5 py-1 text-xs font-semibold " + (viewMode==="summary"?"berry-bg text-white":"bg-white")},"Summary")),
         totalSongs > 0 && onStartGigMode && h("button",{onClick:onStartGigMode,className:"btn berry-bg px-3 py-2 text-sm font-semibold sm:ml-auto",title:"Full-screen, big-type setlist for the stage. Includes Print / Save as PDF."},"▶ Gig mode / Print"),
+        // v0.21.0: copy from another setlist into this one. Only shown if there's at least one other setlist.
+        onCopyFrom && Array.isArray(copySources) && copySources.length > 0 && h("button",{
+          onClick:()=>setCopyOpen(true),
+          className:"btn bg-white px-3 py-2 text-sm",
+          title:"Copy sets / soundcheck / encore from another setlist"
+        },"Copy from…"),
         onDuplicate && h("button",{onClick:onDuplicate,className:"btn bg-white px-3 py-2 text-sm"},"Duplicate"),
         h("button",{onClick:()=>{ if (confirm("Delete setlist \"" + setlist.name + "\"?")) onDelete(); },className:"btn bg-white px-3 py-2 text-sm text-[var(--berry)]"},"Delete")
       )
     ),
+    // v0.21.0: copy modal mount.
+    copyOpen && onCopyFrom && h(CopyFromSetlistModal, {
+      sourceCandidates: copySources || [],
+      targetSetlist: setlist,
+      onCancel: () => setCopyOpen(false),
+      onConfirm: (args) => { onCopyFrom(args); setCopyOpen(false); }
+    }),
 
     // Picker modal — auto-scrolls into view and shows which destination it's for.
     picker && (() => {
@@ -4199,6 +4214,149 @@ const SetlistDetail = ({setlist, songs, events, member, mutate, settings, onBack
   );
 };
 
+// === COPY FROM SETLIST MODAL (v0.21.0) ===
+// Reusable modal for "copy structure + songs from another setlist".
+// Used in two contexts:
+//   1) Creating a new setlist — target is empty, no replace/append decision needed.
+//   2) Editing an existing setlist — if target has overlapping content, user picks
+//      replace-or-append per part. Soundcheck is single-valued so it's always "replace
+//      (or skip)" — we just say "Set soundcheck" if target has none, "Replace soundcheck"
+//      if it does. Encore and Sets can append or replace.
+//
+// Props:
+//   sourceCandidates: [{id, name, sets, soundcheckSongId, encoreSongIds}, ...]
+//                     — pre-filtered (caller excludes the target itself).
+//   targetSetlist:    null when creating, or the existing setlist when editing.
+//   onCancel:         close without changes
+//   onConfirm({sourceSlId, parts: {sets, soundcheck, encore}, strategy: "replace"|"append"})
+const CopyFromSetlistModal = ({sourceCandidates, targetSetlist, onCancel, onConfirm}) => {
+  const [sourceId, setSourceId] = useState(sourceCandidates.length === 1 ? sourceCandidates[0].id : "");
+  const source = sourceCandidates.find(s => s.id === sourceId) || null;
+  // What does the source actually have?
+  const sourceHasSets = source && Array.isArray(source.sets) && source.sets.some(s => Array.isArray(s.songIds) && s.songIds.length > 0);
+  const sourceHasSoundcheck = source && !!source.soundcheckSongId;
+  const sourceHasEncore = source && Array.isArray(source.encoreSongIds) && source.encoreSongIds.length > 0;
+  // Default: pick everything the source actually has.
+  const [includeSets, setIncludeSets] = useState(true);
+  const [includeSoundcheck, setIncludeSoundcheck] = useState(true);
+  const [includeEncore, setIncludeEncore] = useState(true);
+  // Reset checkboxes when source changes — only enable parts the source has.
+  useEffect(() => {
+    setIncludeSets(sourceHasSets);
+    setIncludeSoundcheck(sourceHasSoundcheck);
+    setIncludeEncore(sourceHasEncore);
+  }, [sourceId, sourceHasSets, sourceHasSoundcheck, sourceHasEncore]);
+  // What does the target have? (null when creating.)
+  const targetHasSets = targetSetlist && Array.isArray(targetSetlist.sets) && targetSetlist.sets.some(s => Array.isArray(s.songIds) && s.songIds.length > 0);
+  const targetHasSoundcheck = targetSetlist && !!targetSetlist.soundcheckSongId;
+  const targetHasEncore = targetSetlist && Array.isArray(targetSetlist.encoreSongIds) && targetSetlist.encoreSongIds.length > 0;
+  // Strategy is only meaningful for editing AND a checked part has existing content.
+  // Sets and encore can append; soundcheck (single value) can only replace.
+  const conflictForSets = !!targetSetlist && includeSets && targetHasSets;
+  const conflictForEncore = !!targetSetlist && includeEncore && targetHasEncore;
+  const conflictForSoundcheck = !!targetSetlist && includeSoundcheck && targetHasSoundcheck;
+  const showStrategy = conflictForSets || conflictForEncore;
+  const [strategy, setStrategy] = useState("append"); // safer default — won't destroy existing content
+  const canConfirm = !!source && (includeSets || includeSoundcheck || includeEncore);
+  const doConfirm = () => {
+    if (!canConfirm) return;
+    onConfirm({
+      sourceSlId: source.id,
+      parts: {sets: includeSets, soundcheck: includeSoundcheck, encore: includeEncore},
+      strategy: strategy
+    });
+  };
+  return h("div",{className:"modal-bg",onClick:onCancel},
+    h("div",{className:"card p-5 max-w-md w-full max-h-[90vh] overflow-y-auto",onClick:e=>e.stopPropagation()},
+      h("div",{className:"flex items-center justify-between mb-2"},
+        h("h3",{className:"display text-2xl"}, targetSetlist ? "Copy into this setlist" : "Copy from a setlist"),
+        h("button",{onClick:onCancel,className:"ticker text-[var(--ink-soft)]"},"Close ✕")
+      ),
+      sourceCandidates.length === 0
+        ? h("p",{className:"text-sm italic text-[var(--ink-soft)]"},"No other setlists to copy from yet.")
+        : h(React.Fragment,null,
+            // Source picker
+            h("label",{className:"text-sm block mb-3"},
+              h("div",{className:"ticker mb-1"},"Copy from"),
+              h("select",{className:"input",value:sourceId,onChange:e=>setSourceId(e.target.value)},
+                h("option",{value:""},"— pick a setlist —"),
+                sourceCandidates.map(s => {
+                  const setCount = (s.sets || []).length;
+                  const songCount = setlistSongCount(s);
+                  return h("option",{key:s.id, value:s.id}, (s.name || "(untitled)") + " — " + songCount + " song" + (songCount===1?"":"s") + " in " + setCount + " set" + (setCount===1?"":"s"));
+                })
+              )
+            ),
+            // What to copy
+            source && h("div",{className:"mb-3"},
+              h("div",{className:"ticker text-[var(--berry)] mb-1.5"},"What to copy"),
+              h("label",{className:"flex items-start gap-2 py-1 text-sm " + (sourceHasSets ? "" : "opacity-50")},
+                h("input",{type:"checkbox", checked: includeSets && sourceHasSets, disabled: !sourceHasSets, onChange:e=>setIncludeSets(e.target.checked), className:"mt-1"}),
+                h("div",null,
+                  h("div",{className:"font-semibold"},"Sets & their songs"),
+                  h("div",{className:"text-xs text-[var(--ink-soft)]"},
+                    sourceHasSets
+                      ? ((source.sets || []).length + " set" + ((source.sets || []).length===1?"":"s") + ", " + (source.sets || []).reduce((acc, s) => acc + ((s.songIds || []).length), 0) + " songs total — keeps order")
+                      : "Source has no songs in any set"
+                  )
+                )
+              ),
+              h("label",{className:"flex items-start gap-2 py-1 text-sm " + (sourceHasSoundcheck ? "" : "opacity-50")},
+                h("input",{type:"checkbox", checked: includeSoundcheck && sourceHasSoundcheck, disabled: !sourceHasSoundcheck, onChange:e=>setIncludeSoundcheck(e.target.checked), className:"mt-1"}),
+                h("div",null,
+                  h("div",{className:"font-semibold"},"Soundcheck song"),
+                  h("div",{className:"text-xs text-[var(--ink-soft)]"},
+                    sourceHasSoundcheck ? "1 song" : "Source has no soundcheck"
+                  )
+                )
+              ),
+              h("label",{className:"flex items-start gap-2 py-1 text-sm " + (sourceHasEncore ? "" : "opacity-50")},
+                h("input",{type:"checkbox", checked: includeEncore && sourceHasEncore, disabled: !sourceHasEncore, onChange:e=>setIncludeEncore(e.target.checked), className:"mt-1"}),
+                h("div",null,
+                  h("div",{className:"font-semibold"},"Encore"),
+                  h("div",{className:"text-xs text-[var(--ink-soft)]"},
+                    sourceHasEncore ? ((source.encoreSongIds || []).length + " song" + ((source.encoreSongIds || []).length===1?"":"s")) : "Source has no encore"
+                  )
+                )
+              )
+            ),
+            // Strategy (only when editing AND a conflict exists for sets or encore)
+            showStrategy && h("div",{className:"mb-3 pt-3 border-t border-[var(--line)]/15"},
+              h("div",{className:"ticker text-[var(--berry)] mb-1.5"},"Existing content"),
+              h("p",{className:"text-xs text-[var(--ink-soft)] mb-2"},
+                "This setlist already has " ,
+                [conflictForSets && "songs in sets", conflictForEncore && "an encore"].filter(Boolean).join(" and "),
+                ". What should happen?"
+              ),
+              h("label",{className:"flex items-start gap-2 py-1 text-sm"},
+                h("input",{type:"radio", name:"strategy", checked: strategy==="append", onChange:()=>setStrategy("append"), className:"mt-1"}),
+                h("div",null,
+                  h("div",{className:"font-semibold"},"Add at the end"),
+                  h("div",{className:"text-xs text-[var(--ink-soft)]"},"Existing sets/encore are kept; copied content appended after.")
+                )
+              ),
+              h("label",{className:"flex items-start gap-2 py-1 text-sm"},
+                h("input",{type:"radio", name:"strategy", checked: strategy==="replace", onChange:()=>setStrategy("replace"), className:"mt-1"}),
+                h("div",null,
+                  h("div",{className:"font-semibold text-[var(--berry)]"},"Replace existing"),
+                  h("div",{className:"text-xs text-[var(--ink-soft)]"},"Wipes existing sets/encore in this setlist before copying. Cannot be undone except via the Restore feature.")
+                )
+              )
+            ),
+            // Soundcheck conflict — separate, always-replace
+            conflictForSoundcheck && h("p",{className:"text-xs italic text-[var(--ink-soft)] mb-3"},
+              "Note: this setlist already has a soundcheck — it will be replaced by the copied one."
+            ),
+            h("div",{className:"flex gap-2 mt-4 pt-3 border-t border-[var(--line)]/20"},
+              h("button",{onClick:onCancel,className:"btn bg-white px-4 py-2 text-sm"},"Cancel"),
+              h("button",{onClick:doConfirm,disabled:!canConfirm,className:"btn berry-bg px-4 py-2 text-sm font-semibold ml-auto"},"Copy")
+            )
+          )
+    )
+  );
+};
+// === END COPY FROM SETLIST MODAL ===
+
 const SetlistsView = ({setlists, songs, events, member, mutate, settings, onStartGigMode, onForceSnapshot}) => {
   const [openId, setOpenId] = useState(null);
   const [creating, setCreating] = useState(false);
@@ -4208,6 +4366,73 @@ const SetlistsView = ({setlists, songs, events, member, mutate, settings, onStar
     const id = newId("sl");
     mutate(prev => Object.assign({}, prev, {setlists: Object.assign({}, prev.setlists||{}, {[id]: {name, sets:[{name:"Set 1",songIds:[]}], soundcheckSongId:null, gigEventId:null, notes:"", createdAt: Date.now()}})}));
     setOpenId(id); setCreating(false); setNewName("");
+  };
+  // v0.21.0: Copy-from-setlist support.
+  // buildCopyPatch is a pure function shared by both call sites: given a source setlist,
+  // a target setlist (or null for "creating fresh"), the user's part-checkboxes and
+  // strategy choice, return a partial setlist object (sets/soundcheck/encore) to merge in.
+  // Defining it inline so it can close over `setlists` and stay private to this view.
+  const buildCopyPatch = (sourceId, targetSetlist, parts, strategy) => {
+    const src = setlists && setlists[sourceId];
+    if (!src) return {};
+    const patch = {};
+    // Sets: deep clone the songIds arrays (otherwise both setlists share the same array reference).
+    if (parts.sets && Array.isArray(src.sets) && src.sets.length > 0) {
+      const clonedSets = src.sets.map(s => ({name: s.name, songIds: (s.songIds || []).slice()}));
+      if (targetSetlist && strategy === "append" && Array.isArray(targetSetlist.sets) && targetSetlist.sets.length > 0) {
+        // Append: keep existing target sets, then push copied sets after.
+        patch.sets = (targetSetlist.sets || []).map(s => ({name: s.name, songIds: (s.songIds || []).slice()})).concat(clonedSets);
+      } else {
+        // Replace (or fresh create): just take the source sets.
+        patch.sets = clonedSets;
+      }
+    }
+    // Soundcheck: single value, always replaces.
+    if (parts.soundcheck && src.soundcheckSongId) {
+      patch.soundcheckSongId = src.soundcheckSongId;
+    }
+    // Encore: list, append/replace per strategy.
+    if (parts.encore && Array.isArray(src.encoreSongIds) && src.encoreSongIds.length > 0) {
+      if (targetSetlist && strategy === "append" && Array.isArray(targetSetlist.encoreSongIds) && targetSetlist.encoreSongIds.length > 0) {
+        patch.encoreSongIds = (targetSetlist.encoreSongIds || []).concat(src.encoreSongIds);
+      } else {
+        patch.encoreSongIds = src.encoreSongIds.slice();
+      }
+    }
+    return patch;
+  };
+  // createSetlistFromCopy: create a brand-new setlist seeded from a source.
+  // Always treated as "fresh" (no append needed — there's nothing to append to).
+  const createSetlistFromCopy = (name, sourceId, parts) => {
+    const patch = buildCopyPatch(sourceId, null, parts, "replace");
+    const base = {name, sets: [{name:"Set 1", songIds:[]}], soundcheckSongId: null, gigEventId: null, notes: "", createdAt: Date.now(), encoreSongIds: []};
+    const newSetlist = Object.assign({}, base, patch);
+    // Edge case: if user unchecked Sets, ensure at least one empty Set 1 still exists so the
+    // setlist isn't structurally invalid (the rest of the app assumes sets is a non-empty array).
+    if (!Array.isArray(newSetlist.sets) || newSetlist.sets.length === 0) {
+      newSetlist.sets = [{name:"Set 1", songIds:[]}];
+    }
+    const id = newId("sl");
+    mutate(prev => Object.assign({}, prev, {setlists: Object.assign({}, prev.setlists||{}, {[id]: newSetlist})}));
+    setOpenId(id); setCreating(false); setNewName("");
+  };
+  // copyIntoExistingSetlist: merge source content into the open setlist.
+  // Handles "replace" by force-snapshotting first (destructive).
+  const copyIntoExistingSetlist = (targetId, sourceId, parts, strategy) => {
+    const target = setlists && setlists[targetId];
+    if (!target) return;
+    const patch = buildCopyPatch(sourceId, target, parts, strategy);
+    if (Object.keys(patch).length === 0) return;
+    // If we're replacing (and there was something to lose), take a safety snapshot first.
+    if (strategy === "replace" && onForceSnapshot) {
+      const willReplaceSets = parts.sets && Array.isArray(target.sets) && target.sets.some(s => Array.isArray(s.songIds) && s.songIds.length > 0);
+      const willReplaceSoundcheck = parts.soundcheck && !!target.soundcheckSongId;
+      const willReplaceEncore = parts.encore && Array.isArray(target.encoreSongIds) && target.encoreSongIds.length > 0;
+      if (willReplaceSets || willReplaceSoundcheck || willReplaceEncore) {
+        onForceSnapshot();
+      }
+    }
+    mutate(prev => Object.assign({}, prev, {setlists: Object.assign({}, prev.setlists||{}, {[targetId]: Object.assign({}, (prev.setlists && prev.setlists[targetId])||{}, patch)})}));
   };
   const updateSetlist = (id, data) => mutate(prev => Object.assign({}, prev, {setlists: Object.assign({}, prev.setlists||{}, {[id]: Object.assign({}, (prev.setlists && prev.setlists[id])||{}, data)})}));
   // v0.20.0: safety snapshot before deleting a setlist (deletes the setlist plus all its
@@ -4246,8 +4471,13 @@ const SetlistsView = ({setlists, songs, events, member, mutate, settings, onStar
       past.sort((a, b) => (b.gig.date || "").localeCompare(a.gig.date || ""));
       return upcoming.concat(past).map(x => x.sl.id);
     })();
-    return h(SetlistDetail,{setlist: Object.assign({id:openId}, setlists[openId]), songs:songs, events:events, member:member, mutate:mutate, settings:settings, onBack:()=>setOpenId(null), onUpdate: data => updateSetlist(openId, data), onDelete: () => deleteSetlist(openId), onDuplicate: () => duplicateSetlist(openId), onStartGigMode: onStartGigMode ? () => onStartGigMode(openId) : null, siblingIds: orderedIds, onNavigate: (id) => setOpenId(id)});
+    // v0.21.0: copy sources are all setlists except the open one (a setlist can't copy from itself).
+    const copyCandidates = all.filter(s => s.id !== openId);
+    return h(SetlistDetail,{setlist: Object.assign({id:openId}, setlists[openId]), songs:songs, events:events, member:member, mutate:mutate, settings:settings, onBack:()=>setOpenId(null), onUpdate: data => updateSetlist(openId, data), onDelete: () => deleteSetlist(openId), onDuplicate: () => duplicateSetlist(openId), onStartGigMode: onStartGigMode ? () => onStartGigMode(openId) : null, siblingIds: orderedIds, onNavigate: (id) => setOpenId(id), copySources: copyCandidates, onCopyFrom: ({sourceSlId, parts, strategy}) => copyIntoExistingSetlist(openId, sourceSlId, parts, strategy)});
   }
+  // v0.21.0: state for the copy-from-setlist modal.
+  // copyMode: null when closed, "create" when seeding a new setlist, "edit" when copying into the open one.
+  const [copyMode, setCopyMode] = useState(null);
   return h("div",null,
     h("div",{className:"flex items-center justify-between mb-4 flex-wrap gap-2"},
       h("p",{className:"text-sm text-[var(--ink-soft)]"},"Build a named setlist from your library, optionally pinned to a gig."),
@@ -4255,11 +4485,28 @@ const SetlistsView = ({setlists, songs, events, member, mutate, settings, onStar
     ),
     creating && h("div",{className:"card p-4 mb-4"},
       h("label",{className:"text-sm block"}, h("div",{className:"ticker mb-1"},"Name"), h("input",{autoFocus:true,className:"input",value:newName,onChange:e=>setNewName(e.target.value),placeholder:"e.g. Dec 2026 — provisional"})),
-      h("div",{className:"flex gap-2 mt-3"},
+      h("div",{className:"flex gap-2 mt-3 flex-wrap"},
         h("button",{onClick:()=> newName.trim() && createSetlist(newName.trim()),className:"btn berry-bg px-4 py-2 font-semibold",disabled:!newName.trim()},"Create"),
+        // v0.21.0: copy from existing — only enabled once a name is typed and there's at least one source.
+        all.length > 0 && h("button",{
+          onClick:()=> newName.trim() && setCopyMode("create"),
+          disabled: !newName.trim(),
+          className:"btn bg-white px-4 py-2 font-semibold",
+          title: newName.trim() ? "Seed this setlist from another one" : "Type a name first"
+        },"Create & copy from…"),
         h("button",{onClick:()=>{ setCreating(false); setNewName(""); },className:"btn bg-white px-4 py-2"},"Cancel")
       )
     ),
+    // v0.21.0: copy modal for new setlist creation.
+    copyMode === "create" && h(CopyFromSetlistModal, {
+      sourceCandidates: all,
+      targetSetlist: null,
+      onCancel: () => setCopyMode(null),
+      onConfirm: ({sourceSlId, parts}) => {
+        createSetlistFromCopy(newName.trim(), sourceSlId, parts);
+        setCopyMode(null);
+      }
+    }),
     all.length===0 && !creating && h("div",{className:"card p-6 text-center"}, h("p",{className:"display text-xl"},"No setlists yet.")),
     // v0.19.0 (feedback item 3): split setlists into Upcoming (or unpinned) vs Past.
     // A setlist is "past" only if pinned to a gig whose date has already passed; setlists
