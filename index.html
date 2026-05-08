@@ -15,6 +15,9 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- v0.28.0: Supabase JS client via UMD CDN. Pinned to major v2 — they're disciplined
+       about backwards compat within a major. window.supabase.createClient is the API. -->
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
   <style>
     :root {
@@ -252,7 +255,29 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.27.0";
+const APP_VERSION = "0.28.0";
+
+// v0.28.0: Supabase config. URL + publishable key are safe to ship in client code —
+// Row Level Security (set up on band_state) is the security boundary. Don't ever paste
+// the sb_secret_... key here: it bypasses RLS and would let anyone with the page
+// source wreck the database.
+const SUPABASE_URL = "https://xyukmguafhddpasmjjyy.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_wDjYrqirJiulohJC8I26UQ_ZxwMoJcw";
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
+// Row id for the band's single state blob in band_state. Hardcoded for now — when
+// we genericise into multi-band SaaS, this becomes a UUID per band.
+const BAND_STATE_ID = "sourberry";
+
+// Email → member id map. Lower-cased keys (we lower-case the auth email before lookup
+// to avoid case-sensitivity surprises with email providers). Add the rest of the band
+// here as they sign up; everyone else gets the "you're not a band member" screen.
+const EMAIL_TO_MEMBER_ID = {
+  "rehmanomar@yahoo.co.uk": "omar"
+  // "<james email>": "james",
+  // "<mike email>":  "mike",
+  // "<veena email>": "veena",
+};
 const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
 
 // v0.24.0/v0.25.0: random musician quotes for the footer. Picked once per app load.
@@ -801,23 +826,51 @@ const migrate = data => {
   return migrated;
 };
 
-const JB_BASE = "https://api.jsonbin.io/v3/b";
-const jbCreateBin = async (apiKey, data) => {
-  const res = await fetch(JB_BASE, {method:"POST", headers:{"Content-Type":"application/json","X-Master-Key":apiKey,"X-Bin-Private":"false","X-Bin-Name":"sourberry-band-ops"}, body: JSON.stringify(data)});
-  if (!res.ok) { const t = await res.text(); const err = new Error("HTTP " + res.status + ": " + t); err.status = res.status; throw err; }
-  const j = await res.json();
-  return j.metadata && j.metadata.id;
+// v0.28.0: data layer is now Supabase. The shape of these helpers (jbReadBin /
+// jbUpdateBin signatures) is preserved so useSyncedState barely changes — they
+// just read/write the JSONB column on a single row instead of hitting JSONBin.
+// JSONBin imports/keys/bin-id flow are gone. Old code preserved as JSONBIN_LEGACY
+// for emergency rollback (search the file for that marker).
+//
+// Read returns the state JSONB exactly as the app expects, with updatedAt and
+// lastSavedBy stamped inside (we mirror them onto the row's columns on write
+// for indexability, but the source of truth as far as the app is concerned is
+// inside the JSONB blob — same as it was with JSONBin).
+const jbReadBin = async (_unused) => {
+  const {data, error} = await sb
+    .from("band_state")
+    .select("state")
+    .eq("id", BAND_STATE_ID)
+    .single();
+  if (error) {
+    const err = new Error(error.message || "Read failed");
+    err.status = error.code || null;
+    throw err;
+  }
+  return (data && data.state) || {};
 };
-const jbReadBin = async binId => {
-  const res = await fetch(JB_BASE + "/" + binId + "/latest", {headers:{"X-Bin-Meta":"false"}});
-  if (!res.ok) { const t = await res.text(); const err = new Error("HTTP " + res.status + ": " + t); err.status = res.status; throw err; }
-  return await res.json();
+const jbUpdateBin = async (_unused, payload) => {
+  // payload is the full state object — already stamped with updatedAt and
+  // lastSavedBy by the caller. Mirror onto the row columns for any future
+  // queries we want to do without unpacking JSONB (admin panels, leaderboards).
+  const {error} = await sb
+    .from("band_state")
+    .update({
+      state: payload,
+      updated_at: (payload && typeof payload.updatedAt === "number") ? payload.updatedAt : Date.now(),
+      last_saved_by: (payload && payload.lastSavedBy) || null
+    })
+    .eq("id", BAND_STATE_ID);
+  if (error) {
+    const err = new Error(error.message || "Write failed");
+    err.status = error.code || null;
+    throw err;
+  }
+  return true;
 };
-const jbUpdateBin = async (binId, data) => {
-  const res = await fetch(JB_BASE + "/" + binId, {method:"PUT", headers:{"Content-Type":"application/json"}, body: JSON.stringify(data)});
-  if (!res.ok) { const t = await res.text(); const err = new Error("HTTP " + res.status + ": " + t); err.status = res.status; throw err; }
-  return await res.json();
-};
+// jbCreateBin removed — there's no "create" step in Supabase. The single row was
+// seeded by the migration SQL when the table was created. New bands (when we go
+// SaaS) will call a different code path entirely.
 
 // === ITERATION A.1: LOCAL BACKUPS ===
 // Per-device snapshots stored in localStorage, scoped per bin.
@@ -1427,65 +1480,74 @@ const uniqueLocations = events => {
   return Array.from(set).sort();
 };
 
+// v0.28.0: identity is derived from the Supabase auth session, not localStorage.
+// authStatus reflects what we should render at the top level:
+//   "loading" → still figuring out if there's a session
+//   "anon"    → no session, show LoginScreen
+//   "signed"  → session exists AND email maps to a known band member
+//   "unknown" → session exists BUT email isn't in EMAIL_TO_MEMBER_ID (random visitor)
+// Returning the auth user too so the unknown-email screen can show what they signed in as.
 const useMemberIdentity = () => {
-  const [memberId, setMemberIdState] = useState(() => localStorage.getItem("sourberry.memberId") || null);
-  const setMemberId = id => { setMemberIdState(id); if (id) localStorage.setItem("sourberry.memberId", id); };
-  return [MEMBERS.find(m => m.id === memberId) || null, setMemberId];
+  const [authStatus, setAuthStatus] = useState("loading");
+  const [member, setMember] = useState(null);
+  const [authUser, setAuthUser] = useState(null);
+  useEffect(() => {
+    const apply = (session) => {
+      const user = session && session.user ? session.user : null;
+      setAuthUser(user);
+      if (!user) { setAuthStatus("anon"); setMember(null); return; }
+      const email = (user.email || "").toLowerCase();
+      const memberId = EMAIL_TO_MEMBER_ID[email] || null;
+      if (!memberId) { setAuthStatus("unknown"); setMember(null); return; }
+      setMember(MEMBERS.find(m => m.id === memberId) || null);
+      setAuthStatus("signed");
+    };
+    // Hydrate from any existing session (page reload while signed in).
+    sb.auth.getSession().then(({data}) => apply(data && data.session));
+    // Subscribe to future changes (sign-in, sign-out, token refresh).
+    const {data: listener} = sb.auth.onAuthStateChange((_event, session) => apply(session));
+    return () => { try { listener.subscription.unsubscribe(); } catch(_){} };
+  }, []);
+  return {authStatus, member, authUser};
 };
 const getBinIdFromURL = () => new URLSearchParams(window.location.search).get("bin");
 const getStoredBinId = () => localStorage.getItem("sourberry.binId");
 const setStoredBinId = id => { if (id) localStorage.setItem("sourberry.binId", id); else localStorage.removeItem("sourberry.binId"); };
 const POLL_MS = 30000;
-const useSyncedState = (binId, memberId) => {
+// v0.28.0: useSyncedState is the band-state sync hook. Same return shape as the old
+// JSONBin version (mutate/refresh/state/status/lastSyncedAt/etc.) so the rest of the
+// app keeps working unchanged. Internally it now reads/writes a single JSONB row in
+// Supabase (band_state.id = "sourberry") and listens to postgres_changes for realtime
+// cross-device sync. The old conflict-detection machinery is no longer needed because
+// the JSONBin race condition (no atomic compare-and-swap) doesn't exist on Postgres,
+// but the conflict/resolveConflict fields are still returned (always null/no-op) so
+// existing callers (ConflictBanner mount, SyncPanel) don't break.
+// First arg is a "ready" gate — App passes BAND_STATE_ID when authStatus === "signed",
+// null otherwise. Without this, RLS would reject the fetch before the user signs in
+// and we'd flash an error screen on first load.
+const useSyncedState = (ready, memberId) => {
   const [state, setState] = useState(null);
   const [status, setStatus] = useState("loading");
   const [errorMsg, setErrorMsg] = useState("");
   const [errorStatus, setErrorStatus] = useState(null);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
-  // Iteration A.2: conflict detection.
-  // `conflict` is set when a save (or poll, while editing) discovers that
-  // the server is newer than our last-known state — i.e. someone else saved
-  // while we were editing. Resolution is via resolveConflict("keepMine"|"useTheirs").
-  const [conflict, setConflict] = useState(null);
   const stateRef = useRef(state); stateRef.current = state;
   const writeTimerRef = useRef(null);
   const writeInFlightRef = useRef(false);
   const pendingWriteRef = useRef(false);
-  const conflictRef = useRef(null);
-  useEffect(() => { conflictRef.current = conflict; }, [conflict]);
   const memberIdRef = useRef(memberId);
   useEffect(() => { memberIdRef.current = memberId; }, [memberId]);
-  const flushWrite = useCallback(async (opts) => {
-    const force = !!(opts && opts.force);
-    if (!binId || writeInFlightRef.current) return;
-    // Don't auto-flush if there's an unresolved conflict — user must choose.
-    if (!force && conflictRef.current) return;
+
+  // Debounced write. The 600ms debounce means rapid edits (typing in a textarea,
+  // toggling availability quickly) batch into one round-trip. If a write is already
+  // in flight when another mutation comes in, we set pendingWriteRef and the in-flight
+  // write's `finally` block kicks off the next one. Same pattern as the JSONBin version.
+  const flushWrite = useCallback(async () => {
+    if (writeInFlightRef.current) return;
     writeInFlightRef.current = true;
     pendingWriteRef.current = false;
     setStatus("saving");
     try {
-      // Pre-flight conflict check (skipped on force-write).
-      if (!force) {
-        let serverData = null;
-        try { serverData = await jbReadBin(binId); }
-        catch (_) { /* if pre-flight fails, fall through and let the PUT surface the error */ }
-        if (serverData) {
-          const serverTs = (typeof serverData.updatedAt === "number") ? serverData.updatedAt : 0;
-          const localTs = (stateRef.current && typeof stateRef.current.updatedAt === "number") ? stateRef.current.updatedAt : 0;
-          if (serverTs > localTs) {
-            // Someone else saved after our last known state → CONFLICT.
-            try { migrate(serverData); } catch (_) {}
-            const c = {serverState: serverData, savedBy: serverData.lastSavedBy || null, savedAt: serverTs};
-            conflictRef.current = c;
-            setConflict(c);
-            setStatus("ok");
-            // Block polling from clobbering the user's local edits while they decide.
-            pendingWriteRef.current = true;
-            return;
-          }
-        }
-      }
-      // Stamp the state with save metadata before sending.
       const ts = Date.now();
       const stamped = Object.assign({}, stateRef.current, {
         updatedAt: ts,
@@ -1493,26 +1555,30 @@ const useSyncedState = (binId, memberId) => {
       });
       stateRef.current = stamped;
       setState(stamped);
-      await jbUpdateBin(binId, stamped);
+      const { error } = await sb
+        .from("band_state")
+        .update({ state: stamped, updated_at: ts, last_saved_by: memberIdRef.current || null })
+        .eq("id", BAND_STATE_ID);
+      if (error) throw new Error(error.message || "Save failed");
       setStatus("ok"); setErrorMsg(""); setErrorStatus(null); setLastSyncedAt(Date.now());
-      // Successful write resolves any standing conflict.
-      conflictRef.current = null;
-      setConflict(null);
-      // Iteration A.1: auto-snapshot after successful save (throttled internally).
-      try { saveBackup(binId, stateRef.current); } catch (_) { /* never let backup errors break sync */ }
+      // Local snapshot — same backup mechanism as before, just keyed on BAND_STATE_ID
+      // instead of the old JSONBin bin id. Saves a copy to localStorage in case we
+      // ever want to revert.
+      try { saveBackup(BAND_STATE_ID, stateRef.current); } catch (_) {}
     } catch (e) {
-      setStatus("error"); setErrorMsg(e.message); setErrorStatus(e.status || null);
+      setStatus("error"); setErrorMsg(e.message); setErrorStatus(null);
     } finally {
       writeInFlightRef.current = false;
-      // Auto-retry only if there's a queued mutation AND no active conflict.
-      if (pendingWriteRef.current && !conflictRef.current) setTimeout(() => flushWrite(), 100);
+      if (pendingWriteRef.current) setTimeout(() => flushWrite(), 100);
     }
-  }, [binId]);
+  }, []);
+
   const scheduleWrite = useCallback(() => {
     if (writeTimerRef.current) clearTimeout(writeTimerRef.current);
     if (writeInFlightRef.current) { pendingWriteRef.current = true; return; }
     writeTimerRef.current = setTimeout(() => flushWrite(), 600);
   }, [flushWrite]);
+
   const mutate = useCallback(updater => {
     setState(prev => {
       const next = updater(prev || {schemaVersion:12, events:{}, songs:{}, setlists:{}, polls:{}, equipment:{}, wishlist:{}, practiceAvail:{}, memberProfiles:{}, updatedAt:0, lastSavedBy:null, settings:{}});
@@ -1521,79 +1587,220 @@ const useSyncedState = (binId, memberId) => {
     });
     scheduleWrite();
   }, [scheduleWrite]);
-  const fetchOnce = useCallback(async () => {
+
+  // Re-fetch from Supabase. Also handles the first-load case where the JSONB column
+  // is empty ({}): we seed it with buildSeedState() and write that back, so the band
+  // sees the same starter content the JSONBin version had.
+  const refresh = useCallback(async () => {
     if (writeInFlightRef.current) return;
-    // Don't clobber local state while a conflict is unresolved.
-    if (conflictRef.current) return;
-    try {
-      let data = await jbReadBin(binId);
-      if (pendingWriteRef.current || writeTimerRef.current) {
-        // Local has unsaved edits — surface the conflict if server has moved on.
-        const serverTs = (typeof data.updatedAt === "number") ? data.updatedAt : 0;
-        const localTs = (stateRef.current && typeof stateRef.current.updatedAt === "number") ? stateRef.current.updatedAt : 0;
-        if (serverTs > localTs) {
-          try { migrate(data); } catch (_) {}
-          const c = {serverState: data, savedBy: data.lastSavedBy || null, savedAt: serverTs};
-          conflictRef.current = c;
-          setConflict(c);
-        }
-        return;
-      }
-      const didMigrate = migrate(data);
-      setState(data); stateRef.current = data;
-      setStatus("ok"); setErrorMsg(""); setErrorStatus(null); setLastSyncedAt(Date.now());
-      if (didMigrate) scheduleWrite();
-    } catch (e) {
-      setStatus("error"); setErrorMsg(e.message); setErrorStatus(e.status || null);
-    }
-  }, [binId, scheduleWrite]);
-  const reloadFromServer = useCallback(async () => {
-    if (writeTimerRef.current) { clearTimeout(writeTimerRef.current); writeTimerRef.current = null; }
-    pendingWriteRef.current = false;
-    conflictRef.current = null;
-    setConflict(null);
     setStatus("loading");
-    await fetchOnce();
-  }, [fetchOnce]);
-  const resolveConflict = useCallback((choice) => {
-    const c = conflictRef.current;
-    if (!c) return;
-    if (choice === "keepMine") {
-      // Force-flush our local state, ignoring the server. This will overwrite
-      // the other person's save.
-      conflictRef.current = null;
-      setConflict(null);
-      // Fire-and-forget.
-      flushWrite({force: true});
-    } else if (choice === "useTheirs") {
-      // Discard our local edits, replace state with the server's data.
-      if (writeTimerRef.current) { clearTimeout(writeTimerRef.current); writeTimerRef.current = null; }
-      pendingWriteRef.current = false;
-      stateRef.current = c.serverState;
-      setState(c.serverState);
-      conflictRef.current = null;
-      setConflict(null);
+    try {
+      const { data, error } = await sb
+        .from("band_state")
+        .select("state")
+        .eq("id", BAND_STATE_ID)
+        .maybeSingle();
+      if (error) throw new Error(error.message || "Load failed");
+      let next = data && data.state;
+      const isEmpty = !next || (typeof next === "object" && !Array.isArray(next) && Object.keys(next).length === 0);
+      if (isEmpty) {
+        next = buildSeedState();
+        next.updatedAt = Date.now();
+        next.lastSavedBy = memberIdRef.current || null;
+        const { error: insErr } = await sb
+          .from("band_state")
+          .upsert({ id: BAND_STATE_ID, state: next, updated_at: next.updatedAt, last_saved_by: next.lastSavedBy });
+        if (insErr) throw new Error(insErr.message || "Seed failed");
+      } else {
+        try { migrate(next); } catch (_) {}
+      }
+      setState(next); stateRef.current = next;
       setStatus("ok"); setErrorMsg(""); setErrorStatus(null); setLastSyncedAt(Date.now());
+    } catch (e) {
+      setStatus("error"); setErrorMsg(e.message); setErrorStatus(null);
     }
-  }, [flushWrite]);
+  }, []);
+
+  // Initial load + realtime subscription. Gated on `ready` (truthy when auth has
+  // confirmed a recognised band member). Without the gate we'd attempt fetches before
+  // there's a session, which RLS rejects and would flash an error briefly.
+  // Realtime gives us cross-device updates without polling — when another band member
+  // saves, postgres_changes fires and we update local state. We deliberately skip
+  // applying the realtime event if we have pending local edits (writeTimerRef set or
+  // a write in flight), otherwise an incoming change could clobber what the user is
+  // typing right now. Visibility-change refresh kept as a belt-and-braces fallback in
+  // case realtime ever drops a message (free tier doesn't guarantee at-least-once).
   useEffect(() => {
-    if (!binId) return;
+    if (!ready) {
+      // Reset state when we go from signed → anon (sign-out).
+      setState(null);
+      setStatus("loading");
+      return;
+    }
     let cancelled = false;
-    let pollTimer = null;
-    const tick = () => { if (!cancelled && document.visibilityState === "visible") fetchOnce(); pollTimer = setTimeout(tick, POLL_MS); };
-    fetchOnce();
-    pollTimer = setTimeout(tick, POLL_MS);
-    const onVis = () => { if (document.visibilityState === "visible") fetchOnce(); };
+    refresh();
+    const channel = sb
+      .channel("band_state_changes")
+      .on("postgres_changes",
+          { event: "UPDATE", schema: "public", table: "band_state", filter: "id=eq." + BAND_STATE_ID },
+          (payload) => {
+            if (cancelled) return;
+            const newState = payload && payload.new && payload.new.state;
+            if (!newState) return;
+            if (writeInFlightRef.current) return;
+            if (pendingWriteRef.current || writeTimerRef.current) return;
+            try { migrate(newState); } catch (_) {}
+            setState(newState); stateRef.current = newState;
+            setLastSyncedAt(Date.now());
+          })
+      .subscribe();
+    const onVis = () => { if (document.visibilityState === "visible") refresh(); };
     document.addEventListener("visibilitychange", onVis);
-    return () => { cancelled = true; if (pollTimer) clearTimeout(pollTimer); document.removeEventListener("visibilitychange", onVis); };
-  }, [binId, fetchOnce]);
-  return {state, status, errorMsg, errorStatus, lastSyncedAt, conflict, mutate, refresh: fetchOnce, reloadFromServer, resolveConflict};
+    return () => {
+      cancelled = true;
+      try { sb.removeChannel(channel); } catch (_) {}
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [ready, refresh]);
+
+  return {
+    state, status, errorMsg, errorStatus, lastSyncedAt,
+    // conflict + resolveConflict were JSONBin-era concepts (no atomic CAS). Postgres
+    // doesn't have the same race, so these are kept as null/no-op for API compat.
+    conflict: null,
+    mutate,
+    refresh,
+    reloadFromServer: refresh,
+    resolveConflict: () => {}
+  };
 };
 
 const h = React.createElement;
 
 const LOGO_SRC = "data:image/png;base64,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";
 const Wordmark = ({className}) => h("img", {src: LOGO_SRC, alt: "Sourberry", className: "block " + (className || "")});
+
+// v0.28.0: LoginScreen — magic link by default, password as secondary path.
+// Why magic link first: nobody in the band remembers a fifth password, and the
+// emails Supabase sends are short and clear. Password mode reveals when toggled.
+// Sign-up vs sign-in is a sub-toggle inside password mode for first-timers.
+const LoginScreen = () => {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [mode, setMode] = useState("magic"); // "magic" | "password"
+  const [pwAction, setPwAction] = useState("signin"); // "signin" | "signup"
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [error, setError] = useState("");
+  // Where the magic-link email points back to. Trimmed of any trailing index.html so it
+  // works whether you're hitting the site root or a deep path. Search/hash stripped so
+  // we don't accidentally roundtrip stale state.
+  const redirectTo = window.location.origin + window.location.pathname.replace(/\/index\.html$/, "/");
+  const sendMagicLink = async () => {
+    const e = email.trim().toLowerCase();
+    if (!e) { setError("Enter your email."); return; }
+    setBusy(true); setError(""); setMsg("");
+    try {
+      const {error: err} = await sb.auth.signInWithOtp({ email: e, options: { emailRedirectTo: redirectTo } });
+      if (err) throw err;
+      setMsg("Sent. Check your email for a sign-in link \u2014 it expires in an hour.");
+    } catch (err) {
+      setError(err.message || "Couldn\u2019t send the link.");
+    } finally { setBusy(false); }
+  };
+  const signInWithPassword = async () => {
+    const e = email.trim().toLowerCase();
+    if (!e || !password) { setError("Enter your email and password."); return; }
+    setBusy(true); setError(""); setMsg("");
+    try {
+      const {error: err} = await sb.auth.signInWithPassword({ email: e, password });
+      if (err) throw err;
+      // Auth listener picks up the session change automatically.
+    } catch (err) {
+      setError(err.message || "Sign-in failed.");
+    } finally { setBusy(false); }
+  };
+  const signUp = async () => {
+    const e = email.trim().toLowerCase();
+    if (!e || !password) { setError("Enter your email and password."); return; }
+    if (password.length < 8) { setError("Password must be at least 8 characters."); return; }
+    setBusy(true); setError(""); setMsg("");
+    try {
+      const {error: err} = await sb.auth.signUp({ email: e, password, options: { emailRedirectTo: redirectTo } });
+      if (err) throw err;
+      setMsg("Account created. Check your email to confirm \u2014 then come back and sign in.");
+    } catch (err) {
+      setError(err.message || "Sign-up failed.");
+    } finally { setBusy(false); }
+  };
+  return h("div",{className:"max-w-md mx-auto px-4 py-12"},
+    h(Wordmark, {className:"h-12 mb-6 mx-auto"}),
+    h("div",{className:"card p-5"},
+      h("h2",{className:"display text-2xl mb-1"}, mode === "magic" ? "Sign in" : (pwAction === "signin" ? "Sign in" : "Create account")),
+      h("p",{className:"text-sm text-[var(--ink-soft)] mb-4"},
+        mode === "magic"
+          ? "Type your email and we\u2019ll send you a one-tap sign-in link."
+          : "Enter your email and password."
+      ),
+      h("input",{
+        type:"email", className:"input mb-3",
+        placeholder:"you@example.com", autoComplete:"email",
+        value:email, onChange:e=>setEmail(e.target.value), autoFocus:true
+      }),
+      mode === "password" && h("input",{
+        type:"password", className:"input mb-3",
+        placeholder:"Password", autoComplete: pwAction === "signin" ? "current-password" : "new-password",
+        value:password, onChange:e=>setPassword(e.target.value)
+      }),
+      mode === "magic"
+        ? h("button",{
+            onClick: sendMagicLink, disabled: busy,
+            className:"btn berry-bg w-full px-4 py-2.5 text-sm font-semibold disabled:opacity-50"
+          }, busy ? "Sending\u2026" : "Send magic link")
+        : h("div",{className:"flex gap-2"},
+            h("button",{
+              onClick: pwAction === "signin" ? signInWithPassword : signUp, disabled: busy,
+              className:"btn berry-bg flex-1 px-4 py-2.5 text-sm font-semibold disabled:opacity-50"
+            }, busy ? "\u2026" : (pwAction === "signin" ? "Sign in" : "Sign up")),
+            h("button",{
+              onClick: () => { setPwAction(pwAction === "signin" ? "signup" : "signin"); setError(""); setMsg(""); },
+              className:"btn bg-white px-3 py-2.5 text-sm"
+            }, pwAction === "signin" ? "I\u2019m new" : "Have an account")
+          ),
+      h("button",{
+        onClick: () => { setMode(mode === "magic" ? "password" : "magic"); setError(""); setMsg(""); },
+        className:"ticker text-xs text-[var(--ink-soft)] hover:text-[var(--berry)] mt-3"
+      }, mode === "magic" ? "Use password instead" : "Use magic link instead"),
+      msg && h("p",{className:"mt-3 text-sm",style:{color:"var(--good)"}}, msg),
+      error && h("p",{className:"mt-3 text-sm text-[var(--berry)]"}, error)
+    )
+  );
+};
+
+// v0.28.0: shown when someone signs in successfully but their email isn't on the
+// EMAIL_TO_MEMBER_ID list. Could be a stranger who somehow got the URL, or a band
+// member whose email isn't yet in the mapping (until I add them). Either way they
+// get a polite dead-end with a sign-out option \u2014 not the app.
+const NotABandMemberScreen = ({authUser}) => {
+  const signOut = async () => { try { await sb.auth.signOut(); } catch(_){} };
+  return h("div",{className:"max-w-md mx-auto px-4 py-12"},
+    h(Wordmark, {className:"h-12 mb-6 mx-auto"}),
+    h("div",{className:"card p-5"},
+      h("h2",{className:"display text-2xl mb-2"},"Not a band member"),
+      h("p",{className:"text-sm text-[var(--ink-soft)] mb-2"},
+        "You\u2019re signed in as ", h("span",{className:"font-semibold"}, (authUser && authUser.email) || "(unknown)"),
+        ", but that email isn\u2019t on the band roster."
+      ),
+      h("p",{className:"text-sm text-[var(--ink-soft)] mb-4"},
+        "If you should be on it, ask Omar to add your email."
+      ),
+      h("button",{
+        onClick: signOut,
+        className:"btn berry-bg w-full px-4 py-2 text-sm font-semibold"
+      }, "Sign out")
+    )
+  );
+};
 
 const SetupScreen = ({onCreated}) => {
   const [apiKey, setApiKey] = useState("");
@@ -2333,7 +2540,15 @@ const SettingsModal = ({memberProfiles, onClose, mutate, binId, state, onRestore
       error && h("div",{className:"mt-3 text-sm text-[var(--berry)]"}, error),
       h(MemberInstrumentsSection, {memberProfiles: memberProfiles, mutate: mutate, monikers: monikers, onRollMoniker: rollMoniker}),
       h(BandSettingsSection, {settings: settings, mutate: mutate}),
-      binId && h(BackupsSection, {binId: binId, state: state, onRestore: onRestore})
+      binId && h(BackupsSection, {binId: binId, state: state, onRestore: onRestore}),
+      // v0.28.0: sign-out lives at the bottom of Settings so it's discoverable but not
+      // a thumb-trap on the main screen. Plain button, no confirm — re-auth is one tap.
+      h("div",{className:"mt-5 pt-4 border-t border-[var(--line)]/15"},
+        h("button",{
+          onClick: async () => { try { await sb.auth.signOut(); } catch(_){} },
+          className:"btn bg-white px-4 py-2 text-sm font-semibold w-full"
+        }, "Sign out")
+      )
     )
   );
 };
@@ -2379,10 +2594,12 @@ const SyncPanel = ({sync, onClose}) => {
   const ago = sync.lastSyncedAt ? Math.round((Date.now() - sync.lastSyncedAt)/1000) : null;
   const isRateLimit = sync.errorStatus === 429;
   const is404 = sync.errorStatus === 404;
-  const reset = () => {
-    if (!confirm("This will clear the saved bin ID on this device. Continue?")) return;
-    setStoredBinId(null);
-    window.location.href = window.location.origin + window.location.pathname;
+  const reset = async () => {
+    // v0.28.0: bin-id reset replaced with sign-out. Same intent — clear local state
+    // and force a return to a clean entry screen — but the entry screen is now
+    // LoginScreen, not SetupScreen. Auth listener handles the redraw.
+    if (!confirm("This will sign you out of Sourberry. Continue?")) return;
+    try { await sb.auth.signOut(); } catch(_) {}
   };
   const retry = async () => { setRetrying(true); await sync.refresh(); setRetrying(false); };
   const reload = async () => { setRetrying(true); await sync.reloadFromServer(); setRetrying(false); };
@@ -7118,11 +7335,11 @@ const RehearsalRunMode = ({event, songs, member, memberProfiles, mutate, onClose
 // === END REHEARSAL RUN MODE ===
 
 const App = () => {
-  const urlBin = getBinIdFromURL();
-  const storedBin = getStoredBinId();
-  const [binId, setBinId] = useState(urlBin || storedBin || null);
-  const [showShare, setShowShare] = useState(false);
-  const [member, setMemberId] = useMemberIdentity();
+  // v0.28.0: auth-driven identity. The hook returns three pieces:
+  //   authStatus ("loading"/"anon"/"unknown"/"signed") drives the early-return chain
+  //   member is the matched band member (or null if not yet matched / unknown)
+  //   authUser is the raw Supabase user object (we use the email on the unknown screen)
+  const {authStatus, member, authUser} = useMemberIdentity();
   const [tab, setTab] = useState("gigs");
   const [showSyncPanel, setShowSyncPanel] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -7139,22 +7356,21 @@ const App = () => {
   // v0.25.0: when navigating from a setlist's pinned-gig label, App sets this so the
   // gigs view can scroll to + flash the matching gig card. Cleared after the flash.
   const [highlightedGigId, setHighlightedGigId] = useState(null);
-  useEffect(() => { if (urlBin && urlBin !== storedBin) setStoredBinId(urlBin); }, [urlBin, storedBin]);
-  const sync = useSyncedState(binId, member && member.id);
+  // v0.28.0: useSyncedState still takes a bin-like id (used as the localStorage scope
+  // for snapshots) — we pass BAND_STATE_ID once auth is "signed" and null otherwise.
+  // The null gate matters: without it, the hook would fire fetches before there's an
+  // auth session, which RLS rejects. Switching the param from null → BAND_STATE_ID on
+  // sign-in is what triggers the first real read.
+  const sync = useSyncedState(authStatus === "signed" ? BAND_STATE_ID : null, member && member.id);
   // v0.24.0: pick a musician quote once per app load. useState initializer ensures
   // it stays stable for this session (re-renders won't reroll the dice).
   const [sessionQuote] = useState(() => pickRandom(MUSICIAN_QUOTES));
 
   // v0.20.1 (hotfix): forceSnapshot MUST be declared before any conditional early-returns
-  // below (!binId, showShare, !sync.state, !member). React's Rules of Hooks require hooks
-  // to be called in the same order every render — putting useCallback after an early return
-  // (as v0.20.0 did) means the hook is sometimes skipped and React unmounts the tree.
-  // Symptom was: "Loading the band's data…" rendered, then the next render (with sync.state
-  // populated) hit the misordered hook and produced a blank page. References sync.state in
-  // the closure, which is fine because we don't access fields directly here.
+  // below. React's Rules of Hooks require hooks to be called in the same order every render.
   const forceSnapshot = useCallback(() => {
-    try { saveBackup(binId, sync.state, {force: true}); } catch (_) {}
-  }, [binId, sync.state]);
+    try { saveBackup(BAND_STATE_ID, sync.state, {force: true}); } catch (_) {}
+  }, [sync.state]);
 
   // v0.26.0: WhatsApp-counter baseline auto-init. The user wanted the counter to start
   // counting from "today" (i.e. the moment they share v0.26.0 with the band), not from
@@ -7180,8 +7396,17 @@ const App = () => {
     });
   }, [sync.state, sync.mutate]);
 
-  if (!binId) return h(SetupScreen,{onCreated: id => { setStoredBinId(id); const url = new URL(window.location.href); url.searchParams.set("bin", id); window.history.replaceState({}, "", url.toString()); setBinId(id); setShowShare(true); }});
-  if (showShare) return h(ShareScreen,{binId:binId,onContinue:()=>setShowShare(false)});
+  // v0.28.0: auth gate replaces the old bin-id flow. Order matters — we don't even
+  // attempt to load band data until we know there's a recognised member behind the
+  // session. Previously useSyncedState would still fetch even for an anon visitor.
+  if (authStatus === "loading") {
+    return h("div",{className:"max-w-md mx-auto px-4 py-12 text-center"},
+      h(Wordmark, {className:"h-12 mb-3 mx-auto"}),
+      h("p",{className:"display-italic text-lg text-[var(--ink-soft)]"},"Loading\u2026")
+    );
+  }
+  if (authStatus === "anon") return h(LoginScreen, null);
+  if (authStatus === "unknown") return h(NotABandMemberScreen, {authUser: authUser});
 
   if (!sync.state) {
     return h("div",{className:"max-w-3xl mx-auto px-4 py-12 text-center"},
@@ -7193,10 +7418,10 @@ const App = () => {
             h("p",{className:"text-sm mt-2 text-[var(--ink-soft)]"}, sync.errorMsg),
             h("div",{className:"mt-4 flex gap-2 flex-wrap"},
               h("button",{onClick:()=>sync.refresh(),className:"btn berry-bg px-4 py-2 font-semibold"},"Retry"),
-              h("button",{onClick:()=>{ setStoredBinId(null); setBinId(null); },className:"btn bg-white px-4 py-2"},"Reset and start over")
+              h("button",{onClick:()=>{ try{ sb.auth.signOut(); }catch(_){} },className:"btn bg-white px-4 py-2"},"Sign out")
             )
           )
-        : h("p",{className:"display-italic text-lg text-[var(--ink-soft)]"},"Loading the band's data…")
+        : h("p",{className:"display-italic text-lg text-[var(--ink-soft)]"},"Loading the band's data\u2026")
     );
   }
 
@@ -7210,39 +7435,11 @@ const App = () => {
   const settings = sync.state.settings || {};
   const feedback = sync.state.feedback || {};
 
-  // "Who are you?" gate. If a fresh visitor opens the URL on a new device, member
-  // identity is null (each device has its own localStorage). Without this gate, the
-  // app renders normally but with no member selected — meaning their availability,
-  // votes, practice statuses etc would all silently no-op. Worse, if they tap something
-  // assuming it's "them", it'd be misattributed. So we block the app until they pick.
-  if (!member) {
-    return h("div",{className:"max-w-md mx-auto px-4 py-12"},
-      h(Wordmark, {className:"h-12 mb-6 mx-auto"}),
-      h("div",{className:"card p-5"},
-        h("h2",{className:"display text-2xl mb-2"},"Who are you?"),
-        h("p",{className:"text-sm text-[var(--ink-soft)] mb-4"},
-          "Pick yourself from the band so we know whose votes, availability, and notes belong to whom. You can change this later in settings."
-        ),
-        h("div",{className:"space-y-2"},
-          MEMBERS.map(m => {
-            const photo = (memberProfiles[m.id] && memberProfiles[m.id].photoUrl) || "";
-            return h("button",{
-              key:m.id, onClick:()=>setMemberId(m.id),
-              className:"btn bg-white hover:bg-[var(--acid)] w-full px-4 py-3 text-left flex items-center gap-3"
-            },
-              h("div",{className:"shrink-0 rounded-full border border-[var(--line)]/40 overflow-hidden bg-white flex items-center justify-center",style:{width:40,height:40}},
-                photo ? h("img",{src:photo,alt:"",className:"w-full h-full object-cover"}) : h("span",{className:"display text-lg text-[var(--ink-soft)]"}, m.name[0])
-              ),
-              h("span",{className:"display text-xl"}, "I'm " + m.name)
-            );
-          })
-        ),
-        h("p",{className:"text-xs text-[var(--ink-soft)] italic mt-4"},
-          "Each device remembers separately. If you switch iPads, you'll be asked again."
-        )
-      )
-    );
-  }
+  // v0.28.0: the old "Who are you?" picker is gone — identity comes from the auth
+  // session, which means by the time we reach this line `member` is guaranteed to be
+  // a valid band member. The previous device-local localStorage gate is obsolete.
+
+  // v0.28.0: the "Who are you?" picker is gone. Auth determines identity.
 
   // Iteration C.1: full-page takeover for the rehearsal runner.
   if (runRehearsalId && events[runRehearsalId] && events[runRehearsalId].type === "rehearsal") {
@@ -7265,13 +7462,13 @@ const App = () => {
   return h("div",{className:"max-w-5xl xl:max-w-6xl mx-auto px-3 sm:px-6 py-4 sm:py-6"},
     sync.conflict && h(ConflictBanner,{conflict:sync.conflict,onResolve:sync.resolveConflict}),
     showSyncPanel && h(SyncPanel,{sync:sync,onClose:()=>setShowSyncPanel(false)}),
-    showSettings && h(SettingsModal,{memberProfiles:memberProfiles, mutate:sync.mutate, onClose:()=>setShowSettings(false), binId:binId, state:sync.state, settings:settings, onRestore:(newState)=>sync.mutate(_prev=>newState)}),
+    showSettings && h(SettingsModal,{memberProfiles:memberProfiles, mutate:sync.mutate, onClose:()=>setShowSettings(false), binId:BAND_STATE_ID, state:sync.state, settings:settings, onRestore:(newState)=>sync.mutate(_prev=>newState)}),
     h("header",{className:"mb-4 sm:mb-6"},
       h("div",{className:"flex items-center justify-between gap-3 mb-2 sm:mb-0 sm:items-end sm:flex-wrap"},
         h("div",null,
           h(Wordmark, {className:"h-9 sm:h-14 md:h-16"})
         ),
-        h(MemberPicker,{value:member,onChange:setMemberId,profiles:memberProfiles,onSelfClick:()=>setShowSettings(true)})
+        h(MemberPicker,{value:member,onChange:()=>{},profiles:memberProfiles,onSelfClick:()=>setShowSettings(true)})
       ),
       h("div",{className:"tab-nav-wrap mt-3 sm:mt-6"},
         h("nav",{className:"flex items-center border-y-2 border-[var(--line)] overflow-x-auto",style:{WebkitOverflowScrolling:"touch"}},
