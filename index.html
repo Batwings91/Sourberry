@@ -48,6 +48,7 @@ const App=()=>{
   const region=(settings&&settings.region)||"";
   const radius=(settings&&settings.travel_radius)||"";
   const email=(settings&&settings.booking_email)||"";
+  const aboutUs=(settings&&settings.about_us)||"";
   const locationLine=[region,radius].filter(Boolean).join(" \u00b7 ");
   const preview=songs.slice(0,6);
   return h("div",null,
@@ -69,6 +70,17 @@ const App=()=>{
           h("div",{className:"ticker text-[10px] text-[var(--ink)]/60 mt-1.5"},formatDate(nextGig.event_date),nextGig.start_time&&" \u00b7 "+nextGig.start_time.slice(0,5))
         ),
         h("a",{href:"/gigs/",className:"btn bg-white text-sm font-semibold px-4 py-2 shrink-0"},"All gigs \u2192")
+      )
+    ),
+    h("section",{className:"py-12 sm:py-16 border-b-2 border-[var(--line)]"},
+      h("div",{className:"max-w-4xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row gap-8 sm:gap-10 items-start"},
+        h("div",{className:"w-full sm:w-auto shrink-0",style:{maxWidth:"260px"}},
+          h("img",{src:"/images/band.webp",alt:"Sourberry live on stage",className:"card w-full",style:{display:"block",objectFit:"cover",objectPosition:"center 30%"}})
+        ),
+        aboutUs&&h("div",{className:"flex-1"},
+          h("p",{className:"text-[var(--ink-soft)] text-base leading-relaxed mb-6"},aboutUs),
+          h("a",{href:"/book/",className:"btn font-semibold px-6 py-3 text-base",style:{background:"var(--berry)",color:"#fff"}},"Book us")
+        )
       )
     ),
     h("section",{className:"py-12 sm:py-16 border-b-2 border-[var(--line)]"},
