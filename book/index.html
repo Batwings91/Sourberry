@@ -1,5 +1,5 @@
-
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
   <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -37,7 +37,7 @@
 const WEB3FORMS_KEY="YOUR_WEB3FORMS_KEY_HERE";
 const EVENT_TYPES=["Wedding","Birthday party","Corporate event","Charity event","Private party","Pub / bar night","Other"];
 const _R=React,h=_R.createElement,{useState,useEffect}=_R;
-const PUBLIC_VERSION="v1.1";
+const PUBLIC_VERSION="v1.2";
 const sb=window.supabase.createClient("https://xyukmguafhddpasmjjyy.supabase.co","sb_publishable_wDjYrqirJiulohJC8I26UQ_ZxwMoJcw");
 const Nav=()=>h("nav",{className:"site-nav"},h("div",{className:"max-w-4xl mx-auto px-4 sm:px-6 flex items-center justify-between h-14 gap-4"},h("a",{href:"/","aria-label":"Sourberry home"},h("img",{src:"/images/logo.png",alt:"Sourberry",className:"logo-img h-8 sm:h-9 w-auto"})),h("div",{className:"flex items-center gap-1 sm:gap-2"},h("a",{href:"/songs/",className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 pill hover:bg-[var(--acid)]"},"Songs"),h("a",{href:"/gigs/",className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 pill hover:bg-[var(--acid)]"},"Gigs"),h("a",{href:"/book/",className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 btn text-white font-semibold",style:{background:"var(--berry)"}},"Book us"))));
 const Footer=({email=""})=>h("footer",{className:"border-t-2 border-[var(--line)] py-8 px-4 sm:px-6 mt-8"},h("div",{className:"max-w-4xl mx-auto flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--ink-soft)]"},h("img",{src:"/images/logo.png",alt:"Sourberry",className:"logo-img h-7 w-auto"}),email&&h("a",{href:"mailto:"+email,className:"hover:text-[var(--berry)]"},email),h("span",null,"\u00a9 "+new Date().getFullYear()),h("div",{className:"flex items-center gap-3"},h("span",{className:"ticker text-[9px] opacity-40"},PUBLIC_VERSION),h("a",{href:"/hq/",className:"ticker text-[9px] text-[var(--ink-soft)]/40 hover:text-[var(--ink-soft)] transition-colors",title:"Band admin"},"Admin"))));
@@ -45,7 +45,10 @@ const App=()=>{
   const [settings,setSettings]=useState(null);
   const [form,setForm]=useState({name:"",email:"",eventDate:"",eventType:"",venue:"",message:""});
   const [status,setStatus]=useState("idle");
-  useEffect(()=>{sb.from("public_settings").select("*").single().then(({data})=>{if(data)setSettings(data)});},[]); 
+  useEffect(()=>{
+    sb.from("public_settings").select("*").single().then(({data})=>{if(data)setSettings(data)});
+    sb.rpc("log_page_view",{page_name:"book"}).catch(()=>{});
+  },[]); 
   const set=(k,v)=>setForm(f=>Object.assign({},f,{[k]:v}));
   const submit=async()=>{
     if(!form.name||!form.email||!form.eventDate||!form.eventType){setStatus("error-val");return}
@@ -73,7 +76,7 @@ const App=()=>{
           h("div",{className:"space-y-3 mb-6"},
             [["✓","All equipment provided","PA, instruments and lighting \u2014 we bring everything"],
              ["✓","Custom songs","We\u2019ll learn 3\u20135 specific tracks for your event with notice"],
-             ["✓","DJ sets available","Playlist or live DJ between sets through our own PA"],
+             ["✓","Music in the breaks","We can play your music through our PA between sets \u2014 great for background music or speeches at weddings"],
              ["✓","Venues up to 200","Larger venues by arrangement"]
             ].map(([icon,title,desc])=>h("div",{key:title,className:"flex gap-3"},
               h("span",{className:"text-[var(--berry)] font-bold shrink-0"},icon),
