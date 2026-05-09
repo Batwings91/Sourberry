@@ -54,7 +54,7 @@ const App=()=>{
   const [gigs,setGigs]=useState([]);const [email,setEmail]=useState("");const [loading,setLoading]=useState(true);
   useEffect(()=>{
     Promise.all([sb.from("public_gigs").select("*"),sb.from("public_settings").select("booking_email").single()]).then(([g,s])=>{if(g.data)setGigs(g.data);if(s.data)setEmail(s.data.booking_email||"");setLoading(false);});
-    sb.rpc("log_page_view",{page_name:"gigs"}).catch(()=>{});
+    try{sb.rpc("log_page_view",{page_name:"gigs"}).then(function(){}).catch(function(){});}catch(e){}
   },[]);
   const today=new Date().toISOString().slice(0,10);
   const upcoming=useMemo(()=>gigs.filter(g=>g.event_date>=today&&g.status==="confirmed").sort((a,b)=>a.event_date.localeCompare(b.event_date)),[gigs,today]);
