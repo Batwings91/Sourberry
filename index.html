@@ -1,5 +1,5 @@
-
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
   <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -51,6 +51,7 @@ const App=()=>{
   const region=(settings&&settings.region)||"";
   const radius=(settings&&settings.travel_radius)||"";
   const email=(settings&&settings.booking_email)||"";
+  const aboutUs=(settings&&settings.about_us&&settings.about_us.trim())||"";
   const locationLine=[region,radius].filter(Boolean).join(" \u00b7 ");
   const preview=songs.slice(0,6);
   return h("div",null,
@@ -73,6 +74,11 @@ const App=()=>{
           h("div",{className:"ticker text-[10px] text-[var(--ink)]/60 mt-1.5"},formatDate(nextGig.event_date),nextGig.start_time&&" \u00b7 "+nextGig.start_time.slice(0,5))
         ),
         h("a",{href:"/gigs/",className:"btn bg-white text-sm font-semibold px-4 py-2 shrink-0"},"All gigs \u2192")
+      )
+    ),
+    aboutUs&&h("section",{className:"py-8 sm:py-10 border-b-2 border-[var(--line)]"},
+      h("div",{className:"max-w-4xl mx-auto px-4 sm:px-6"},
+        h("p",{className:"text-[var(--ink-soft)] max-w-2xl text-base leading-relaxed"},aboutUs)
       )
     ),
     h("section",{className:"py-12 sm:py-16 border-b-2 border-[var(--line)]"},
