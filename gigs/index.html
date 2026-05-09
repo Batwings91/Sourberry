@@ -1,5 +1,5 @@
-
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
   <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -31,7 +31,7 @@
 <body><div id="root"></div>
 <script>
 const _R=React,h=_R.createElement,{useState,useEffect,useMemo}=_R;
-const PUBLIC_VERSION="v1.1";
+const PUBLIC_VERSION="v1.2";
 const sb=window.supabase.createClient("https://xyukmguafhddpasmjjyy.supabase.co","sb_publishable_wDjYrqirJiulohJC8I26UQ_ZxwMoJcw");
 const formatDate=iso=>{if(!iso)return"";return new Date(iso+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"long",year:"numeric"})};
 const Nav=()=>h("nav",{className:"site-nav"},h("div",{className:"max-w-4xl mx-auto px-4 sm:px-6 flex items-center justify-between h-14 gap-4"},h("a",{href:"/","aria-label":"Sourberry home"},h("img",{src:"/images/logo.png",alt:"Sourberry",className:"logo-img h-8 sm:h-9 w-auto"})),h("div",{className:"flex items-center gap-1 sm:gap-2"},h("a",{href:"/songs/",className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 pill hover:bg-[var(--acid)]"},"Songs"),h("a",{href:"/gigs/",className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 pill bg-[var(--acid)]"},"Gigs"),h("a",{href:"/book/",className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 btn text-white font-semibold",style:{background:"var(--berry)"}},"Book us"))));
@@ -52,7 +52,10 @@ const GigCard=({gig,today})=>{
 const Sec=({label,gigs,today})=>gigs.length===0?null:h("div",{className:"mb-10"},h("div",{className:"ticker text-[var(--ink-soft)] mb-3"},label),h("div",{className:"space-y-3"},gigs.map(g=>h(GigCard,{key:g.id,gig:g,today}))));
 const App=()=>{
   const [gigs,setGigs]=useState([]);const [email,setEmail]=useState("");const [loading,setLoading]=useState(true);
-  useEffect(()=>{Promise.all([sb.from("public_gigs").select("*"),sb.from("public_settings").select("booking_email").single()]).then(([g,s])=>{if(g.data)setGigs(g.data);if(s.data)setEmail(s.data.booking_email||"");setLoading(false);});},[]); 
+  useEffect(()=>{
+    Promise.all([sb.from("public_gigs").select("*"),sb.from("public_settings").select("booking_email").single()]).then(([g,s])=>{if(g.data)setGigs(g.data);if(s.data)setEmail(s.data.booking_email||"");setLoading(false);});
+    sb.rpc("log_page_view",{page_name:"gigs"}).catch(()=>{});
+  },[]);
   const today=new Date().toISOString().slice(0,10);
   const upcoming=useMemo(()=>gigs.filter(g=>g.event_date>=today&&g.status==="confirmed").sort((a,b)=>a.event_date.localeCompare(b.event_date)),[gigs,today]);
   const cancelled=useMemo(()=>gigs.filter(g=>g.event_date>=today&&g.status==="cancelled").sort((a,b)=>a.event_date.localeCompare(b.event_date)),[gigs,today]);
