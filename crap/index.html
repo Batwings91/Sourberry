@@ -256,7 +256,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.29.0";
+const APP_VERSION = "0.30.0";
 
 // v0.28.0: Supabase config. URL + publishable key are safe to ship in client code —
 // Row Level Security (set up on band_state) is the security boundary. Don't ever paste
@@ -2181,7 +2181,7 @@ const BackupsSection = ({binId, state, onRestore}) => {
   };
   const totalSize = backups.reduce((sum, b) => sum + (b.sizeBytes || 0), 0);
   return h("div",{className:"mt-5 pt-4 border-t border-[var(--line)]/15"},
-    h("div",{className:"ticker text-[var(--berry)] mb-2"},"Local backups"),
+    h("div",{className:"ticker text-[var(--berry)] mb-2"},"Export / restore"),
     h("p",{className:"text-xs text-[var(--ink-soft)] mb-3"},
       "Snapshots stored ", h("span",{className:"font-semibold"},"only on this device"), " (in this browser's local storage). Saved automatically whenever you change something — max one snapshot every 2 minutes. Each device keeps its own history of up to ", BACKUP_MAX_COUNT, " snapshots. ", h("span",{className:"font-semibold"},"Restoring replaces the band's live data for everyone."), " Use Download to keep a copy off-device."
     ),
@@ -2424,16 +2424,9 @@ const MemberInstrumentsSection = ({memberProfiles, member, mutate, monikers, onR
         // v0.29.0: only the authenticated member can toggle their own instruments.
         const isMe = member && member.id === m.id;
         return h("div",{key:m.id},
-          h("div",{className:"flex items-baseline justify-between gap-2 mb-1 flex-wrap"},
-            h("div",{className:"text-sm font-semibold " + (!isMe ? "text-[var(--ink-soft)]" : "")}, m.name),
-            isMe && h("button",{
-              type:"button",
-              onClick: () => onRollMoniker && onRollMoniker(m.id, m.name),
-              className:"text-[10px] ticker text-[var(--ink-soft)] hover:text-[var(--berry)]",
-              title:"Generate a stage name"
-            }, moniker ? "🤘 re-roll" : "🤘 stage name")
+          h("div",{className:"flex items-baseline gap-2 mb-1 flex-wrap"},
+            h("div",{className:"text-sm font-semibold " + (!isMe ? "text-[var(--ink-soft)]" : "")}, m.name)
           ),
-          moniker && isMe && h("div",{className:"text-xs italic text-[var(--berry)] mb-1.5 -mt-0.5"}, "\u201C", moniker, "\u201D"),
           isMe
             ? h("div",{className:"flex flex-wrap gap-1.5"},
                 INSTRUMENTS.map(inst => {
@@ -2580,7 +2573,7 @@ const SettingsModal = ({memberProfiles, member, onClose, mutate, binId, state, o
                   photo && h("button",{onClick:()=>onEditExisting(m.id, photo),className:"btn bg-white px-3 py-1.5 text-xs font-semibold",title:"Reposition the existing photo"},"Edit"),
                   photo && h("button",{onClick:()=>onRemove(m.id),className:"btn bg-white px-2 py-1.5 text-xs text-[var(--berry)]",title:"Remove photo"},"×")
                 )
-              : h("div",{className:"text-xs text-[var(--ink-soft)] shrink-0 italic"}, "Their photo")
+              : h("div",{className:"text-xs text-[var(--ink-soft)] shrink-0 italic"}, "No photo added")
           );
         })
       ),
@@ -7755,8 +7748,9 @@ const App = () => {
     showSettings && h(SettingsModal,{memberProfiles:memberProfiles, member:member, mutate:sync.mutate, onClose:()=>setShowSettings(false), binId:BAND_STATE_ID, state:sync.state, settings:settings, onRestore:(newState)=>sync.mutate(_prev=>newState)}),
     h("header",{className:"mb-4 sm:mb-6"},
       h("div",{className:"flex items-center justify-between gap-3 mb-2 sm:mb-0 sm:items-end sm:flex-wrap"},
-        h("div",null,
-          h(Wordmark, {className:"h-9 sm:h-14 md:h-16"})
+        h("div",{className:"flex items-end gap-2"},
+          h(Wordmark, {className:"h-9 sm:h-14 md:h-16"}),
+          h("span",{className:"ticker text-[10px] sm:text-xs text-[var(--ink-soft)] pb-1 sm:pb-1.5"},"HQ")
         ),
         // v0.29.0: replaced MemberPicker with a single profile chip now that
         // identity comes from Supabase auth, not a manual selector.
