@@ -47,7 +47,7 @@ const App=()=>{
   const [status,setStatus]=useState("idle");
   useEffect(()=>{
     sb.from("public_settings").select("*").single().then(({data})=>{if(data)setSettings(data)});
-    sb.rpc("log_page_view",{page_name:"book"}).catch(()=>{});
+    try{sb.rpc("log_page_view",{page_name:"book"}).then(function(){}).catch(function(){});}catch(e){}
   },[]); 
   const set=(k,v)=>setForm(f=>Object.assign({},f,{[k]:v}));
   const submit=async()=>{
