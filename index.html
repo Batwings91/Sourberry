@@ -7739,7 +7739,19 @@ const App = () => {
         h("div",null,
           h(Wordmark, {className:"h-9 sm:h-14 md:h-16"})
         ),
-        h(MemberPicker,{value:member,onChange:()=>{},profiles:memberProfiles,onSelfClick:()=>setShowSettings(true)})
+        // v0.29.0: replaced MemberPicker with a single profile chip now that
+        // identity comes from Supabase auth, not a manual selector.
+        member && h("button",{
+          onClick:()=>setShowSettings(true),
+          className:"pill flex items-center gap-2 px-3 py-1.5 bg-white hover:bg-[var(--acid)]",
+          title:"Open settings"
+        },
+          (memberProfiles && memberProfiles[member.id] && memberProfiles[member.id].photoUrl)
+            ? h("img",{src:memberProfiles[member.id].photoUrl,alt:"",className:"rounded-full object-cover border border-[var(--line)]/20 shrink-0",style:{width:22,height:22}})
+            : h("span",{className:"w-[22px] h-[22px] rounded-full berry-bg text-white flex items-center justify-center text-xs font-bold shrink-0"},member.name[0]),
+          h("span",{className:"text-sm font-semibold"},member.name),
+          h("span",{className:"opacity-40 text-xs","aria-hidden":"true"},"⚙")
+        )
       ),
       h("div",{className:"tab-nav-wrap mt-3 sm:mt-6"},
         h("nav",{className:"flex items-center border-y-2 border-[var(--line)] overflow-x-auto",style:{WebkitOverflowScrolling:"touch"}},
@@ -7802,6 +7814,8 @@ const App = () => {
       // Each event saves ~5–15 messages of "what about Tuesday? no Wednesday?"; ×7 felt right.
       const saved = (eventsDelta * 7) + (setlistsDelta * 4);
       const sinceISO = baseline.at ? new Date(baseline.at).toISOString().slice(0,10) : null;
+      // Bulletproof songs: every member marked "good" in practice. Safe to open with.
+      const bulletproof = Object.keys(songs || {}).map(id => songs[id]).filter(s => s.status === "repertoire" && MEMBERS.every(m => s.practice && s.practice[m.id] === "good")).length;
       const resetBaseline = () => {
         if (!confirm("Reset the WhatsApp-saved counter back to zero from today?")) return;
         sync.mutate(prev => Object.assign({}, prev, {
@@ -7826,6 +7840,17 @@ const App = () => {
             ),
             h("p",{className:"text-[11px] text-[var(--ink-soft)] mt-3 italic"},
               "Counts events and setlists created since the baseline. Each event \u2248 7 messages avoided, each setlist \u2248 4. (Vibes-based.)"
+            )
+          ),
+          h("div",{className:"py-3 border-b border-[var(--line)]/15"},
+            h("div",{className:"text-center"},
+              h("div",{className:"display text-4xl text-[var(--berry)]"}, bulletproof),
+              h("p",{className:"text-sm italic text-[var(--ink-soft)] mt-1"},
+                "Bulletproof songs"
+              )
+            ),
+            h("p",{className:"text-[11px] text-[var(--ink-soft)] mt-3 italic"},
+              "Repertoire songs where every member has marked themselves as \u201Cgood\u201D. Safe to open with. Could play after four pints."
             )
           ),
           h("div",{className:"mt-3 flex items-center gap-2 flex-wrap"},
