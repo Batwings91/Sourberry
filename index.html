@@ -1,530 +1,265 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sourberry — London Function Band</title>
   <meta name="description" content="Sourberry are a London-based function and covers band available for weddings, parties and corporate events." />
-
-  <!-- Open Graph -->
   <meta property="og:title" content="Sourberry" />
   <meta property="og:description" content="London function band for hire. Weddings, parties, corporate events." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://sourberry.co.uk" />
-
-  <!-- Fonts — same as CRAP -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,700;0,9..144,800;1,9..144,400;1,9..144,700&family=Inter+Tight:wght@400;500;600;700&display=swap" rel="stylesheet" />
-
-  <!-- Tailwind CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
-
-  <!-- Supabase — same version as CRAP -->
   <script crossorigin src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-
-  <!-- React UMD — same as CRAP -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-
   <style>
-    /* ── Design tokens — kept in sync with CRAP ── */
     :root {
-      --bg: #f6f1e7; --bg-card: #fffaf0;
-      --ink: #1a0a14; --ink-soft: #4a2a3a;
-      --berry: #e93ca3; --berry-deep: #b8217a;
-      --acid: #d1db58; --line: #2a1018;
+      --bg:#f6f1e7; --bg-card:#fffaf0;
+      --ink:#1a0a14; --ink-soft:#4a2a3a;
+      --berry:#e93ca3; --berry-deep:#b8217a;
+      --acid:#d1db58; --line:#2a1018;
     }
-
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    html { scroll-behavior: smooth; }
-
-    body {
-      font-family: 'Inter Tight', system-ui, sans-serif;
-      background: var(--bg);
-      color: var(--ink);
-      background-image: radial-gradient(circle at 1px 1px, rgba(26,10,20,0.07) 1px, transparent 0);
-      background-size: 22px 22px;
-    }
-
-    .display      { font-family: 'Fraunces', Georgia, serif; font-optical-sizing: auto; }
-    .display-i    { font-family: 'Fraunces', Georgia, serif; font-style: italic; }
-    .wordmark     { font-family: 'Fraunces', Georgia, serif; font-weight: 800;
-                    letter-spacing: -0.04em; font-variation-settings: "opsz" 144; }
-    .ticker       { letter-spacing: 0.18em; text-transform: uppercase;
-                    font-weight: 600; font-size: 0.72rem; }
-
-    .card         { background: var(--bg-card); border: 1.5px solid var(--line);
-                    box-shadow: 4px 4px 0 var(--line); }
-    .btn          { border: 1.5px solid var(--line); box-shadow: 3px 3px 0 var(--line);
-                    transition: transform 80ms ease, box-shadow 80ms ease;
-                    cursor: pointer; font-family: 'Inter Tight', sans-serif; }
-    .btn:hover    { transform: translate(-1px,-1px); box-shadow: 4px 4px 0 var(--line); }
-    .btn:active   { transform: translate(2px,2px); box-shadow: 1px 1px 0 var(--line); }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .pill         { border: 1.2px solid var(--line); }
-
-    .input {
-      background: #fffdf6; border: 1.5px solid var(--line);
-      padding: 0.6rem 0.75rem; font-family: 'Inter Tight', sans-serif;
-      width: 100%; color: var(--ink);
-    }
-    .input:focus  { outline: none; box-shadow: 3px 3px 0 var(--berry); }
-
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html{scroll-behavior:smooth}
+    body{font-family:'Inter Tight',system-ui,sans-serif;background:var(--bg);color:var(--ink);
+      background-image:radial-gradient(circle at 1px 1px,rgba(26,10,20,0.07) 1px,transparent 0);
+      background-size:22px 22px}
+    .display{font-family:'Fraunces',Georgia,serif;font-optical-sizing:auto}
+    .display-i{font-family:'Fraunces',Georgia,serif;font-style:italic}
+    .ticker{letter-spacing:0.18em;text-transform:uppercase;font-weight:600;font-size:0.72rem}
+    .card{background:var(--bg-card);border:1.5px solid var(--line);box-shadow:4px 4px 0 var(--line)}
+    .btn{border:1.5px solid var(--line);box-shadow:3px 3px 0 var(--line);
+      transition:transform 80ms ease,box-shadow 80ms ease;cursor:pointer;
+      font-family:'Inter Tight',sans-serif;display:inline-block;text-decoration:none}
+    .btn:hover{transform:translate(-1px,-1px);box-shadow:4px 4px 0 var(--line)}
+    .btn:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--line)}
+    .pill{border:1.2px solid var(--line)}
+    /* Logo: mix-blend-mode:multiply makes the white JPEG background vanish on cream */
+    .logo-img{mix-blend-mode:multiply}
     /* Nav */
-    .site-nav {
-      position: sticky; top: 0; z-index: 40;
-      background: var(--bg);
-      border-bottom: 1.5px solid var(--line);
-      backdrop-filter: blur(4px);
-    }
-
-    /* Subtle fade-in on load */
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(12px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    .fade-up { animation: fadeUp 0.5s ease both; }
-    .fade-up-1 { animation-delay: 0.05s; }
-    .fade-up-2 { animation-delay: 0.12s; }
-    .fade-up-3 { animation-delay: 0.20s; }
-
-    /* Song grid */
-    .song-row { border-bottom: 1px solid rgba(42,16,24,0.1); }
-    .song-row:last-child { border-bottom: none; }
-
-    /* Section separator */
-    section { border-top: 1.5px solid var(--line); }
-
-    @media (max-width: 640px) {
-      body { background-size: 18px 18px; }
-      .card { box-shadow: 3px 3px 0 var(--line); }
-    }
+    .site-nav{position:sticky;top:0;z-index:40;background:var(--bg);
+      border-bottom:2px solid var(--line)}
+    /* Acid hero bar */
+    .acid-bar{background:var(--acid);border-bottom:2px solid var(--line)}
+    /* Song rows */
+    .song-row{border-bottom:1px solid rgba(42,16,24,0.12)}
+    .song-row:last-child{border-bottom:none}
+    /* Animations */
+    @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+    .fu{animation:fadeUp 0.55s ease both}
+    .fu-1{animation-delay:0.06s}.fu-2{animation-delay:0.14s}.fu-3{animation-delay:0.22s}
+    @media(max-width:640px){body{background-size:18px 18px}.card{box-shadow:3px 3px 0 var(--line)}}
   </style>
 </head>
 <body>
-
 <div id="root"></div>
-
 <script>
-// ── Sourberry public site ────────────────────────────────────────────────────
-// Reads from three Supabase views (public_repertoire, public_gigs,
-// public_settings) via the publishable key. No writes, no auth required.
-// Stack: React 18 UMD + Supabase JS v2. No build step. No JSX.
+const _R=React,h=_R.createElement,{useState,useEffect,useMemo}=_R;
 
-const _React = React;
-const h = _React.createElement;
-const { useState, useEffect, useMemo, useRef } = _React;
+const SUPABASE_URL="https://xyukmguafhddpasmjjyy.supabase.co";
+const SUPABASE_KEY="sb_publishable_wDjYrqirJiulohJC8I26UQ_ZxwMoJcw";
+const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 
-// ── Supabase ─────────────────────────────────────────────────────────────────
-// Same project as CRAP. Publishable key is safe to ship — RLS + views are the
-// security boundary. The public site can only reach the three curated views.
-const SUPABASE_URL = "https://xyukmguafhddpasmjjyy.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_wDjYrqirJiulohJC8I26UQ_ZxwMoJcw";
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+const NAV_LINKS=[
+  {label:"Songs",href:"songs.html"},
+  {label:"Gigs",href:"gigs.html"},
+];
 
-// ── Web3Forms access key ──────────────────────────────────────────────────────
-// Get a free key at https://web3forms.com — paste it here. Submissions are
-// forwarded to whatever email you registered with on Web3Forms.
-const WEB3FORMS_KEY = "79c77b9f-256d-4484-9741-59de92700037";
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-const todayISO = () => new Date().toISOString().slice(0, 10);
-const twelveMonthsAgoISO = () =>
-  new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-
-const formatDate = (iso) => {
-  if (!iso) return "";
-  const d = new Date(iso + "T00:00:00");
-  return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "long", year: "numeric" });
-};
-
-// ── Nav ───────────────────────────────────────────────────────────────────────
-const Nav = ({bookingEmail}) =>
-  h("nav", {className: "site-nav"},
-    h("div", {className: "max-w-4xl mx-auto px-4 sm:px-6 flex items-center justify-between h-14"},
-      h("a", {href: "#top", className: "wordmark text-xl tracking-tight"}, "Sourberry"),
-      h("div", {className: "flex items-center gap-1 sm:gap-2"},
-        h("a", {href: "#songs", className: "ticker text-[10px] sm:text-xs px-2.5 py-1.5 hover:bg-[var(--acid)] pill"}, "Songs"),
-        h("a", {href: "#gigs",  className: "ticker text-[10px] sm:text-xs px-2.5 py-1.5 hover:bg-[var(--acid)] pill"}, "Gigs"),
-        h("a", {href: "#book",  className: "ticker text-[10px] sm:text-xs px-2.5 py-1.5 berry-bg text-white btn"},
+/* ── Shared Nav ── */
+const Nav=({active=""})=>
+  h("nav",{className:"site-nav"},
+    h("div",{className:"max-w-4xl mx-auto px-4 sm:px-6 flex items-center justify-between h-14 gap-4"},
+      h("a",{href:"index.html","aria-label":"Sourberry home"},
+        h("img",{src:"images/logo.png",alt:"Sourberry",className:"logo-img h-8 sm:h-9 w-auto"})
+      ),
+      h("div",{className:"flex items-center gap-1 sm:gap-2"},
+        NAV_LINKS.map(({label,href})=>
+          h("a",{key:label,href,
+            className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 pill hover:bg-[var(--acid)] "+(active===label?"bg-[var(--acid)]":"")},
+            label)
+        ),
+        h("a",{href:"book.html",
+          className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 btn text-white font-semibold",
+          style:{background:"var(--berry)"}},
           "Book us")
       )
     )
   );
 
-// ── Hero ──────────────────────────────────────────────────────────────────────
-const Hero = ({settings}) => {
-  const tagline     = (settings && settings.tagline)      || "London's party band for hire.";
-  const region      = (settings && settings.region)       || "London & South East";
-  const radius      = (settings && settings.travel_radius)|| "";
-
-  return h("section", {id: "top", className: "border-none py-16 sm:py-24 px-4 sm:px-6"},
-    h("div", {className: "max-w-4xl mx-auto"},
-      h("div", {className: "fade-up"},
-        h("h1", {className: "wordmark text-[clamp(3rem,12vw,7rem)] leading-none mb-4"},
-          "Sourberry"
-        )
-      ),
-      h("p", {className: "display-i text-2xl sm:text-3xl text-[var(--ink-soft)] mb-2 fade-up fade-up-1"},
-        tagline
-      ),
-      h("p", {className: "ticker text-[var(--ink-soft)] mb-8 fade-up fade-up-2"},
-        region, radius && (" · " + radius)
-      ),
-      h("div", {className: "flex flex-wrap gap-3 fade-up fade-up-3"},
-        h("a", {href: "#book",
-          className: "btn berry-bg text-white font-semibold px-6 py-3 text-base"},
-          "Book us"
-        ),
-        h("a", {href: "#songs",
-          className: "btn bg-white font-semibold px-6 py-3 text-base"},
-          "What we play →"
-        )
-      )
-    )
-  );
-};
-
-// ── Songs ─────────────────────────────────────────────────────────────────────
-const Songs = ({songs, loading}) =>
-  h("section", {id: "songs", className: "py-14 sm:py-20 px-4 sm:px-6"},
-    h("div", {className: "max-w-4xl mx-auto"},
-      h("div", {className: "flex items-baseline justify-between mb-6 flex-wrap gap-2"},
-        h("h2", {className: "display text-3xl sm:text-4xl font-bold"}, "What we play"),
-        !loading && songs.length > 0 &&
-          h("span", {className: "ticker text-[var(--ink-soft)]"}, songs.length + " songs")
-      ),
-      loading
-        ? h("p", {className: "text-[var(--ink-soft)] italic"}, "Loading…")
-        : songs.length === 0
-          ? h("p", {className: "text-[var(--ink-soft)] italic"}, "Repertoire coming soon.")
-          : h("div", {className: "card mb-6"},
-              h("div", {className: "grid sm:grid-cols-2"},
-                songs.map((s, i) =>
-                  h("div", {key: s.id, className: "song-row flex items-baseline gap-3 px-4 py-3"},
-                    h("span", {className: "font-semibold flex-1 min-w-0 truncate"}, s.title),
-                    h("span", {className: "text-sm text-[var(--ink-soft)] shrink-0 truncate max-w-[40%]"}, s.artist)
-                  )
-                )
-              )
-            ),
-      h("p", {className: "text-sm text-[var(--ink-soft)]"},
-        "Want a specific song? With reasonable notice we'll learn 3–5 songs for your event. ",
-        h("a", {href: "#book", className: "text-[var(--berry)] underline underline-offset-2"}, "Just ask.")
-      )
+/* ── Shared Footer ── */
+const Footer=({email=""})=>
+  h("footer",{className:"border-t-2 border-[var(--line)] py-8 px-4 sm:px-6 mt-8"},
+    h("div",{className:"max-w-4xl mx-auto flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--ink-soft)]"},
+      h("img",{src:"images/logo.png",alt:"Sourberry",className:"logo-img h-7 w-auto"}),
+      email&&h("a",{href:"mailto:"+email,className:"hover:text-[var(--berry)]"},email),
+      h("span",null,"© "+new Date().getFullYear()),
+      h("a",{href:"/crap/",
+        className:"ticker text-[9px] text-[var(--ink-soft)]/40 hover:text-[var(--ink-soft)] transition-colors",
+        title:"Collaborative Rehearsal & Administration Platform"},
+        "C.R.A.P.")
     )
   );
 
-// ── Gigs ──────────────────────────────────────────────────────────────────────
-const GigCard = ({gig}) => {
-  const isPast      = gig.event_date < todayISO();
-  const isCancelled = gig.status === "cancelled";
+/* ── Home ── */
+const App=()=>{
+  const [settings,setSettings]=useState(null);
+  const [gigs,setGigs]=useState([]);
+  const [songs,setSongs]=useState([]);
+  const [loading,setLoading]=useState(true);
 
-  return h("div", {className: "card p-4 " + (isCancelled || isPast ? "opacity-60" : "")},
-    h("div", {className: "flex items-start justify-between gap-3 flex-wrap"},
-      h("div", null,
-        h("div", {className: "font-semibold text-base " + (isCancelled ? "line-through" : "")},
-          gig.title || gig.location || "Private event"
-        ),
-        gig.location && gig.title &&
-          h("div", {className: "text-sm text-[var(--ink-soft)] mt-0.5"}, gig.location),
-        h("div", {className: "ticker text-[10px] text-[var(--ink-soft)] mt-1"},
-          formatDate(gig.event_date),
-          gig.start_time && (" · " + gig.start_time.slice(0,5))
-        )
-      ),
-      isCancelled &&
-        h("span", {className: "ticker text-[10px] bg-red-100 text-red-700 px-2 py-0.5 shrink-0"},
-          "Cancelled"
-        )
-    )
-  );
-};
+  useEffect(()=>{
+    Promise.all([
+      sb.from("public_settings").select("*").single(),
+      sb.from("public_gigs").select("*"),
+      sb.from("public_repertoire").select("*")
+    ]).then(([s,g,r])=>{
+      if(s.data)setSettings(s.data);
+      if(g.data)setGigs(g.data);
+      if(r.data)setSongs(r.data);
+      setLoading(false);
+    });
+  },[]);
 
-const Gigs = ({gigs, loading}) => {
-  const today = todayISO();
-  const ago   = twelveMonthsAgoISO();
-
-  const upcoming = useMemo(() =>
-    gigs.filter(g => g.event_date >= today && g.status === "confirmed")
-        .sort((a,b) => a.event_date.localeCompare(b.event_date)),
-    [gigs, today]
-  );
-  const cancelled = useMemo(() =>
-    gigs.filter(g => g.event_date >= today && g.status === "cancelled")
-        .sort((a,b) => a.event_date.localeCompare(b.event_date)),
-    [gigs, today]
-  );
-  const past = useMemo(() =>
-    gigs.filter(g => g.event_date < today && g.event_date >= ago)
-        .sort((a,b) => b.event_date.localeCompare(a.event_date)),
-    [gigs, today, ago]
+  const today=new Date().toISOString().slice(0,10);
+  const nextGig=useMemo(()=>
+    gigs.filter(g=>g.status==="confirmed"&&g.event_date>=today)
+        .sort((a,b)=>a.event_date.localeCompare(b.event_date))[0],
+    [gigs,today]
   );
 
-  return h("section", {id: "gigs", className: "py-14 sm:py-20 px-4 sm:px-6"},
-    h("div", {className: "max-w-4xl mx-auto"},
-      h("h2", {className: "display text-3xl sm:text-4xl font-bold mb-6"}, "Gigs"),
-      loading
-        ? h("p", {className: "text-[var(--ink-soft)] italic"}, "Loading…")
-        : h("div", {className: "space-y-8"},
+  const tagline=(settings&&settings.tagline)||"London's function band for hire.";
+  const region=(settings&&settings.region)||"";
+  const email=(settings&&settings.booking_email)||"";
 
-            // Upcoming
-            upcoming.length > 0 && h("div", null,
-              h("div", {className: "ticker text-[var(--ink-soft)] mb-3"}, "Upcoming"),
-              h("div", {className: "space-y-3"},
-                upcoming.map(g => h(GigCard, {key: g.id, gig: g}))
-              )
-            ),
+  const previewSongs=useMemo(()=>songs.slice(0,6),[songs]);
 
-            // Cancelled (upcoming only)
-            cancelled.length > 0 && h("div", null,
-              h("div", {className: "ticker text-[var(--ink-soft)] mb-3"}, "Cancelled"),
-              h("div", {className: "space-y-3"},
-                cancelled.map(g => h(GigCard, {key: g.id, gig: g}))
-              )
-            ),
-
-            // Past
-            past.length > 0 && h("div", null,
-              h("div", {className: "ticker text-[var(--ink-soft)] mb-3"}, "Past gigs"),
-              h("div", {className: "space-y-3"},
-                past.map(g => h(GigCard, {key: g.id, gig: g}))
-              )
-            ),
-
-            upcoming.length === 0 && cancelled.length === 0 &&
-              h("p", {className: "text-[var(--ink-soft)] italic"},
-                "No public dates right now — ",
-                h("a", {href: "#book", className: "text-[var(--berry)] underline underline-offset-2"},
-                  "get in touch to book us."
-                )
-              )
-          )
-    )
-  );
-};
-
-// ── Book us ───────────────────────────────────────────────────────────────────
-const EVENT_TYPES = [
-  "Wedding", "Birthday party", "Corporate event", "Charity event",
-  "Private party", "Pub / bar night", "Other"
-];
-
-const BookUs = ({settings}) => {
-  const bookingEmail = (settings && settings.booking_email) || "";
-  const [form, setForm] = useState({
-    name: "", email: "", eventDate: "", eventType: "", venue: "", message: ""
-  });
-  const [status, setStatus] = useState("idle"); // idle | sending | sent | error
-
-  const set = (k, v) => setForm(f => Object.assign({}, f, {[k]: v}));
-
-  const submit = async () => {
-    if (!form.name || !form.email || !form.eventDate || !form.eventType) {
-      setStatus("error-validation");
-      return;
-    }
-    setStatus("sending");
-    try {
-      const res = await fetch("https://api.web3forms.com/submit", {
-        method: "POST",
-        headers: {"Content-Type": "application/json", Accept: "application/json"},
-        body: JSON.stringify({
-          access_key: WEB3FORMS_KEY,
-          subject: "Sourberry booking enquiry — " + form.eventType + " (" + form.eventDate + ")",
-          name: form.name,
-          email: form.email,
-          "Event date": form.eventDate,
-          "Event type": form.eventType,
-          "Venue / location": form.venue || "Not specified",
-          message: form.message || "No message provided"
-        })
-      });
-      const data = await res.json();
-      if (data.success) {
-        setStatus("sent");
-      } else {
-        setStatus("error");
-      }
-    } catch {
-      setStatus("error");
-    }
+  const formatDate=iso=>{
+    if(!iso)return"";
+    return new Date(iso+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"long",year:"numeric"});
   };
 
-  return h("section", {id: "book", className: "py-14 sm:py-20 px-4 sm:px-6"},
-    h("div", {className: "max-w-4xl mx-auto"},
-      h("div", {className: "grid sm:grid-cols-2 gap-10 sm:gap-16"},
+  return h("div",null,
+    h(Nav,{active:""}),
 
-        // Left: copy
-        h("div", null,
-          h("h2", {className: "display text-3xl sm:text-4xl font-bold mb-4"}, "Book Sourberry"),
-          h("p", {className: "text-[var(--ink-soft)] mb-4 leading-relaxed"},
-            "Fill in the form and we'll get back to you within a few days. " +
-            "Not sure if we're right for your event? Come to one of our gigs first — just say hello."
-          ),
-          h("div", {className: "space-y-2 text-sm text-[var(--ink-soft)]"},
-            h("div", null, "✓  We bring all our own PA, instruments and lighting"),
-            h("div", null, "✓  We can learn 3–5 specific songs for your event"),
-            h("div", null, "✓  DJ playlist between live sets, or a live DJ"),
-            h("div", null, "✓  Venues up to ~200 people; larger by arrangement")
-          ),
-          bookingEmail && h("div", {className: "mt-6"},
-            h("div", {className: "ticker text-[10px] text-[var(--ink-soft)] mb-1"}, "Or email directly"),
-            h("a", {
-              href: "mailto:" + bookingEmail,
-              className: "text-[var(--berry)] underline underline-offset-2 text-sm break-all"
-            }, bookingEmail)
-          )
+    /* ── Hero ── */
+    h("section",{className:"py-14 sm:py-24 px-4 sm:px-6 border-b-2 border-[var(--line)]"},
+      h("div",{className:"max-w-4xl mx-auto"},
+        h("div",{className:"fu mb-6 sm:mb-8"},
+          h("img",{src:"images/logo.png",alt:"Sourberry",
+            className:"logo-img w-full max-w-xs sm:max-w-sm md:max-w-md"})
         ),
-
-        // Right: form
-        h("div", null,
-          status === "sent"
-            ? h("div", {className: "card p-6 text-center"},
-                h("div", {className: "display text-3xl mb-2"}, "Thanks!"),
-                h("p", {className: "text-[var(--ink-soft)]"},
-                  "We'll be in touch within a few days."
-                )
-              )
-            : h("div", {className: "card p-5 space-y-4"},
-
-                h("label", {className: "block"},
-                  h("span", {className: "ticker text-[10px] mb-1 block"}, "Your name *"),
-                  h("input", {
-                    className: "input",
-                    value: form.name,
-                    onChange: e => set("name", e.target.value),
-                    placeholder: "Jane Smith"
-                  })
-                ),
-
-                h("label", {className: "block"},
-                  h("span", {className: "ticker text-[10px] mb-1 block"}, "Email address *"),
-                  h("input", {
-                    type: "email",
-                    className: "input",
-                    value: form.email,
-                    onChange: e => set("email", e.target.value),
-                    placeholder: "jane@example.com"
-                  })
-                ),
-
-                h("label", {className: "block"},
-                  h("span", {className: "ticker text-[10px] mb-1 block"}, "Event date *"),
-                  h("input", {
-                    type: "date",
-                    className: "input",
-                    value: form.eventDate,
-                    onChange: e => set("eventDate", e.target.value)
-                  })
-                ),
-
-                h("label", {className: "block"},
-                  h("span", {className: "ticker text-[10px] mb-1 block"}, "Type of event *"),
-                  h("select", {
-                    className: "input",
-                    value: form.eventType,
-                    onChange: e => set("eventType", e.target.value)
-                  },
-                    h("option", {value: ""}, "Select…"),
-                    EVENT_TYPES.map(t => h("option", {key: t, value: t}, t))
-                  )
-                ),
-
-                h("label", {className: "block"},
-                  h("span", {className: "ticker text-[10px] mb-1 block"}, "Venue / location"),
-                  h("input", {
-                    className: "input",
-                    value: form.venue,
-                    onChange: e => set("venue", e.target.value),
-                    placeholder: "e.g. The Crown, Clapham"
-                  })
-                ),
-
-                h("label", {className: "block"},
-                  h("span", {className: "ticker text-[10px] mb-1 block"}, "Anything else we should know?"),
-                  h("textarea", {
-                    className: "input",
-                    rows: 3,
-                    value: form.message,
-                    onChange: e => set("message", e.target.value),
-                    placeholder: "Guest numbers, specific songs, timing, questions…",
-                    style: {resize: "vertical"}
-                  })
-                ),
-
-                status === "error-validation" &&
-                  h("p", {className: "text-sm text-red-600"}, "Please fill in all required fields (marked *)."),
-                status === "error" &&
-                  h("p", {className: "text-sm text-red-600"}, "Something went wrong — please try again or email us directly."),
-
-                h("button", {
-                  onClick: submit,
-                  disabled: status === "sending",
-                  className: "btn berry-bg text-white font-semibold px-5 py-2.5 w-full text-sm"
-                }, status === "sending" ? "Sending…" : "Send enquiry")
-              )
+        h("p",{className:"display-i text-2xl sm:text-3xl text-[var(--ink-soft)] mb-2 fu fu-1"},tagline),
+        region&&h("p",{className:"ticker text-[var(--ink-soft)] mb-8 fu fu-1"},region),
+        h("div",{className:"flex flex-wrap gap-3 fu fu-2"},
+          h("a",{href:"book.html",
+            className:"btn text-white font-semibold px-6 py-3 text-base",
+            style:{background:"var(--berry)"}},
+            "Book us"),
+          h("a",{href:"songs.html",
+            className:"btn bg-white font-semibold px-6 py-3 text-base"},
+            "What we play →")
         )
       )
-    )
+    ),
+
+    /* ── Next gig strip ── */
+    !loading&&nextGig&&h("div",{className:"acid-bar py-4 px-4 sm:px-6"},
+      h("div",{className:"max-w-4xl mx-auto flex items-center justify-between flex-wrap gap-3"},
+        h("div",null,
+          h("div",{className:"ticker text-[10px] text-[var(--ink)]/60 mb-0.5"},"Next gig"),
+          h("div",{className:"font-semibold"},
+            nextGig.title||nextGig.location||"Private event",
+            nextGig.location&&nextGig.title&&h("span",{className:"text-[var(--ink)]/60 font-normal"},
+              " · "+nextGig.location)
+          ),
+          h("div",{className:"ticker text-[10px] text-[var(--ink)]/70 mt-0.5"},
+            formatDate(nextGig.event_date),
+            nextGig.start_time&&" · "+nextGig.start_time.slice(0,5))
+        ),
+        h("a",{href:"gigs.html",
+          className:"btn bg-white text-sm font-semibold px-4 py-2 shrink-0"},
+          "All gigs →")
+      )
+    ),
+
+    /* ── Intro ── */
+    h("section",{className:"py-14 sm:py-20 px-4 sm:px-6 border-b-2 border-[var(--line)]"},
+      h("div",{className:"max-w-4xl mx-auto grid sm:grid-cols-2 gap-8 sm:gap-16 items-start"},
+        h("div",null,
+          h("h2",{className:"display text-3xl sm:text-4xl font-bold mb-4"},"A covers band that keeps the floor moving."),
+          h("p",{className:"text-[var(--ink-soft)] leading-relaxed mb-4"},
+            "Sourberry are a four-piece function band available for weddings, birthday parties, "+
+            "corporate events and anything in between. We play a constantly updated set of "+
+            "contemporary and classic covers, chosen to keep every crowd on their feet."
+          ),
+          h("p",{className:"text-[var(--ink-soft)] leading-relaxed"},
+            "We bring everything — PA, instruments, lighting — and can provide a DJ playlist "+
+            "between live sets. Book directly through us and skip the agency fees."
+          )
+        ),
+        h("div",{className:"space-y-3"},
+          [
+            ["✓","All equipment provided","PA, instruments, lighting — we bring it all"],
+            ["✓","Custom songs","We'll learn 3–5 specific tracks for your event"],
+            ["✓","DJ sets available","Between live sets, through our own PA"],
+            ["✓","Venues up to 200","Larger venues by arrangement"],
+          ].map(([icon,title,desc])=>
+            h("div",{key:title,className:"card p-4"},
+              h("div",{className:"font-semibold mb-0.5"},icon+" "+title),
+              h("div",{className:"text-sm text-[var(--ink-soft)]"},desc)
+            )
+          )
+        )
+      )
+    ),
+
+    /* ── Song teaser ── */
+    h("section",{className:"py-14 sm:py-20 px-4 sm:px-6 border-b-2 border-[var(--line)]"},
+      h("div",{className:"max-w-4xl mx-auto"},
+        h("div",{className:"flex items-baseline justify-between mb-6 flex-wrap gap-2"},
+          h("h2",{className:"display text-3xl sm:text-4xl font-bold"},"From our set"),
+          h("a",{href:"songs.html",className:"ticker text-[10px] text-[var(--berry)] hover:underline"},
+            "Full list →")
+        ),
+        loading
+          ?h("p",{className:"text-[var(--ink-soft)] italic"},"Loading…")
+          :h("div",{className:"card"},
+              h("div",{className:"grid sm:grid-cols-2"},
+                previewSongs.map(s=>
+                  h("div",{key:s.id,className:"song-row flex items-baseline gap-3 px-4 py-3"},
+                    h("span",{className:"font-semibold flex-1 truncate"},s.title),
+                    h("span",{className:"text-sm text-[var(--ink-soft)] shrink-0 truncate max-w-[40%]"},s.artist)
+                  )
+                )
+              ),
+              songs.length>6&&h("a",{href:"songs.html",
+                className:"block text-center ticker text-[10px] py-3 border-t border-[var(--line)]/20 hover:bg-[var(--acid)] text-[var(--berry)]"},
+                "See all "+songs.length+" songs →")
+          )
+      )
+    ),
+
+    /* ── Book CTA ── */
+    h("section",{className:"py-14 sm:py-20 px-4 sm:px-6"},
+      h("div",{className:"max-w-4xl mx-auto text-center"},
+        h("h2",{className:"display text-3xl sm:text-4xl font-bold mb-3"},"Ready to book?"),
+        h("p",{className:"text-[var(--ink-soft)] mb-6 max-w-lg mx-auto"},
+          "Tell us about your event and we'll get back to you within a few days."),
+        h("a",{href:"book.html",
+          className:"btn text-white font-semibold px-8 py-4 text-lg",
+          style:{background:"var(--berry)"}},
+          "Get in touch →")
+      )
+    ),
+
+    h(Footer,{email})
   );
 };
 
-// ── Footer ────────────────────────────────────────────────────────────────────
-const Footer = ({settings}) => {
-  const email = (settings && settings.booking_email) || "";
-  return h("footer", {className: "border-t-2 border-[var(--line)] mt-8 py-8 px-4 sm:px-6"},
-    h("div", {className: "max-w-4xl mx-auto flex items-center justify-between flex-wrap gap-3 text-sm text-[var(--ink-soft)]"},
-      h("span", {className: "wordmark text-base"}, "Sourberry"),
-      h("span", null, "© " + new Date().getFullYear()),
-      email && h("a", {href: "mailto:" + email, className: "hover:text-[var(--berry)]"}, email)
-    )
-  );
-};
-
-// ── App ───────────────────────────────────────────────────────────────────────
-const App = () => {
-  const [settings, setSettings] = useState(null);
-  const [songs,    setSongs]    = useState([]);
-  const [gigs,     setGigs]     = useState([]);
-  const [loading,  setLoading]  = useState(true);
-
-  useEffect(() => {
-    const load = async () => {
-      // Fetch all three views in parallel.
-      const [settingsRes, songsRes, gigsRes] = await Promise.all([
-        sb.from("public_settings").select("*").single(),
-        sb.from("public_repertoire").select("*"),
-        sb.from("public_gigs").select("*")
-      ]);
-      if (settingsRes.data) setSettings(settingsRes.data);
-      if (songsRes.data)    setSongs(songsRes.data);
-      if (gigsRes.data)     setGigs(gigsRes.data);
-      setLoading(false);
-    };
-    load();
-  }, []);
-
-  // Update page title once settings load.
-  useEffect(() => {
-    if (settings && settings.tagline) {
-      document.title = "Sourberry — " + settings.tagline;
-    }
-  }, [settings]);
-
-  return h("div", null,
-    h(Nav,    {bookingEmail: settings && settings.booking_email}),
-    h(Hero,   {settings}),
-    h(Songs,  {songs, loading}),
-    h(Gigs,   {gigs, loading}),
-    h(BookUs, {settings}),
-    h(Footer, {settings})
-  );
-};
-
-ReactDOM.createRoot(document.getElementById("root")).render(h(App, null));
+ReactDOM.createRoot(document.getElementById("root")).render(h(App,null));
 </script>
 </body>
 </html>

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>What we play — Sourberry</title>
+  <meta name="description" content="Sourberry's full repertoire — covers and function band songs." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,700;0,9..144,800;1,9..144,400;1,9..144,700&family=Inter+Tight:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <style>
+    :root{--bg:#f6f1e7;--bg-card:#fffaf0;--ink:#1a0a14;--ink-soft:#4a2a3a;--berry:#e93ca3;--acid:#d1db58;--line:#2a1018}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Inter Tight',system-ui,sans-serif;background:var(--bg);color:var(--ink);
+      background-image:radial-gradient(circle at 1px 1px,rgba(26,10,20,0.07) 1px,transparent 0);background-size:22px 22px}
+    .display{font-family:'Fraunces',Georgia,serif;font-optical-sizing:auto}
+    .display-i{font-family:'Fraunces',Georgia,serif;font-style:italic}
+    .ticker{letter-spacing:0.18em;text-transform:uppercase;font-weight:600;font-size:0.72rem}
+    .card{background:var(--bg-card);border:1.5px solid var(--line);box-shadow:4px 4px 0 var(--line)}
+    .btn{border:1.5px solid var(--line);box-shadow:3px 3px 0 var(--line);transition:transform 80ms ease,box-shadow 80ms ease;cursor:pointer;font-family:'Inter Tight',sans-serif;display:inline-block;text-decoration:none}
+    .btn:hover{transform:translate(-1px,-1px);box-shadow:4px 4px 0 var(--line)}
+    .pill{border:1.2px solid var(--line)}
+    .logo-img{mix-blend-mode:multiply}
+    .site-nav{position:sticky;top:0;z-index:40;background:var(--bg);border-bottom:2px solid var(--line)}
+    .acid-bar{background:var(--acid);border-bottom:2px solid var(--line)}
+    .song-row{border-bottom:1px solid rgba(42,16,24,0.12)}
+    .song-row:last-child{border-bottom:none}
+    @media(max-width:640px){body{background-size:18px 18px}.card{box-shadow:3px 3px 0 var(--line)}}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const _R=React,h=_R.createElement,{useState,useEffect}=_R;
+const sb=window.supabase.createClient("https://xyukmguafhddpasmjjyy.supabase.co","sb_publishable_wDjYrqirJiulohJC8I26UQ_ZxwMoJcw");
+const Nav=({active=""})=>h("nav",{className:"site-nav"},h("div",{className:"max-w-4xl mx-auto px-4 sm:px-6 flex items-center justify-between h-14 gap-4"},h("a",{href:"index.html","aria-label":"Sourberry home"},h("img",{src:"images/logo.png",alt:"Sourberry",className:"logo-img h-8 sm:h-9 w-auto"})),h("div",{className:"flex items-center gap-1 sm:gap-2"},h("a",{href:"songs.html",className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 pill "+(active==="Songs"?"bg-[var(--acid)]":"hover:bg-[var(--acid)]")},"Songs"),h("a",{href:"gigs.html",className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 pill "+(active==="Gigs"?"bg-[var(--acid)]":"hover:bg-[var(--acid)]")},"Gigs"),h("a",{href:"book.html",className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 btn text-white font-semibold",style:{background:"var(--berry)"}},"Book us"))));
+const Footer=({email=""})=>h("footer",{className:"border-t-2 border-[var(--line)] py-8 px-4 sm:px-6 mt-8"},h("div",{className:"max-w-4xl mx-auto flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--ink-soft)]"},h("img",{src:"images/logo.png",alt:"Sourberry",className:"logo-img h-7 w-auto"}),email&&h("a",{href:"mailto:"+email,className:"hover:text-[var(--berry)]"},email),h("span",null,"\u00a9 "+new Date().getFullYear()),h("a",{href:"/crap/",className:"ticker text-[9px] text-[var(--ink-soft)]/40 hover:text-[var(--ink-soft)] transition-colors",title:"Collaborative Rehearsal & Administration Platform"},"C.R.A.P.")));
+const App=()=>{
+  const [songs,setSongs]=useState([]);
+  const [email,setEmail]=useState("");
+  const [loading,setLoading]=useState(true);
+  useEffect(()=>{
+    Promise.all([sb.from("public_repertoire").select("*"),sb.from("public_settings").select("booking_email").single()]).then(([r,s])=>{
+      if(r.data)setSongs(r.data);
+      if(s.data)setEmail(s.data.booking_email||"");
+      setLoading(false);
+    });
+  },[]);
+  return h("div",null,
+    h(Nav,{active:"Songs"}),
+    h("div",{className:"acid-bar py-6 px-4 sm:px-6"},
+      h("div",{className:"max-w-4xl mx-auto flex items-baseline justify-between flex-wrap gap-2"},
+        h("h1",{className:"display text-3xl sm:text-4xl font-bold"},"What we play"),
+        !loading&&songs.length>0&&h("span",{className:"ticker text-[10px] text-[var(--ink)]/60"},songs.length+" songs")
+      )
+    ),
+    h("div",{className:"max-w-4xl mx-auto px-4 sm:px-6 py-10"},
+      h("p",{className:"text-[var(--ink-soft)] mb-8 max-w-xl leading-relaxed"},"A constantly evolving set of contemporary and classic covers, every one chosen to keep people on their feet. We update the list regularly as we learn new material."),
+      loading?h("p",{className:"text-[var(--ink-soft)] italic"},"Loading\u2026"):
+      songs.length===0?h("p",{className:"text-[var(--ink-soft)] italic"},"Repertoire coming soon."):
+      h("div",{className:"card mb-8"},
+        h("div",{className:"grid sm:grid-cols-2"},
+          songs.map(s=>h("div",{key:s.id,className:"song-row flex items-baseline gap-3 px-4 py-3"},
+            h("span",{className:"font-semibold flex-1 min-w-0 truncate"},s.title),
+            h("span",{className:"text-sm text-[var(--ink-soft)] shrink-0 truncate max-w-[45%]"},s.artist)
+          ))
+        )
+      ),
+      h("div",{className:"card p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4"},
+        h("div",null,
+          h("div",{className:"font-semibold mb-1"},"Don't see the song you want?"),
+          h("p",{className:"text-sm text-[var(--ink-soft)]"},"With reasonable notice we'll learn 3\u20135 specific songs for your event. Just mention it when you get in touch.")
+        ),
+        h("a",{href:"book.html",className:"btn text-white font-semibold px-5 py-2.5 text-sm shrink-0",style:{background:"var(--berry)"}},"Book us \u2192")
+      )
+    ),
+    h(Footer,{email})
+  );
+};
+ReactDOM.createRoot(document.getElementById("root")).render(h(App,null));
+</script>
+</body>
+</html>

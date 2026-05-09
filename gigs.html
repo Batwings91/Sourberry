@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gigs — Sourberry</title>
+  <meta name="description" content="Upcoming and past Sourberry gigs." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,700;0,9..144,800;1,9..144,400;1,9..144,700&family=Inter+Tight:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <style>
+    :root{--bg:#f6f1e7;--bg-card:#fffaf0;--ink:#1a0a14;--ink-soft:#4a2a3a;--berry:#e93ca3;--acid:#d1db58;--line:#2a1018}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Inter Tight',system-ui,sans-serif;background:var(--bg);color:var(--ink);
+      background-image:radial-gradient(circle at 1px 1px,rgba(26,10,20,0.07) 1px,transparent 0);background-size:22px 22px}
+    .display{font-family:'Fraunces',Georgia,serif;font-optical-sizing:auto}
+    .ticker{letter-spacing:0.18em;text-transform:uppercase;font-weight:600;font-size:0.72rem}
+    .card{background:var(--bg-card);border:1.5px solid var(--line);box-shadow:4px 4px 0 var(--line)}
+    .btn{border:1.5px solid var(--line);box-shadow:3px 3px 0 var(--line);transition:transform 80ms ease,box-shadow 80ms ease;cursor:pointer;font-family:'Inter Tight',sans-serif;display:inline-block;text-decoration:none}
+    .btn:hover{transform:translate(-1px,-1px);box-shadow:4px 4px 0 var(--line)}
+    .pill{border:1.2px solid var(--line)}
+    .logo-img{mix-blend-mode:multiply}
+    .site-nav{position:sticky;top:0;z-index:40;background:var(--bg);border-bottom:2px solid var(--line)}
+    .acid-bar{background:var(--acid);border-bottom:2px solid var(--line)}
+    @media(max-width:640px){body{background-size:18px 18px}.card{box-shadow:3px 3px 0 var(--line)}}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const _R=React,h=_R.createElement,{useState,useEffect,useMemo}=_R;
+const sb=window.supabase.createClient("https://xyukmguafhddpasmjjyy.supabase.co","sb_publishable_wDjYrqirJiulohJC8I26UQ_ZxwMoJcw");
+const Nav=({active=""})=>h("nav",{className:"site-nav"},h("div",{className:"max-w-4xl mx-auto px-4 sm:px-6 flex items-center justify-between h-14 gap-4"},h("a",{href:"index.html","aria-label":"Sourberry home"},h("img",{src:"images/logo.png",alt:"Sourberry",className:"logo-img h-8 sm:h-9 w-auto"})),h("div",{className:"flex items-center gap-1 sm:gap-2"},h("a",{href:"songs.html",className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 pill "+(active==="Songs"?"bg-[var(--acid)]":"hover:bg-[var(--acid)]")},"Songs"),h("a",{href:"gigs.html",className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 pill "+(active==="Gigs"?"bg-[var(--acid)]":"hover:bg-[var(--acid)]")},"Gigs"),h("a",{href:"book.html",className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 btn text-white font-semibold",style:{background:"var(--berry)"}},"Book us"))));
+const Footer=({email=""})=>h("footer",{className:"border-t-2 border-[var(--line)] py-8 px-4 sm:px-6 mt-8"},h("div",{className:"max-w-4xl mx-auto flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--ink-soft)]"},h("img",{src:"images/logo.png",alt:"Sourberry",className:"logo-img h-7 w-auto"}),email&&h("a",{href:"mailto:"+email,className:"hover:text-[var(--berry)]"},email),h("span",null,"\u00a9 "+new Date().getFullYear()),h("a",{href:"/crap/",className:"ticker text-[9px] text-[var(--ink-soft)]/40 hover:text-[var(--ink-soft)] transition-colors",title:"Collaborative Rehearsal & Administration Platform"},"C.R.A.P.")));
+const formatDate=iso=>{if(!iso)return"";return new Date(iso+"T00:00:00").toLocaleDateString("en-GB",{weekday:"short",day:"numeric",month:"long",year:"numeric"})};
+const GigCard=({gig})=>{
+  const today=new Date().toISOString().slice(0,10);
+  const isPast=gig.event_date<today;
+  const isCancelled=gig.status==="cancelled";
+  return h("div",{className:"card p-4 "+(isCancelled||isPast?"opacity-60":"")},
+    h("div",{className:"flex items-start justify-between gap-3 flex-wrap"},
+      h("div",null,
+        h("div",{className:"font-semibold text-base "+(isCancelled?"line-through":"")},gig.title||gig.location||"Private event"),
+        gig.location&&gig.title&&h("div",{className:"text-sm text-[var(--ink-soft)] mt-0.5"},gig.location),
+        h("div",{className:"ticker text-[10px] text-[var(--ink-soft)] mt-1"},formatDate(gig.event_date),gig.start_time&&" \u00b7 "+gig.start_time.slice(0,5))
+      ),
+      isCancelled&&h("span",{className:"ticker text-[10px] px-2 py-0.5 shrink-0",style:{background:"#fee2e2",color:"#b91c1c"}},"Cancelled")
+    )
+  );
+};
+const Section=({label,gigs})=>gigs.length===0?null:h("div",{className:"mb-10"},
+  h("div",{className:"ticker text-[var(--ink-soft)] mb-3"},label),
+  h("div",{className:"space-y-3"},gigs.map(g=>h(GigCard,{key:g.id,gig:g})))
+);
+const App=()=>{
+  const [gigs,setGigs]=useState([]);
+  const [email,setEmail]=useState("");
+  const [loading,setLoading]=useState(true);
+  useEffect(()=>{
+    Promise.all([sb.from("public_gigs").select("*"),sb.from("public_settings").select("booking_email").single()]).then(([g,s])=>{
+      if(g.data)setGigs(g.data);
+      if(s.data)setEmail(s.data.booking_email||"");
+      setLoading(false);
+    });
+  },[]);
+  const today=new Date().toISOString().slice(0,10);
+  const upcoming=useMemo(()=>gigs.filter(g=>g.event_date>=today&&g.status==="confirmed").sort((a,b)=>a.event_date.localeCompare(b.event_date)),[gigs,today]);
+  const cancelled=useMemo(()=>gigs.filter(g=>g.event_date>=today&&g.status==="cancelled").sort((a,b)=>a.event_date.localeCompare(b.event_date)),[gigs,today]);
+  const past=useMemo(()=>gigs.filter(g=>g.event_date<today).sort((a,b)=>b.event_date.localeCompare(a.event_date)),[gigs,today]);
+  const noUpcoming=upcoming.length===0&&cancelled.length===0;
+  return h("div",null,
+    h(Nav,{active:"Gigs"}),
+    h("div",{className:"acid-bar py-6 px-4 sm:px-6"},
+      h("div",{className:"max-w-4xl mx-auto"},h("h1",{className:"display text-3xl sm:text-4xl font-bold"},"Gigs"))
+    ),
+    h("div",{className:"max-w-4xl mx-auto px-4 sm:px-6 py-10"},
+      loading?h("p",{className:"text-[var(--ink-soft)] italic"},"Loading\u2026"):
+      h("div",null,
+        h(Section,{label:"Upcoming",gigs:upcoming}),
+        h(Section,{label:"Cancelled",gigs:cancelled}),
+        noUpcoming&&h("div",{className:"card p-6 mb-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4"},
+          h("div",null,
+            h("div",{className:"font-semibold mb-1"},"No public dates right now"),
+            h("p",{className:"text-sm text-[var(--ink-soft)]"},"We play private events regularly. Get in touch to book us for yours.")
+          ),
+          h("a",{href:"book.html",className:"btn text-white font-semibold px-5 py-2.5 text-sm shrink-0",style:{background:"var(--berry)"}},"Book us \u2192")
+        ),
+        h(Section,{label:"Past gigs",gigs:past})
+      )
+    ),
+    h(Footer,{email})
+  );
+};
+ReactDOM.createRoot(document.getElementById("root")).render(h(App,null));
+</script>
+</body>
+</html>
