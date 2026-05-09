@@ -5,6 +5,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sourberry test</title>
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -13,23 +14,10 @@
 <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script>
   var h = React.createElement;
-  var useState = React.useState;
-  var useEffect = React.useEffect;
-  var sb = window.supabase.createClient(
-    "https://xyukmguafhddpasmjjyy.supabase.co",
-    "sb_publishable_wDjYrqirJiulohJC8I26UQ_ZxwMoJcw"
-  );
   var App = function() {
-    var s = useState("loading..."); var status = s[0]; var setStatus = s[1];
-    useEffect(function() {
-      sb.from("public_settings").select("*").single().then(function(r) {
-        if (r.error) setStatus("ERROR: " + r.error.message);
-        else setStatus("OK — tagline: " + r.data.tagline);
-      }).catch(function(e) { setStatus("EXCEPTION: " + e.message); });
-    }, []);
-    return h("div", {style:{padding:"40px",fontFamily:"sans-serif"}},
-      h("h1", null, "Supabase test"),
-      h("p", null, status)
+    return h("div", {className:"p-10 font-sans"},
+      h("h1", {className:"text-2xl font-bold"}, "Tailwind test"),
+      h("p", {className:"text-gray-600 mt-2"}, "If this is styled, Tailwind is working.")
     );
   };
   ReactDOM.createRoot(document.getElementById("root")).render(h(App, null));
