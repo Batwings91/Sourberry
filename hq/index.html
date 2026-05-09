@@ -256,7 +256,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.32.0";
+const APP_VERSION = "0.33.0";
 
 // v0.28.0: Supabase config. URL + publishable key are safe to ship in client code —
 // Row Level Security (set up on band_state) is the security boundary. Don't ever paste
@@ -6740,7 +6740,7 @@ const newFeedbackId = () => "fb_" + Date.now().toString(36) + "_" + Math.random(
 // on sourberry.co.uk without touching code. Songs and gigs use a hidePublic flag
 // (schema v13). Settings (tagline, email, region, radius) write to
 // state.settings.publicSite, which the Postgres public_settings view exposes.
-const PublicSiteView = ({songs, events, settings, mutate}) => {
+const PublicSiteView = ({songs, events, settings, analytics, mutate}) => {
   const ps = (settings && settings.publicSite) || {};
   const [tagline, setTagline] = useState(ps.tagline || "");
   const [bookingEmail, setBookingEmail] = useState(ps.bookingEmail || "");
@@ -6977,6 +6977,50 @@ const PublicSiteView = ({songs, events, settings, mutate}) => {
               )
             )
           )
+    ),
+
+    // ── Site analytics ───────────────────────────────────────────────────────
+    h("div", {className: "card p-4"},
+      h("div", {className: "ticker text-[var(--berry)] mb-3"}, "Page views"),
+      (() => {
+        // Build last 6 months of keys, newest first
+        const months = [];
+        for (let i = 0; i < 6; i++) {
+          const d = new Date();
+          d.setDate(1);
+          d.setMonth(d.getMonth() - i);
+          months.push(d.toISOString().slice(0, 7));
+        }
+        const pages = ["home", "songs", "gigs", "book"];
+        const pageLabels = {home: "Home", songs: "Songs", gigs: "Gigs", book: "Book"};
+        const hasAnyData = months.some(m => analytics[m] && pages.some(p => analytics[m][p]));
+        if (!hasAnyData) return h("p", {className: "text-sm text-[var(--ink-soft)] italic"},
+          "No data yet. Views will appear here once the SQL function is installed \u2014 see setup instructions."
+        );
+        return h("div", {className: "overflow-x-auto"},
+          h("table", {className: "w-full text-sm border-collapse"},
+            h("thead", null,
+              h("tr", null,
+                h("th", {className: "text-left text-xs text-[var(--ink-soft)] font-semibold pb-2 pr-3"}, "Month"),
+                pages.map(p => h("th", {key: p, className: "text-right text-xs text-[var(--ink-soft)] font-semibold pb-2 px-2"}, pageLabels[p])),
+                h("th", {className: "text-right text-xs text-[var(--ink-soft)] font-semibold pb-2 pl-2"}, "Total")
+              )
+            ),
+            h("tbody", null,
+              months.map(m => {
+                const row = analytics[m] || {};
+                const total = pages.reduce((s, p) => s + (row[p] || 0), 0);
+                const label = new Date(m + "-02").toLocaleDateString("en-GB", {month: "short", year: "numeric"});
+                return h("tr", {key: m, className: "border-t border-[var(--line)]/15"},
+                  h("td", {className: "py-2 pr-3 font-medium"}, label),
+                  pages.map(p => h("td", {key: p, className: "py-2 px-2 text-right tabular-nums " + (!row[p] ? "text-[var(--ink-soft)]/30" : "")}, row[p] || "—")),
+                  h("td", {className: "py-2 pl-2 text-right font-semibold tabular-nums " + (!total ? "text-[var(--ink-soft)]/30" : "")}, total || "—")
+                );
+              })
+            )
+          )
+        );
+      })()
     ),
 
     // ── Coming soon ──────────────────────────────────────────────────────────
@@ -7762,6 +7806,7 @@ const App = () => {
   const memberProfiles = sync.state.memberProfiles || {};
   const settings = sync.state.settings || {};
   const feedback = sync.state.feedback || {};
+  const analytics = sync.state.analytics || {};
 
   // v0.28.0: the old "Who are you?" picker is gone — identity comes from the auth
   // session, which means by the time we reach this line `member` is guaranteed to be
@@ -7842,7 +7887,7 @@ const App = () => {
     tab==="songs" && h(SongsView,{songs:songs,events:events,member:member,memberProfiles:memberProfiles,mutate:sync.mutate,settings:settings}),
     tab==="setlists" && h(SetlistsView,{setlists:setlists,songs:songs,events:events,member:member,mutate:sync.mutate,settings:settings,onStartGigMode:(id)=>setGigSetlistId(id),onForceSnapshot:forceSnapshot, onNavigateToGig: (gigId) => { setHighlightedGigId(gigId); setTab("gigs"); }}),
     tab==="equipment" && h(EquipmentView,{equipment:equipment,wishlist:wishlist,member:member,memberProfiles:memberProfiles,mutate:sync.mutate}),
-    tab==="publicsite" && h(PublicSiteView,{songs:songs,events:events,settings:settings,mutate:sync.mutate}),
+    tab==="publicsite" && h(PublicSiteView,{songs:songs,events:events,settings:settings,analytics:analytics,mutate:sync.mutate}),
     tab==="feedback" && h(FeedbackView,{feedback:feedback,member:member,memberProfiles:memberProfiles,mutate:sync.mutate}),
     h("footer",{className:"mt-12 pt-6 border-t border-[var(--line)]/30 text-xs text-[var(--ink-soft)]"},
       // v0.24.0: random musician quote, picked once per session.
