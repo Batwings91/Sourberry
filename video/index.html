@@ -1,0 +1,117 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Watch us play — Sourberry</title>
+  <meta name="description" content="Watch Sourberry live at weddings, parties and events." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,700;0,9..144,800;1,9..144,400;1,9..144,700&family=Inter+Tight:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <style>
+    :root{--bg:#f6f1e7;--bg-card:#fffaf0;--ink:#1a0a14;--ink-soft:#4a2a3a;--berry:#e93ca3;--acid:#d1db58;--line:#2a1018}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    html{scroll-behavior:smooth}
+    body{font-family:'Inter Tight',system-ui,sans-serif;background:var(--bg);color:var(--ink);
+      background-image:radial-gradient(circle at 1px 1px,rgba(26,10,20,0.07) 1px,transparent 0);background-size:22px 22px}
+    .display{font-family:'Fraunces',Georgia,serif;font-optical-sizing:auto;font-weight:700}
+    .ticker{letter-spacing:0.18em;text-transform:uppercase;font-weight:600;font-size:0.72rem}
+    .card{background:var(--bg-card);border:1.5px solid var(--line);box-shadow:4px 4px 0 var(--line)}
+    .btn{border:1.5px solid var(--line);box-shadow:3px 3px 0 var(--line);transition:transform 80ms ease,box-shadow 80ms ease;cursor:pointer;font-family:'Inter Tight',sans-serif;display:inline-block;text-decoration:none}
+    .btn:hover{transform:translate(-1px,-1px);box-shadow:4px 4px 0 var(--line)}
+    .pill{border:1.2px solid var(--line)}
+    .logo-img{mix-blend-mode:multiply;display:block}
+    .site-nav{position:sticky;top:0;z-index:40;background:var(--bg);border-bottom:2px solid var(--line)}
+    .acid-bar{background:var(--acid);border-bottom:2px solid var(--line)}
+    .modal-bg{position:fixed;inset:0;background:rgba(26,10,20,.7);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px}
+    @media(max-width:640px){body{background-size:18px 18px}.card{box-shadow:3px 3px 0 var(--line)}}
+  </style>
+</head>
+<body><div id="root"></div>
+<script>
+const _R=React,h=_R.createElement,{useState,useEffect}=_R;
+const PUBLIC_VERSION="v1.3";
+const sb=window.supabase.createClient("https://xyukmguafhddpasmjjyy.supabase.co","sb_publishable_wDjYrqirJiulohJC8I26UQ_ZxwMoJcw");
+const Nav=function(){return h("nav",{className:"site-nav"},h("div",{className:"max-w-4xl mx-auto px-4 sm:px-6 flex items-center justify-between h-14 gap-4"},h("a",{href:"/","aria-label":"Sourberry home"},h("img",{src:"/images/logo.png",alt:"Sourberry",className:"logo-img h-8 sm:h-9 w-auto"})),h("div",{className:"flex items-center gap-1 sm:gap-2"},h("a",{href:"/songs/",className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 pill hover:bg-[var(--acid)]"},"Songs"),h("a",{href:"/gigs/",className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 pill hover:bg-[var(--acid)]"},"Gigs"),h("a",{href:"/book/",className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 btn text-white font-semibold",style:{background:"var(--berry)"}},"Book us"))));};
+const Footer=function(props){var email=props.email||"";return h("footer",{className:"border-t-2 border-[var(--line)] py-8 px-4 sm:px-6 mt-8"},h("div",{className:"max-w-4xl mx-auto flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--ink-soft)]"},h("img",{src:"/images/logo.png",alt:"Sourberry",className:"logo-img h-7 w-auto"}),email?h("a",{href:"mailto:"+email,className:"hover:text-[var(--berry)]"},email):null,h("div",{className:"flex items-center gap-3"},h("span",{className:"ticker text-[9px] opacity-40"},PUBLIC_VERSION),h("a",{href:"/hq/",className:"ticker text-[9px] text-[var(--ink-soft)]/40 hover:text-[var(--ink-soft)] transition-colors",title:"Band admin"},"Admin"))));};
+
+const VideoModal=function(props){
+  var v=props.video; var onClose=props.onClose;
+  var embedSrc=v.platform==="youtube"
+    ?"https://www.youtube.com/embed/"+v.videoId+"?autoplay=1"
+    :"https://player.vimeo.com/video/"+v.videoId+"?autoplay=1";
+  useEffect(function(){
+    var handler=function(e){if(e.key==="Escape")onClose();};
+    document.addEventListener("keydown",handler);
+    return function(){document.removeEventListener("keydown",handler);};
+  },[]);
+  return h("div",{className:"modal-bg",onClick:onClose},
+    h("div",{style:{width:"100%",maxWidth:"860px"},onClick:function(e){e.stopPropagation();}},
+      h("div",{style:{position:"relative",paddingBottom:"56.25%",background:"#000"}},
+        h("iframe",{src:embedSrc,style:{position:"absolute",inset:0,width:"100%",height:"100%"},frameBorder:"0",allow:"autoplay; fullscreen",allowFullScreen:true})
+      ),
+      h("div",{className:"flex items-center justify-between px-1 pt-3"},
+        h("span",{className:"font-semibold text-white"},v.title),
+        h("button",{onClick:onClose,className:"ticker text-[10px] text-white/70 hover:text-white"},"Close \u2715")
+      )
+    )
+  );
+};
+
+const App=function(){
+  var vs=useState([]); var videos=vs[0]; var setVideos=vs[1];
+  var es=useState(""); var email=es[0]; var setEmail=es[1];
+  var ls=useState(true); var loading=ls[0]; var setLoading=ls[1];
+  var ms=useState(null); var modal=ms[0]; var setModal=ms[1];
+
+  useEffect(function(){
+    Promise.all([sb.from("public_videos").select("*"),sb.from("public_settings").select("booking_email").single()]).then(function(results){
+      var v=results[0]; var s=results[1];
+      if(v.data)setVideos(v.data);
+      if(s.data)setEmail(s.data.booking_email||"");
+      setLoading(false);
+    });
+    try{sb.rpc("log_page_view",{page_name:"video"}).then(function(){}).catch(function(){});}catch(e){}
+  },[]);
+
+  return h("div",null,
+    modal&&h(VideoModal,{video:modal,onClose:function(){setModal(null);}}),
+    h(Nav,null),
+    h("div",{className:"acid-bar py-6 px-4 sm:px-6"},
+      h("div",{className:"max-w-4xl mx-auto"},
+        h("h1",{className:"display text-3xl sm:text-4xl font-bold"},"Watch us play")
+      )
+    ),
+    h("div",{className:"max-w-4xl mx-auto px-4 sm:px-6 py-10"},
+      loading?h("p",{className:"text-[var(--ink-soft)] italic"},"Loading\u2026"):
+      videos.length===0?h("p",{className:"text-[var(--ink-soft)] italic"},"No videos yet \u2014 check back soon."):
+      h("div",{className:"grid sm:grid-cols-2 md:grid-cols-3 gap-5"},
+        videos.map(function(v){
+          var thumb=v.platform==="youtube"
+            ?"https://img.youtube.com/vi/"+v.video_id+"/mqdefault.jpg"
+            :"https://vumbnail.com/"+v.video_id+".jpg";
+          return h("button",{key:v.id,onClick:function(){setModal(v);},className:"card block overflow-hidden text-left w-full"},
+            h("div",{className:"relative",style:{paddingBottom:"56.25%"}},
+              h("img",{src:thumb,alt:v.title,style:{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}),
+              h("div",{className:"absolute inset-0 flex items-center justify-center",style:{background:"rgba(26,10,20,0.35)"}},
+                h("div",{className:"w-12 h-12 rounded-full flex items-center justify-center",style:{background:"var(--berry)"}},
+                  h("span",{style:{color:"#fff",fontSize:"22px",marginLeft:"4px"}},"\u25B6")
+                )
+              )
+            ),
+            h("div",{className:"px-3 py-2.5"},
+              h("div",{className:"font-semibold text-sm"},v.title)
+            )
+          );
+        })
+      )
+    ),
+    h(Footer,{email:email})
+  );
+};
+ReactDOM.createRoot(document.getElementById("root")).render(h(App,null));
+</script></body></html>
+
