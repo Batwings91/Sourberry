@@ -35,9 +35,12 @@
 </head>
 <body><div id="root"></div>
 <script>
-// Debug: show JS errors visibly on screen (remove once blank page is resolved)
-window.onerror=function(msg,src,line){document.getElementById('root').innerHTML='<div style="padding:24px;font-family:monospace;color:#b91c1c;background:#fee2e2;border:2px solid #b91c1c;margin:24px"><strong>JS Error</strong><br>'+msg+'<br>'+src+':'+line+'</div>';};
-window.addEventListener('unhandledrejection',function(e){document.getElementById('root').innerHTML='<div style="padding:24px;font-family:monospace;color:#b91c1c;background:#fee2e2;border:2px solid #b91c1c;margin:24px"><strong>Promise Error</strong><br>'+(e.reason&&e.reason.message?e.reason.message:String(e.reason))+'</div>';});
+// CDN guard — show a clear message if any CDN script failed to load
+window.addEventListener('load', function() {
+  if (!window.supabase) { document.getElementById('root').innerHTML='<div style="padding:20px;color:red;font-family:monospace">Error: Supabase CDN failed to load</div>'; }
+  else if (!window.React) { document.getElementById('root').innerHTML='<div style="padding:20px;color:red;font-family:monospace">Error: React CDN failed to load</div>'; }
+  else if (!window.ReactDOM) { document.getElementById('root').innerHTML='<div style="padding:20px;color:red;font-family:monospace">Error: ReactDOM CDN failed to load</div>'; }
+});
 const PUBLIC_VERSION="v1.2";
 const _R=React,h=_R.createElement,{useState,useEffect,useMemo}=_R;
 const sb=window.supabase.createClient("https://xyukmguafhddpasmjjyy.supabase.co","sb_publishable_wDjYrqirJiulohJC8I26UQ_ZxwMoJcw");
@@ -49,7 +52,6 @@ const App=()=>{
   const [settings,setSettings]=useState(null);const [gigs,setGigs]=useState([]);const [songs,setSongs]=useState([]);
   useEffect(()=>{
     Promise.all([sb.from("public_settings").select("*").single(),sb.from("public_gigs").select("*"),sb.from("public_repertoire").select("*")]).then(([s,g,r])=>{if(s.data)setSettings(s.data);if(g.data)setGigs(g.data);if(r.data)setSongs(r.data);});
-    // v1.2: silent page view ping — fire and forget, never blocks rendering
     sb.rpc("log_page_view",{page_name:"home"}).catch(()=>{});
   },[]);
   const today=new Date().toISOString().slice(0,10);
@@ -61,7 +63,7 @@ const App=()=>{
   const aboutUs=(settings&&settings.about_us&&settings.about_us.trim())||"";
   const locationLine=[region,radius].filter(Boolean).join(" \u00b7 ");
   const preview=songs.slice(0,6);
-  return h("div",null,
+  try{return h("div",null,
     h(Nav,{active:"",showLogo:false}),
     /* Hero: inner div has px-4 sm:px-6, same as nav, so logo aligns perfectly */
     h("section",{className:"py-12 sm:py-20 border-b-2 border-[var(--line)]"},
@@ -118,7 +120,7 @@ const App=()=>{
       )
     ),
     h(Footer,{email})
-  );
+  );}catch(e){return h("div",{style:{padding:"24px",fontFamily:"monospace",color:"#b91c1c",background:"#fee2e2",border:"2px solid #b91c1c",margin:"24px"}},"Render error: "+e.message+"\n"+e.stack);}
 };
 ReactDOM.createRoot(document.getElementById("root")).render(h(App,null));
 </script></body></html>
