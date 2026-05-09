@@ -44,7 +44,7 @@ const App=()=>{
     Promise.all([sb.from("public_repertoire").select("*"),sb.from("public_settings").select("booking_email").single()]).then(([r,s])=>{
       if(r.data)setSongs(r.data);if(s.data)setEmail(s.data.booking_email||"");setLoading(false);
     });
-    sb.rpc("log_page_view",{page_name:"songs"}).catch(()=>{});
+    try{sb.rpc("log_page_view",{page_name:"songs"}).then(function(){}).catch(function(){});}catch(e){}
   },[]);
   return h("div",null,
     h(Nav,{}),
