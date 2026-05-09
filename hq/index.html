@@ -6244,7 +6244,7 @@ const PracticeView = ({practiceAvail, events, member, mutate, onGoToSchedule, on
               key: iso,
               onClick: () => setOpenDate(iso),
               style: {background: cellColor.bg, borderColor: cellColor.border},
-              className: "text-left p-1 sm:p-2 border min-h-[72px] sm:min-h-[88px] hover:ring-2 hover:ring-[var(--berry)] active:ring-2 active:ring-[var(--berry)] transition relative " + dimClass
+              className: "text-left p-1 sm:p-2 border min-h-[72px] sm:min-h-[88px] overflow-hidden hover:ring-2 hover:ring-[var(--berry)] active:ring-2 active:ring-[var(--berry)] transition relative " + dimClass
             },
               isToday && h("span",{className:"absolute top-0.5 right-1 text-[8px] ticker text-[var(--berry)] font-bold"},"●"),
               h("div",{className:"flex items-baseline gap-1"},
@@ -6257,9 +6257,9 @@ const PracticeView = ({practiceAvail, events, member, mutate, onGoToSchedule, on
               h("div",{className:"flex flex-col gap-0.5 mt-1"},
                 visibleSlots.map(sid => {
                   const slotYes = yesCountForSlot(practiceAvail, iso, sid);
-                  return h("div",{key:sid, className:"flex items-center gap-0.5 flex-nowrap"},
-                    visibleSlots.length > 1 && h("span",{className:"text-[7px] sm:text-[8px] text-[var(--ink-soft)] w-2 sm:w-3 shrink-0", style:{lineHeight:1}}, SLOT_LABELS[sid][0]),
-                    h("div",{className:"flex gap-0.5 flex-nowrap shrink-0"},
+                  return h("div",{key:sid, className:"flex items-center gap-px sm:gap-0.5 flex-nowrap"},
+                    visibleSlots.length > 1 && h("span",{className:"hidden sm:inline text-[8px] text-[var(--ink-soft)] w-3 shrink-0", style:{lineHeight:1}}, SLOT_LABELS[sid][0]),
+                    h("div",{className:"flex gap-px sm:gap-0.5 flex-nowrap shrink-0"},
                       MEMBERS.map(m => {
                         const slot = getSlot(practiceAvail, iso, m.id, sid);
                         const a = slot && slot.avail;
