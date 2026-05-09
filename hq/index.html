@@ -256,7 +256,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.30.0";
+const APP_VERSION = "0.31.0";
 
 // v0.28.0: Supabase config. URL + publishable key are safe to ship in client code —
 // Row Level Security (set up on band_state) is the security boundary. Don't ever paste
@@ -2296,6 +2296,8 @@ const SettingRow = ({label, description, settingKey, currentValue, defaultValue,
 // in the new-rehearsal form to switch.
 const RehearsalLocationsList = ({locations, onSave}) => {
   const [draft, setDraft] = useState("");
+  const [editingIdx, setEditingIdx] = useState(null);
+  const [editDraft, setEditDraft] = useState("");
   const add = () => {
     const v = draft.trim();
     if (!v) return;
@@ -2305,6 +2307,7 @@ const RehearsalLocationsList = ({locations, onSave}) => {
   };
   const remove = (idx) => {
     onSave(locations.filter((_, i) => i !== idx));
+    if (editingIdx === idx) setEditingIdx(null);
   };
   const moveToTop = (idx) => {
     if (idx === 0) return;
@@ -2313,19 +2316,43 @@ const RehearsalLocationsList = ({locations, onSave}) => {
     next.unshift(moved);
     onSave(next);
   };
+  const startEdit = (idx) => { setEditingIdx(idx); setEditDraft(locations[idx]); };
+  const saveEdit = () => {
+    const v = editDraft.trim();
+    if (!v || editingIdx === null) { setEditingIdx(null); return; }
+    const next = locations.slice();
+    next[editingIdx] = v;
+    onSave(next);
+    setEditingIdx(null);
+  };
+  const cancelEdit = () => setEditingIdx(null);
   return h("div",{className:"py-2 border-b border-[var(--line)]/10 last:border-0"},
     h("div",{className:"text-sm font-semibold"}, "Rehearsal locations"),
     h("div",{className:"text-xs text-[var(--ink-soft)] mt-0.5"},
       "Add the studios your band uses. The first one is the default — tap any in the new-rehearsal form to switch."
     ),
     locations.length > 0 && h("ul",{className:"mt-2 space-y-1",style:{listStyle:"none",paddingLeft:0}},
-      locations.map((loc, i) => h("li",{key:loc, className:"card-flat p-1.5 flex items-center gap-2 text-sm"},
-        h("span",{className:"text-[var(--ink-soft)] w-5 text-right shrink-0 text-xs"}, (i+1) + "."),
-        i === 0 && h("span",{className:"ticker text-[var(--berry)] text-[10px] shrink-0"},"DEFAULT"),
-        h("span",{className:"flex-1 min-w-0 truncate"}, loc),
-        i > 0 && h("button",{onClick:()=>moveToTop(i),className:"pill px-2 py-0.5 text-xs bg-white",title:"Make this the default"},"↑ default"),
-        h("button",{onClick:()=>remove(i),className:"pill px-1.5 py-0.5 text-xs bg-white text-[var(--berry)] font-bold",title:"Remove"},"×")
-      ))
+      locations.map((loc, i) =>
+        editingIdx === i
+          ? h("li",{key:loc,className:"card-flat p-1.5 flex items-center gap-2"},
+              h("input",{
+                className:"input text-sm flex-1",style:{padding:"0.25rem 0.5rem"},
+                value:editDraft,autoFocus:true,
+                onChange:e=>setEditDraft(e.target.value),
+                onKeyDown:e=>{if(e.key==="Enter")saveEdit();if(e.key==="Escape")cancelEdit();}
+              }),
+              h("button",{onClick:saveEdit,className:"pill px-2 py-0.5 text-xs bg-white font-semibold"},"Save"),
+              h("button",{onClick:cancelEdit,className:"pill px-2 py-0.5 text-xs bg-white text-[var(--ink-soft)]"},"Cancel")
+            )
+          : h("li",{key:loc,className:"card-flat p-1.5 flex items-center gap-2 text-sm"},
+              h("span",{className:"text-[var(--ink-soft)] w-5 text-right shrink-0 text-xs"}, (i+1) + "."),
+              i === 0 && h("span",{className:"ticker text-[var(--berry)] text-[10px] shrink-0"},"DEFAULT"),
+              h("span",{className:"flex-1 min-w-0 truncate"}, loc),
+              i > 0 && h("button",{onClick:()=>moveToTop(i),className:"pill px-2 py-0.5 text-xs bg-white",title:"Make this the default"},"↑ default"),
+              h("button",{onClick:()=>startEdit(i),className:"pill px-2 py-0.5 text-xs bg-white",title:"Edit"},"Edit"),
+              h("button",{onClick:()=>remove(i),className:"pill px-1.5 py-0.5 text-xs bg-white text-[var(--berry)] font-bold",title:"Remove"},"×")
+            )
+      )
     ),
     h("div",{className:"flex items-center gap-2 mt-2 flex-wrap"},
       h("input",{
@@ -7835,6 +7862,14 @@ const App = () => {
       const sinceISO = baseline.at ? new Date(baseline.at).toISOString().slice(0,10) : null;
       // Bulletproof songs: every member marked "good" in practice. Safe to open with.
       const bulletproof = Object.keys(songs || {}).map(id => songs[id]).filter(s => s.status === "repertoire" && MEMBERS.every(m => s.practice && s.practice[m.id] === "good")).length;
+      // Band nights out: manually tracked counter stored on settings.bandNightsOut.
+      const nightsOut = (settings && typeof settings.bandNightsOut === "number") ? settings.bandNightsOut : 0;
+      const adjustNightsOut = (delta) => {
+        sync.mutate(prev => {
+          const cur = (prev.settings && typeof prev.settings.bandNightsOut === "number") ? prev.settings.bandNightsOut : 0;
+          return Object.assign({}, prev, {settings: Object.assign({}, prev.settings || {}, {bandNightsOut: Math.max(0, cur + delta)})});
+        });
+      };
       const resetBaseline = () => {
         if (!confirm("Reset the WhatsApp-saved counter back to zero from today?")) return;
         sync.mutate(prev => Object.assign({}, prev, {
@@ -7870,6 +7905,34 @@ const App = () => {
             ),
             h("p",{className:"text-[11px] text-[var(--ink-soft)] mt-3 italic"},
               "Repertoire songs where every member has marked themselves as \u201Cgood\u201D. Safe to open with. Could play after four pints."
+            )
+          ),
+          // v0.31.0: Band nights out — manually tracked. Tap + each time the band
+          // goes out together off-stage. No data source to derive this from; vibes only.
+          h("div",{className:"py-3 border-b border-[var(--line)]/15"},
+            h("div",{className:"flex items-center justify-between gap-3"},
+              h("div",{className:"text-center flex-1"},
+                h("div",{className:"display text-4xl text-[var(--berry)]"},
+                  typeof nightsOut === "number" ? nightsOut : 0
+                ),
+                h("p",{className:"text-sm italic text-[var(--ink-soft)] mt-1"},"Band nights out")
+              ),
+              h("div",{className:"flex flex-col gap-1.5"},
+                h("button",{
+                  onClick:()=>adjustNightsOut(1),
+                  className:"btn berry-bg text-white font-bold px-3 py-1.5 text-sm",
+                  title:"Add a night out"
+                },"+1"),
+                h("button",{
+                  onClick:()=>adjustNightsOut(-1),
+                  disabled:nightsOut<=0,
+                  className:"btn bg-white px-3 py-1.5 text-sm",
+                  title:"Remove a night out"
+                },"\u2212 1")
+              )
+            ),
+            h("p",{className:"text-[11px] text-[var(--ink-soft)] mt-3 italic"},
+              "Nights the band has spent together off-stage. Tap +1 after each one. (Manual. Honest.)"
             )
           ),
           h("div",{className:"mt-3 flex items-center gap-2 flex-wrap"},
