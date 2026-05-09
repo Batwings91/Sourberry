@@ -41,7 +41,9 @@ const Nav=({active=""})=>h("nav",{className:"site-nav"},h("div",{className:"max-
 const Footer=({email=""})=>h("footer",{className:"border-t-2 border-[var(--line)] py-8 px-4 sm:px-6 mt-8"},h("div",{className:"max-w-4xl mx-auto flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--ink-soft)]"},h("img",{src:"/images/logo.png",alt:"Sourberry",className:"logo-img h-7 w-auto"}),email&&h("a",{href:"mailto:"+email,className:"hover:text-[var(--berry)]"},email),h("div",{className:"flex items-center gap-3"},h("span",{className:"ticker text-[9px] opacity-40"},PUBLIC_VERSION),h("a",{href:"/hq/",className:"ticker text-[9px] text-[var(--ink-soft)]/40 hover:text-[var(--ink-soft)] transition-colors",title:"Band admin"},"Admin"))));
 const App=()=>{
   const [settings,setSettings]=useState(null);const [gigs,setGigs]=useState([]);const [songs,setSongs]=useState([]);
-  useEffect(()=>{Promise.all([sb.from("public_settings").select("*").single(),sb.from("public_gigs").select("*"),sb.from("public_repertoire").select("*")]).then(([s,g,r])=>{if(s.data)setSettings(s.data);if(g.data)setGigs(g.data);if(r.data)setSongs(r.data);});},[]); 
+  useEffect(()=>{Promise.all([sb.from("public_settings").select("*").single(),sb.from("public_gigs").select("*"),sb.from("public_repertoire").select("*")]).then(([s,g,r])=>{if(s.data)setSettings(s.data);if(g.data)setGigs(g.data);if(r.data)setSongs(r.data);});
+    try{sb.rpc("log_page_view",{page_name:"home"}).then(function(){}).catch(function(){});}catch(e){}
+  },[]);
   const today=new Date().toISOString().slice(0,10);
   const nextGig=useMemo(()=>gigs.filter(g=>g.status==="confirmed"&&g.event_date>=today).sort((a,b)=>a.event_date.localeCompare(b.event_date))[0],[gigs,today]);
   const tagline=(settings&&settings.tagline&&settings.tagline.trim())||"A covers band that keeps the dance floor moving.";
