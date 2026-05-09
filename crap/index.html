@@ -2401,7 +2401,7 @@ const BandSettingsSection = ({settings, mutate}) => {
 // v0.26.0: monikers state is now passed in (lifted to SettingsModal) so the same
 // session-stage-name displays both here and in the profile-photos row above. Local
 // state would have produced two independent monikers per member — confusing UX.
-const MemberInstrumentsSection = ({memberProfiles, mutate, monikers, onRollMoniker}) => {
+const MemberInstrumentsSection = ({memberProfiles, member, mutate, monikers, onRollMoniker}) => {
   const toggleInstrument = (memberId, instId) => {
     mutate(prev => {
       const profiles = Object.assign({}, prev.memberProfiles || {});
@@ -2416,38 +2416,53 @@ const MemberInstrumentsSection = ({memberProfiles, mutate, monikers, onRollMonik
   };
   return h("div",{className:"mt-5 pt-4 border-t border-[var(--line)]/15"},
     h("div",{className:"ticker text-[var(--berry)] mb-2"},"Instruments"),
-    h("p",{className:"text-xs text-[var(--ink-soft)] mb-3"},"Tap to toggle. Pick all that apply — most of us play more than one."),
+    h("p",{className:"text-xs text-[var(--ink-soft)] mb-3"},"You can edit your own. Others' are shown for reference."),
     h("div",{className:"space-y-3"},
       MEMBERS.map(m => {
         const cur = (memberProfiles && memberProfiles[m.id] && Array.isArray(memberProfiles[m.id].instruments)) ? memberProfiles[m.id].instruments : [];
         const moniker = (monikers && monikers[m.id]) || null;
+        // v0.29.0: only the authenticated member can toggle their own instruments.
+        const isMe = member && member.id === m.id;
         return h("div",{key:m.id},
           h("div",{className:"flex items-baseline justify-between gap-2 mb-1 flex-wrap"},
-            h("div",{className:"text-sm font-semibold"}, m.name),
-            // v0.25.0: tiny rockstar moniker generator, tucked next to the name.
-            // v0.26.0: button now uses lifted state (see SettingsModal).
-            h("button",{
+            h("div",{className:"text-sm font-semibold " + (!isMe ? "text-[var(--ink-soft)]" : "")}, m.name),
+            isMe && h("button",{
               type:"button",
               onClick: () => onRollMoniker && onRollMoniker(m.id, m.name),
               className:"text-[10px] ticker text-[var(--ink-soft)] hover:text-[var(--berry)]",
               title:"Generate a stage name"
             }, moniker ? "🤘 re-roll" : "🤘 stage name")
           ),
-          moniker && h("div",{className:"text-xs italic text-[var(--berry)] mb-1.5 -mt-0.5"}, "\u201C", moniker, "\u201D"),
-          h("div",{className:"flex flex-wrap gap-1.5"},
-            INSTRUMENTS.map(inst => {
-              const on = cur.includes(inst.id);
-              return h("button",{
-                key:inst.id,
-                onClick:()=>toggleInstrument(m.id, inst.id),
-                className:"pill px-2.5 py-1 text-xs font-semibold flex items-center gap-1 " + (on ? "berry-bg text-white" : "bg-white"),
-                title: on ? ("Tap to remove " + inst.label) : ("Tap to add " + inst.label)
-              },
-                h("span",{"aria-hidden":"true"}, inst.icon),
-                h("span",null, (on ? "✓ " : "") + inst.label)
-              );
-            })
-          )
+          moniker && isMe && h("div",{className:"text-xs italic text-[var(--berry)] mb-1.5 -mt-0.5"}, "\u201C", moniker, "\u201D"),
+          isMe
+            ? h("div",{className:"flex flex-wrap gap-1.5"},
+                INSTRUMENTS.map(inst => {
+                  const on = cur.includes(inst.id);
+                  return h("button",{
+                    key:inst.id,
+                    onClick:()=>toggleInstrument(m.id, inst.id),
+                    className:"pill px-2.5 py-1 text-xs font-semibold flex items-center gap-1 " + (on ? "berry-bg text-white" : "bg-white"),
+                    title: on ? ("Tap to remove " + inst.label) : ("Tap to add " + inst.label)
+                  },
+                    h("span",{"aria-hidden":"true"}, inst.icon),
+                    h("span",null, (on ? "✓ " : "") + inst.label)
+                  );
+                })
+              )
+            // Read-only view for other members
+            : h("div",{className:"flex flex-wrap gap-1.5"},
+                cur.length === 0
+                  ? h("span",{className:"text-xs text-[var(--ink-soft)] italic"},"Not set")
+                  : cur.map(id => {
+                      const meta = instrumentMeta(id);
+                      if (!meta) return null;
+                      return h("span",{key:id,
+                        className:"pill px-2.5 py-1 text-xs font-semibold flex items-center gap-1 bg-white opacity-60"},
+                        h("span",{"aria-hidden":"true"}, meta.icon),
+                        h("span",null, meta.label)
+                      );
+                    })
+              )
         );
       })
     )
@@ -2455,7 +2470,7 @@ const MemberInstrumentsSection = ({memberProfiles, mutate, monikers, onRollMonik
 };
 // === END MEMBER INSTRUMENTS SECTION ===
 
-const SettingsModal = ({memberProfiles, onClose, mutate, binId, state, onRestore, settings}) => {
+const SettingsModal = ({memberProfiles, member, onClose, mutate, binId, state, onRestore, settings}) => {
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState("");
   // When set, opens the PhotoCropper for the given member with the chosen file's data URL.
@@ -2518,6 +2533,8 @@ const SettingsModal = ({memberProfiles, onClose, mutate, binId, state, onRestore
           const photo = (memberProfiles && memberProfiles[m.id] && memberProfiles[m.id].photoUrl) || "";
           const isBusy = busy === m.id;
           const moniker = monikers[m.id];
+          // v0.29.0: only the authenticated member can upload/edit/remove their own photo.
+          const isMe = member && member.id === m.id;
           return h("div",{key:m.id,className:"flex items-center gap-3 py-2 border-b border-[var(--line)]/15 last:border-0"},
             h("div",{className:"shrink-0 rounded-full border border-[var(--line)]/40 overflow-hidden bg-white flex items-center justify-center",style:{width:48,height:48}},
               photo ? h("img",{src:photo,alt:m.name,className:"w-full h-full object-cover"}) : h("span",{className:"display text-xl text-[var(--ink-soft)]"}, m.name[0])
@@ -2554,19 +2571,21 @@ const SettingsModal = ({memberProfiles, onClose, mutate, binId, state, onRestore
                 );
               })()
             ),
-            h("div",{className:"flex gap-2 shrink-0"},
-              h("label",{className:"btn bg-white px-3 py-1.5 text-xs font-semibold cursor-pointer"},
-                isBusy ? "Uploading…" : (photo ? "Change" : "Upload"),
-                h("input",{type:"file",accept:"image/*",className:"hidden",disabled:isBusy,onChange:e=>{ const f = e.target.files && e.target.files[0]; if (f) onUpload(m.id, f); e.target.value = ""; }})
-              ),
-              photo && h("button",{onClick:()=>onEditExisting(m.id, photo),className:"btn bg-white px-3 py-1.5 text-xs font-semibold",title:"Reposition the existing photo"},"Edit"),
-              photo && h("button",{onClick:()=>onRemove(m.id),className:"btn bg-white px-2 py-1.5 text-xs text-[var(--berry)]",title:"Remove photo"},"×")
-            )
+            isMe
+              ? h("div",{className:"flex gap-2 shrink-0"},
+                  h("label",{className:"btn bg-white px-3 py-1.5 text-xs font-semibold cursor-pointer"},
+                    isBusy ? "Uploading…" : (photo ? "Change" : "Upload"),
+                    h("input",{type:"file",accept:"image/*",className:"hidden",disabled:isBusy,onChange:e=>{ const f = e.target.files && e.target.files[0]; if (f) onUpload(m.id, f); e.target.value = ""; }})
+                  ),
+                  photo && h("button",{onClick:()=>onEditExisting(m.id, photo),className:"btn bg-white px-3 py-1.5 text-xs font-semibold",title:"Reposition the existing photo"},"Edit"),
+                  photo && h("button",{onClick:()=>onRemove(m.id),className:"btn bg-white px-2 py-1.5 text-xs text-[var(--berry)]",title:"Remove photo"},"×")
+                )
+              : h("div",{className:"text-xs text-[var(--ink-soft)] shrink-0 italic"}, "Their photo")
           );
         })
       ),
       error && h("div",{className:"mt-3 text-sm text-[var(--berry)]"}, error),
-      h(MemberInstrumentsSection, {memberProfiles: memberProfiles, mutate: mutate, monikers: monikers, onRollMoniker: rollMoniker}),
+      h(MemberInstrumentsSection, {memberProfiles: memberProfiles, member: member, mutate: mutate, monikers: monikers, onRollMoniker: rollMoniker}),
       h(BandSettingsSection, {settings: settings, mutate: mutate}),
       binId && h(BackupsSection, {binId: binId, state: state, onRestore: onRestore}),
       // v0.28.0: sign-out lives at the bottom of Settings so it's discoverable but not
@@ -7733,7 +7752,7 @@ const App = () => {
   return h("div",{className:"max-w-5xl xl:max-w-6xl mx-auto px-3 sm:px-6 py-4 sm:py-6"},
     sync.conflict && h(ConflictBanner,{conflict:sync.conflict,onResolve:sync.resolveConflict}),
     showSyncPanel && h(SyncPanel,{sync:sync,onClose:()=>setShowSyncPanel(false)}),
-    showSettings && h(SettingsModal,{memberProfiles:memberProfiles, mutate:sync.mutate, onClose:()=>setShowSettings(false), binId:BAND_STATE_ID, state:sync.state, settings:settings, onRestore:(newState)=>sync.mutate(_prev=>newState)}),
+    showSettings && h(SettingsModal,{memberProfiles:memberProfiles, member:member, mutate:sync.mutate, onClose:()=>setShowSettings(false), binId:BAND_STATE_ID, state:sync.state, settings:settings, onRestore:(newState)=>sync.mutate(_prev=>newState)}),
     h("header",{className:"mb-4 sm:mb-6"},
       h("div",{className:"flex items-center justify-between gap-3 mb-2 sm:mb-0 sm:items-end sm:flex-wrap"},
         h("div",null,
@@ -7766,6 +7785,12 @@ const App = () => {
             {id:"feedback",label:"App feedback"}
           ].map(t => h("button",{key:t.id,onClick:()=>setTab(t.id),className:"px-3 sm:px-4 py-2 sm:py-2.5 ticker whitespace-nowrap text-[10px] sm:text-xs " + (tab===t.id?"tab-active":"hover:bg-[var(--acid)]")}, t.label)),
           h("div",{className:"ml-auto pl-2 pr-1 shrink-0 flex items-center gap-1.5"},
+            // v0.29.0: quick link to the public site — navigates in the same tab so
+            // there's no new window. Browser back returns to CRAP.
+            h("a",{href:"https://sourberry.co.uk",
+              className:"ticker text-[9px] text-[var(--ink-soft)] hover:text-[var(--berry)] px-1.5 py-0.5 hover:bg-[var(--acid)]/40 rounded",
+              title:"Go to sourberry.co.uk"},
+              "↗ site"),
             !member && h("button",{onClick:()=>setShowSettings(true),className:"text-base px-1.5 py-0.5 hover:bg-[var(--acid)]/40 rounded",title:"Settings","aria-label":"Settings"},"⚙"),
             h(SyncBadge,{sync:sync,onOpen:()=>setShowSyncPanel(true)})
           )
