@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 
 <html lang="en">
@@ -256,7 +257,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.33.2";
+const APP_VERSION = "0.34.0";
 
 // v0.28.0: Supabase config. URL + publishable key are safe to ship in client code —
 // Row Level Security (set up on band_state) is the security boundary. Don't ever paste
@@ -697,7 +698,7 @@ const buildEquipmentSeed = () => {
   });
   return eq;
 };
-const buildSeedState = () => ({schemaVersion: 13, events: buildEventsSeed(), songs: buildSongsSeed(), setlists: buildSetlistsSeed(), polls: {}, equipment: buildEquipmentSeed(), wishlist: {}, practiceAvail: {}, memberProfiles: {}, updatedAt: 0, lastSavedBy: null, settings: {}});
+const buildSeedState = () => ({schemaVersion: 14, events: buildEventsSeed(), songs: buildSongsSeed(), setlists: buildSetlistsSeed(), polls: {}, equipment: buildEquipmentSeed(), wishlist: {}, practiceAvail: {}, memberProfiles: {}, updatedAt: 0, lastSavedBy: null, settings: {}, videos: []});
 
 const migrate = data => {
   let migrated = false;
@@ -850,6 +851,12 @@ const migrate = data => {
       data.settings.publicSite = { tagline: "", bookingEmail: "", region: "", travelRadius: "" };
     }
     data.schemaVersion = 13; migrated = true;
+  }
+  if (data.schemaVersion < 14) {
+    // v14: state.videos — array of video objects for the public site media section.
+    // Each: { id, title, url, videoId, platform ('youtube'|'vimeo'), hidePublic, order }
+    if (!Array.isArray(data.videos)) data.videos = [];
+    data.schemaVersion = 14; migrated = true;
   }
   return migrated;
 };
@@ -6740,7 +6747,7 @@ const newFeedbackId = () => "fb_" + Date.now().toString(36) + "_" + Math.random(
 // on sourberry.co.uk without touching code. Songs and gigs use a hidePublic flag
 // (schema v13). Settings (tagline, email, region, radius) write to
 // state.settings.publicSite, which the Postgres public_settings view exposes.
-const PublicSiteView = ({songs, events, settings, analytics, mutate}) => {
+const PublicSiteView = ({songs, events, settings, analytics, videos, mutate}) => {
   const ps = (settings && settings.publicSite) || {};
   const [tagline, setTagline] = useState(ps.tagline || "");
   const [bookingEmail, setBookingEmail] = useState(ps.bookingEmail || "");
@@ -7081,14 +7088,98 @@ const PublicSiteView = ({songs, events, settings, analytics, mutate}) => {
           })()
         ),
 
+        // ── Media (video admin) ────────────────────────────────────────────
+        subTab === "media" && (() => {
+          const [draftUrl, setDraftUrl] = useState("");
+          const [draftTitle, setDraftTitle] = useState("");
+          const [addErr, setAddErr] = useState("");
+
+          const parseVideo = (url) => {
+            try {
+              const u = new URL(url.trim());
+              let ytId = u.searchParams.get("v");
+              if (!ytId && u.hostname === "youtu.be") ytId = u.pathname.slice(1).split("?")[0];
+              if (!ytId && u.pathname.includes("/shorts/")) ytId = u.pathname.split("/shorts/")[1].split("/")[0];
+              if (ytId) return {platform:"youtube", videoId:ytId.split("&")[0]};
+              if (u.hostname.includes("vimeo.com")) {
+                const vid = u.pathname.split("/").filter(Boolean)[0];
+                if (vid && /^\d+$/.test(vid)) return {platform:"vimeo", videoId:vid};
+              }
+            } catch(e) {}
+            return null;
+          };
+
+          const addVideo = () => {
+            setAddErr("");
+            const parsed = parseVideo(draftUrl);
+            if (!parsed) { setAddErr("Couldn\u2019t recognise that URL \u2014 paste a YouTube or Vimeo link"); return; }
+            const title = draftTitle.trim() || (parsed.platform==="youtube" ? "YouTube video" : "Vimeo video");
+            const newVid = {id:"v_"+Date.now(), title, url:draftUrl.trim(), platform:parsed.platform, videoId:parsed.videoId, hidePublic:false, order:videos.length};
+            mutate(s => ({...s, videos:[...(Array.isArray(s.videos)?s.videos:[]), newVid]}));
+            setDraftUrl(""); setDraftTitle("");
+          };
+
+          const removeVideo = (id) => mutate(s => ({...s, videos:(s.videos||[]).filter(v=>v.id!==id)}));
+          const toggleHide = (id) => mutate(s => ({...s, videos:(s.videos||[]).map(v=>v.id===id?{...v,hidePublic:!v.hidePublic}:v)}));
+          const moveVideo = (id, dir) => mutate(s => {
+            const vs=[...(s.videos||[])], i=vs.findIndex(v=>v.id===id), j=i+dir;
+            if (i<0||j<0||j>=vs.length) return s;
+            [vs[i],vs[j]]=[vs[j],vs[i]];
+            return {...s, videos:vs};
+          });
+          const thumbUrl = (v) => v.platform==="youtube"
+            ? "https://img.youtube.com/vi/"+v.videoId+"/mqdefault.jpg"
+            : "https://vumbnail.com/"+v.videoId+".jpg";
+
+          return h("div", {className:"space-y-4"},
+            h("div", {className:"card p-4 space-y-3"},
+              h("div", {className:"ticker text-[var(--berry)]"}, "Add video"),
+              h("label", {className:"block"},
+                h("span", {className:"text-xs font-semibold"}, "YouTube or Vimeo URL"),
+                h("input", {className:"input mt-1", value:draftUrl, onChange:e=>setDraftUrl(e.target.value), placeholder:"https://www.youtube.com/watch?v=..."})
+              ),
+              h("label", {className:"block"},
+                h("span", {className:"text-xs font-semibold"}, "Title (optional)"),
+                h("input", {className:"input mt-1", value:draftTitle, onChange:e=>setDraftTitle(e.target.value), placeholder:"e.g. Wedding set \u2014 The Crown, Oct 2024"})
+              ),
+              addErr && h("p", {className:"text-sm text-red-600"}, addErr),
+              h("button", {onClick:addVideo, className:"btn berry-bg text-white text-sm font-semibold px-4 py-2"}, "Add video")
+            ),
+            videos.length===0
+              ? h("p", {className:"text-sm text-[var(--ink-soft)] italic"}, "No videos yet. Paste a YouTube or Vimeo link above to add one.")
+              : h("div", {className:"space-y-3"},
+                  h("div", {className:"ticker text-[var(--ink-soft)]"}, videos.length+" video"+(videos.length===1?"":"s")+" \u2014 "+(videos.filter(v=>!v.hidePublic).length)+" public"),
+                  videos.map((v,i) =>
+                    h("div", {key:v.id, className:"card p-3 flex gap-3 items-start"},
+                      h("img", {src:thumbUrl(v), alt:v.title, className:"w-24 h-16 object-cover shrink-0 border border-[var(--line)]",
+                        onError:e=>{e.target.style.display="none"}}),
+                      h("div", {className:"flex-1 min-w-0"},
+                        h("div", {className:"font-semibold text-sm truncate"}, v.title),
+                        h("div", {className:"ticker text-[9px] text-[var(--ink-soft)] mt-0.5"}, v.platform),
+                        h("div", {className:"flex gap-2 mt-2 flex-wrap"},
+                          h("button", {onClick:()=>toggleHide(v.id), className:"btn px-2.5 py-1 text-xs font-semibold "+(v.hidePublic?"bg-[var(--acid)]":"bg-white")},
+                            v.hidePublic?"Hidden":"Public"),
+                          h("button", {onClick:()=>moveVideo(v.id,-1), disabled:i===0,
+                            className:"btn px-2.5 py-1 text-xs bg-white font-semibold disabled:opacity-30"}, "\u2191"),
+                          h("button", {onClick:()=>moveVideo(v.id,1), disabled:i===videos.length-1,
+                            className:"btn px-2.5 py-1 text-xs bg-white font-semibold disabled:opacity-30"}, "\u2193"),
+                          h("button", {onClick:()=>removeVideo(v.id), className:"btn px-2.5 py-1 text-xs bg-white font-semibold text-red-600"}, "Remove")
+                        )
+                      )
+                    )
+                  )
+                )
+          );
+        })(),
+
         // ── Coming soon panes ──────────────────────────────────────────────
-        (subTab === "media" || subTab === "messages" || subTab === "presskit" || subTab === "inbox") &&
+        (subTab === "messages" || subTab === "presskit" || subTab === "inbox") &&
           h("div", {className: "card-flat p-8 text-center"},
             h("div", {className: "text-3xl mb-3"},
-              subTab === "media" ? "📷" : subTab === "messages" ? "📣" : subTab === "presskit" ? "📄" : "📬"
+              subTab === "messages" ? "📣" : subTab === "presskit" ? "📄" : "📬"
             ),
             h("div", {className: "display text-xl font-bold mb-1"},
-              subTab === "media" ? "Media" : subTab === "messages" ? "Messages & banners" : subTab === "presskit" ? "Press kit" : "Booking inbox"
+              subTab === "messages" ? "Messages & banners" : subTab === "presskit" ? "Press kit" : "Booking inbox"
             ),
             h("p", {className: "text-sm text-[var(--ink-soft)]"}, "Coming soon.")
           )
@@ -7869,6 +7960,7 @@ const App = () => {
   const settings = sync.state.settings || {};
   const feedback = sync.state.feedback || {};
   const analytics = sync.state.analytics || {};
+  const videos = Array.isArray(sync.state.videos) ? sync.state.videos : [];
 
   // v0.28.0: the old "Who are you?" picker is gone — identity comes from the auth
   // session, which means by the time we reach this line `member` is guaranteed to be
@@ -7949,7 +8041,7 @@ const App = () => {
     tab==="songs" && h(SongsView,{songs:songs,events:events,member:member,memberProfiles:memberProfiles,mutate:sync.mutate,settings:settings}),
     tab==="setlists" && h(SetlistsView,{setlists:setlists,songs:songs,events:events,member:member,mutate:sync.mutate,settings:settings,onStartGigMode:(id)=>setGigSetlistId(id),onForceSnapshot:forceSnapshot, onNavigateToGig: (gigId) => { setHighlightedGigId(gigId); setTab("gigs"); }}),
     tab==="equipment" && h(EquipmentView,{equipment:equipment,wishlist:wishlist,member:member,memberProfiles:memberProfiles,mutate:sync.mutate}),
-    tab==="publicsite" && h(PublicSiteView,{songs:songs,events:events,settings:settings,analytics:analytics,mutate:sync.mutate}),
+    tab==="publicsite" && h(PublicSiteView,{songs:songs,events:events,settings:settings,analytics:analytics,videos:videos,mutate:sync.mutate}),
     tab==="feedback" && h(FeedbackView,{feedback:feedback,member:member,memberProfiles:memberProfiles,mutate:sync.mutate}),
     h("footer",{className:"mt-12 pt-6 border-t border-[var(--line)]/30 text-xs text-[var(--ink-soft)]"},
       // v0.24.0: random musician quote, picked once per session.
