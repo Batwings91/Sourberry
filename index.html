@@ -1,5 +1,5 @@
-<!DOCTYPE html>
 
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -33,15 +33,15 @@
 </head>
 <body><div id="root"></div>
 <script>
-const PUBLIC_VERSION="v1.1";
+const PUBLIC_VERSION="v1.3";
 const _R=React,h=_R.createElement,{useState,useEffect,useMemo}=_R;
 const sb=window.supabase.createClient("https://xyukmguafhddpasmjjyy.supabase.co","sb_publishable_wDjYrqirJiulohJC8I26UQ_ZxwMoJcw");
 const formatDate=iso=>{if(!iso)return"";return new Date(iso+"T00:00:00").toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"})};
 const Nav=({active=""})=>h("nav",{className:"site-nav"},h("div",{className:"max-w-4xl mx-auto px-4 sm:px-6 flex items-center justify-between h-14 gap-4"},h("span",null),h("div",{className:"flex items-center gap-1 sm:gap-2"},h("a",{href:"/songs/",className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 pill "+(active==="Songs"?"bg-[var(--acid)]":"hover:bg-[var(--acid)]")},"Songs"),h("a",{href:"/gigs/",className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 pill "+(active==="Gigs"?"bg-[var(--acid)]":"hover:bg-[var(--acid)]")},"Gigs"),h("a",{href:"/book/",className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 btn text-white font-semibold",style:{background:"var(--berry)"}},"Book us"))));
 const Footer=({email=""})=>h("footer",{className:"border-t-2 border-[var(--line)] py-8 px-4 sm:px-6 mt-8"},h("div",{className:"max-w-4xl mx-auto flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--ink-soft)]"},h("img",{src:"/images/logo.png",alt:"Sourberry",className:"logo-img h-7 w-auto"}),email&&h("a",{href:"mailto:"+email,className:"hover:text-[var(--berry)]"},email),h("div",{className:"flex items-center gap-3"},h("span",{className:"ticker text-[9px] opacity-40"},PUBLIC_VERSION),h("a",{href:"/hq/",className:"ticker text-[9px] text-[var(--ink-soft)]/40 hover:text-[var(--ink-soft)] transition-colors",title:"Band admin"},"Admin"))));
 const App=()=>{
-  const [settings,setSettings]=useState(null);const [gigs,setGigs]=useState([]);const [songs,setSongs]=useState([]);
-  useEffect(()=>{Promise.all([sb.from("public_settings").select("*").single(),sb.from("public_gigs").select("*"),sb.from("public_repertoire").select("*")]).then(([s,g,r])=>{if(s.data)setSettings(s.data);if(g.data)setGigs(g.data);if(r.data)setSongs(r.data);});
+  const [settings,setSettings]=useState(null);const [gigs,setGigs]=useState([]);const [songs,setSongs]=useState([]);const [videos,setVideos]=useState([]);
+  useEffect(()=>{Promise.all([sb.from("public_settings").select("*").single(),sb.from("public_gigs").select("*"),sb.from("public_repertoire").select("*"),sb.from("public_videos").select("*")]).then(([s,g,r,v])=>{if(s.data)setSettings(s.data);if(g.data)setGigs(g.data);if(r.data)setSongs(r.data);if(v.data)setVideos(v.data);});
     try{sb.rpc("log_page_view",{page_name:"home"}).then(function(){}).catch(function(){});}catch(e){}
   },[]);
   const today=new Date().toISOString().slice(0,10);
@@ -94,6 +94,37 @@ const App=()=>{
       h("div",{className:"max-w-4xl mx-auto px-4 sm:px-6"},
         h("div",{className:"flex items-baseline justify-between mb-5 flex-wrap gap-2"},h("h2",{className:"display text-2xl sm:text-3xl"},"What we play"),h("a",{href:"/songs/",className:"ticker text-[10px] text-[var(--berry)] hover:underline"},"Full list \u2192")),
         h("div",{className:"card"},h("div",{className:"grid sm:grid-cols-2"},preview.map(s=>h("div",{key:s.id,className:"song-row flex items-baseline gap-3 px-4 py-3"},h("span",{className:"font-semibold flex-1 truncate"},s.title),h("span",{className:"text-sm text-[var(--ink-soft)] shrink-0 truncate max-w-[40%]"},s.artist)))),songs.length>6&&h("a",{href:"/songs/",className:"block text-center ticker text-[10px] py-3 border-t border-[var(--line)]/20 hover:bg-[var(--acid)] text-[var(--berry)]"},"See all "+songs.length+" songs \u2192"))
+      )
+    ),
+    videos.length>0&&h("section",{className:"py-12 sm:py-16 border-b-2 border-[var(--line)]"},
+      h("div",{className:"max-w-4xl mx-auto px-4 sm:px-6"},
+        h("div",{className:"flex items-baseline justify-between mb-5 flex-wrap gap-2"},
+          h("h2",{className:"display text-2xl sm:text-3xl"},"Watch us play"),
+          videos.length>3&&h("a",{href:"/video/",className:"ticker text-[10px] text-[var(--berry)] hover:underline"},"All videos \u2192")
+        ),
+        h("div",{className:"grid sm:grid-cols-3 gap-4"},
+          videos.slice(0,3).map(function(v){
+            var thumb=v.platform==="youtube"
+              ?"https://img.youtube.com/vi/"+v.videoId+"/mqdefault.jpg"
+              :"https://vumbnail.com/"+v.videoId+".jpg";
+            var href=v.platform==="youtube"
+              ?"https://www.youtube.com/watch?v="+v.videoId
+              :"https://vimeo.com/"+v.videoId;
+            return h("a",{key:v.id,href:href,target:"_blank",rel:"noopener noreferrer",className:"card block overflow-hidden group"},
+              h("div",{className:"relative",style:{paddingBottom:"56.25%"}},
+                h("img",{src:thumb,alt:v.title,style:{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}),
+                h("div",{className:"absolute inset-0 flex items-center justify-center",style:{background:"rgba(26,10,20,0.35)"}},
+                  h("div",{className:"w-10 h-10 rounded-full flex items-center justify-center",style:{background:"var(--berry)"}},
+                    h("span",{style:{color:"#fff",fontSize:"18px",marginLeft:"3px"}},"\u25B6")
+                  )
+                )
+              ),
+              h("div",{className:"px-3 py-2"},
+                h("div",{className:"font-semibold text-sm truncate"},v.title)
+              )
+            );
+          })
+        )
       )
     ),
     h("section",{className:"py-12 sm:py-16"},
