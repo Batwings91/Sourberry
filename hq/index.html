@@ -256,7 +256,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.33.1";
+const APP_VERSION = "0.33.2";
 
 // v0.28.0: Supabase config. URL + publishable key are safe to ship in client code —
 // Row Level Security (set up on band_state) is the security boundary. Don't ever paste
@@ -6822,6 +6822,7 @@ const PublicSiteView = ({songs, events, settings, analytics, mutate}) => {
 
 
   const SUB_TABS = [
+    {id:"status", label:"Status"},
     {id:"settings", label:"Site settings"},
     {id:"songs", label:"Song visibility"},
     {id:"gigs", label:"Gig visibility"},
@@ -6831,7 +6832,7 @@ const PublicSiteView = ({songs, events, settings, analytics, mutate}) => {
     {id:"presskit", label:"Press kit", soon:true},
     {id:"inbox", label:"Booking inbox", soon:true},
   ];
-  const [subTab, setSubTab] = useState("settings");
+  const [subTab, setSubTab] = useState("status");
 
   return h("div", {className: "max-w-5xl mx-auto px-3 sm:px-4 py-6"},
 
@@ -6873,6 +6874,48 @@ const PublicSiteView = ({songs, events, settings, analytics, mutate}) => {
 
       // Right content pane
       h("div", {className: "flex-1 min-w-0 space-y-5"},
+
+        // ── Status ────────────────────────────────────────────────────────
+        subTab === "status" && h("div", {className: "space-y-4"},
+          h("div", {className: "card p-4"},
+            h("div", {className: "ticker text-[var(--berry)] mb-3"}, "Site status"),
+            h("div", {className: "flex flex-wrap gap-3"},
+              h("button", {
+                onClick: () => setSubTab("songs"),
+                className: "card-flat px-4 py-3 flex-1 min-w-[100px] text-left hover:bg-[var(--acid)]/40 transition-colors"
+              },
+                h("div", {className: "text-2xl font-bold"}, publicSongsCount),
+                h("div", {className: "text-xs text-[var(--ink-soft)] mt-0.5"}, "songs public"),
+                h("div", {className: "text-[8px] ticker text-[var(--berry)] mt-1"}, "manage →")
+              ),
+              hiddenSongsCount > 0 && h("button", {
+                onClick: () => setSubTab("songs"),
+                className: "card-flat px-4 py-3 flex-1 min-w-[100px] text-left hover:bg-[var(--acid)]/40 transition-colors"
+              },
+                h("div", {className: "text-2xl font-bold text-[var(--ink-soft)]"}, hiddenSongsCount),
+                h("div", {className: "text-xs text-[var(--ink-soft)] mt-0.5"}, "songs hidden"),
+                h("div", {className: "text-[8px] ticker text-[var(--berry)] mt-1"}, "manage →")
+              ),
+              h("button", {
+                onClick: () => setSubTab("gigs"),
+                className: "card-flat px-4 py-3 flex-1 min-w-[100px] text-left hover:bg-[var(--acid)]/40 transition-colors"
+              },
+                h("div", {className: "text-2xl font-bold"}, upcomingConfirmed),
+                h("div", {className: "text-xs text-[var(--ink-soft)] mt-0.5"}, "upcoming gigs"),
+                h("div", {className: "text-[8px] ticker text-[var(--berry)] mt-1"}, "manage →")
+              )
+            )
+          ),
+          h("div", {className: "card-flat p-4"},
+            h("div", {className: "ticker text-[10px] text-[var(--ink-soft)] mb-2"}, "Quick links"),
+            h("div", {className: "flex flex-wrap gap-2"},
+              h("a", {href:"https://sourberry.co.uk", target:"_blank", rel:"noopener noreferrer", className:"btn px-3 py-1.5 text-xs font-semibold bg-white"}, "Home ↗"),
+              h("a", {href:"https://sourberry.co.uk/songs/", target:"_blank", rel:"noopener noreferrer", className:"btn px-3 py-1.5 text-xs font-semibold bg-white"}, "Songs ↗"),
+              h("a", {href:"https://sourberry.co.uk/gigs/", target:"_blank", rel:"noopener noreferrer", className:"btn px-3 py-1.5 text-xs font-semibold bg-white"}, "Gigs ↗"),
+              h("a", {href:"https://sourberry.co.uk/book/", target:"_blank", rel:"noopener noreferrer", className:"btn px-3 py-1.5 text-xs font-semibold bg-white"}, "Book ↗")
+            )
+          )
+        ),
 
         // ── Site settings ──────────────────────────────────────────────────
         subTab === "settings" && h("div", {className: "space-y-5"},
@@ -6935,23 +6978,6 @@ const PublicSiteView = ({songs, events, settings, analytics, mutate}) => {
                 className: "btn berry-bg text-white text-sm font-semibold px-4 py-2"
               }, "Save settings"),
               savedMsg && h("span", {className: "text-sm text-[var(--good)] font-semibold"}, savedMsg)
-            )
-          ),
-          h("div", {className: "card p-4"},
-            h("div", {className: "ticker text-[var(--berry)] mb-3"}, "Status"),
-            h("div", {className: "flex flex-wrap gap-3"},
-              h("div", {className: "card-flat px-4 py-3 flex-1 min-w-[100px]"},
-                h("div", {className: "text-2xl font-bold"}, publicSongsCount),
-                h("div", {className: "text-xs text-[var(--ink-soft)] mt-0.5"}, "songs public")
-              ),
-              hiddenSongsCount > 0 && h("div", {className: "card-flat px-4 py-3 flex-1 min-w-[100px]"},
-                h("div", {className: "text-2xl font-bold text-[var(--ink-soft)]"}, hiddenSongsCount),
-                h("div", {className: "text-xs text-[var(--ink-soft)] mt-0.5"}, "songs hidden")
-              ),
-              h("div", {className: "card-flat px-4 py-3 flex-1 min-w-[100px]"},
-                h("div", {className: "text-2xl font-bold"}, upcomingConfirmed),
-                h("div", {className: "text-xs text-[var(--ink-soft)] mt-0.5"}, "upcoming gigs")
-              )
             )
           )
         ),
@@ -7027,7 +7053,7 @@ const PublicSiteView = ({songs, events, settings, analytics, mutate}) => {
             const pageLabels = {home: "Home", songs: "Songs", gigs: "Gigs", book: "Book"};
             const hasAnyData = months.some(m => analytics[m] && pages.some(p => analytics[m][p]));
             if (!hasAnyData) return h("p", {className: "text-sm text-[var(--ink-soft)] italic"},
-              "No data yet. Views will appear here once the SQL function is installed \u2014 see setup instructions."
+              "No data yet \u2014 views will appear here as people visit the site."
             );
             return h("div", {className: "overflow-x-auto"},
               h("table", {className: "w-full text-sm border-collapse"},
