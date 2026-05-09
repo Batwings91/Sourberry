@@ -1,0 +1,109 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Book Sourberry</title>
+  <meta name="description" content="Book Sourberry for your wedding, party or event." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,700;0,9..144,800;1,9..144,400;1,9..144,700&family=Inter+Tight:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <style>
+    :root{--bg:#f6f1e7;--bg-card:#fffaf0;--ink:#1a0a14;--ink-soft:#4a2a3a;--berry:#e93ca3;--acid:#d1db58;--line:#2a1018}
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Inter Tight',system-ui,sans-serif;background:var(--bg);color:var(--ink);
+      background-image:radial-gradient(circle at 1px 1px,rgba(26,10,20,0.07) 1px,transparent 0);background-size:22px 22px}
+    .display{font-family:'Fraunces',Georgia,serif;font-optical-sizing:auto}
+    .ticker{letter-spacing:0.18em;text-transform:uppercase;font-weight:600;font-size:0.72rem}
+    .card{background:var(--bg-card);border:1.5px solid var(--line);box-shadow:4px 4px 0 var(--line)}
+    .btn{border:1.5px solid var(--line);box-shadow:3px 3px 0 var(--line);transition:transform 80ms ease,box-shadow 80ms ease;cursor:pointer;font-family:'Inter Tight',sans-serif;display:inline-block;text-decoration:none}
+    .btn:hover{transform:translate(-1px,-1px);box-shadow:4px 4px 0 var(--line)}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    .pill{border:1.2px solid var(--line)}
+    .input{background:#fffdf6;border:1.5px solid var(--line);padding:.6rem .75rem;font-family:'Inter Tight',sans-serif;width:100%;color:var(--ink)}
+    .input:focus{outline:none;box-shadow:3px 3px 0 var(--berry)}
+    .logo-img{mix-blend-mode:multiply;display:block}
+    .site-nav{position:sticky;top:0;z-index:40;background:var(--bg);border-bottom:2px solid var(--line)}
+    .acid-bar{background:var(--acid);border-bottom:2px solid var(--line)}
+    @media(max-width:640px){body{background-size:18px 18px}.card{box-shadow:3px 3px 0 var(--line)}}
+  </style>
+</head>
+<body><div id="root"></div>
+<script>
+// Replace with your key from https://web3forms.com (free, no account needed)
+const WEB3FORMS_KEY="YOUR_WEB3FORMS_KEY_HERE";
+const EVENT_TYPES=["Wedding","Birthday party","Corporate event","Charity event","Private party","Pub / bar night","Other"];
+const _R=React,h=_R.createElement,{useState,useEffect}=_R;
+const sb=window.supabase.createClient("https://xyukmguafhddpasmjjyy.supabase.co","sb_publishable_wDjYrqirJiulohJC8I26UQ_ZxwMoJcw");
+const Nav=()=>h("nav",{className:"site-nav"},h("div",{className:"max-w-4xl mx-auto px-4 sm:px-6 flex items-center justify-between h-14 gap-4"},h("a",{href:"/","aria-label":"Sourberry home"},h("img",{src:"/images/logo.png",alt:"Sourberry",className:"logo-img h-8 sm:h-9 w-auto"})),h("div",{className:"flex items-center gap-1 sm:gap-2"},h("a",{href:"/songs/",className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 pill hover:bg-[var(--acid)]"},"Songs"),h("a",{href:"/gigs/",className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 pill hover:bg-[var(--acid)]"},"Gigs"),h("a",{href:"/book/",className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 btn text-white font-semibold",style:{background:"var(--berry)"}},"Book us"))));
+const Footer=({email=""})=>h("footer",{className:"border-t-2 border-[var(--line)] py-8 px-4 sm:px-6 mt-8"},h("div",{className:"max-w-4xl mx-auto flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--ink-soft)]"},h("img",{src:"/images/logo.png",alt:"Sourberry",className:"logo-img h-7 w-auto"}),email&&h("a",{href:"mailto:"+email,className:"hover:text-[var(--berry)]"},email),h("span",null,"\u00a9 "+new Date().getFullYear()),h("a",{href:"/crap/",className:"ticker text-[9px] text-[var(--ink-soft)]/40 hover:text-[var(--ink-soft)] transition-colors",title:"Collaborative Rehearsal & Administration Platform"},"C.R.A.P.")));
+const App=()=>{
+  const [settings,setSettings]=useState(null);
+  const [form,setForm]=useState({name:"",email:"",eventDate:"",eventType:"",venue:"",message:""});
+  const [status,setStatus]=useState("idle");
+  useEffect(()=>{sb.from("public_settings").select("*").single().then(({data})=>{if(data)setSettings(data)});},[]); 
+  const set=(k,v)=>setForm(f=>Object.assign({},f,{[k]:v}));
+  const submit=async()=>{
+    if(!form.name||!form.email||!form.eventDate||!form.eventType){setStatus("error-val");return}
+    setStatus("sending");
+    try{
+      const res=await fetch("https://api.web3forms.com/submit",{method:"POST",headers:{"Content-Type":"application/json",Accept:"application/json"},
+        body:JSON.stringify({access_key:WEB3FORMS_KEY,subject:"Sourberry booking \u2014 "+form.eventType+" ("+form.eventDate+")",name:form.name,email:form.email,"Event date":form.eventDate,"Event type":form.eventType,"Venue":form.venue||"Not specified",message:form.message||"No message"})});
+      const d=await res.json();setStatus(d.success?"sent":"error");
+    }catch{setStatus("error")}
+  };
+  const email=(settings&&settings.booking_email)||"";
+  const region=(settings&&settings.region)||"";
+  return h("div",null,
+    h(Nav,{}),
+    h("div",{className:"acid-bar py-6 px-4 sm:px-6"},
+      h("div",{className:"max-w-4xl mx-auto"},
+        h("h1",{className:"display text-3xl sm:text-4xl font-bold"},"Book Sourberry"),
+        region&&h("p",{className:"ticker text-[10px] text-[var(--ink)]/60 mt-1"},region)
+      )
+    ),
+    h("div",{className:"max-w-4xl mx-auto px-4 sm:px-6 py-10"},
+      h("div",{className:"grid sm:grid-cols-2 gap-10 sm:gap-16 items-start"},
+        h("div",null,
+          h("p",{className:"text-[var(--ink-soft)] leading-relaxed mb-6"},"Fill in the form and we\u2019ll get back to you within a few days. Not sure if we\u2019re right for your event? Come along to one of our gigs first \u2014 just say hello."),
+          h("div",{className:"space-y-3 mb-6"},
+            [["✓","All equipment provided","PA, instruments and lighting \u2014 we bring everything"],
+             ["✓","Custom songs","We\u2019ll learn 3\u20135 specific tracks for your event with notice"],
+             ["✓","DJ sets available","Playlist or live DJ between sets through our own PA"],
+             ["✓","Venues up to 200","Larger venues by arrangement"]
+            ].map(([icon,title,desc])=>h("div",{key:title,className:"flex gap-3"},
+              h("span",{className:"text-[var(--berry)] font-bold shrink-0"},icon),
+              h("div",null,h("div",{className:"font-semibold text-sm"},title),h("div",{className:"text-sm text-[var(--ink-soft)]"},desc))
+            ))
+          ),
+          email&&h("div",{className:"border border-[var(--line)] p-4 bg-[var(--bg-card)]"},
+            h("div",{className:"ticker text-[10px] text-[var(--ink-soft)] mb-1"},"Or email us directly"),
+            h("a",{href:"mailto:"+email,className:"text-[var(--berry)] underline underline-offset-2 text-sm break-all"},email)
+          )
+        ),
+        h("div",null,
+          status==="sent"
+            ?h("div",{className:"card p-8 text-center"},h("div",{className:"text-4xl mb-3"},"\uD83C\uDF89"),h("h2",{className:"display text-2xl font-bold mb-2"},"Thanks!"),h("p",{className:"text-[var(--ink-soft)]"},"We\u2019ll be in touch within a few days."))
+            :h("div",{className:"card p-5 space-y-4"},
+                h("label",{className:"block"},h("span",{className:"ticker text-[10px] mb-1.5 block"},"Your name *"),h("input",{className:"input",value:form.name,onChange:e=>set("name",e.target.value),placeholder:"Jane Smith"})),
+                h("label",{className:"block"},h("span",{className:"ticker text-[10px] mb-1.5 block"},"Email address *"),h("input",{type:"email",className:"input",value:form.email,onChange:e=>set("email",e.target.value),placeholder:"jane@example.com"})),
+                h("label",{className:"block"},h("span",{className:"ticker text-[10px] mb-1.5 block"},"Event date *"),h("input",{type:"date",className:"input",value:form.eventDate,onChange:e=>set("eventDate",e.target.value)})),
+                h("label",{className:"block"},h("span",{className:"ticker text-[10px] mb-1.5 block"},"Type of event *"),h("select",{className:"input",value:form.eventType,onChange:e=>set("eventType",e.target.value)},h("option",{value:""},"Select\u2026"),EVENT_TYPES.map(t=>h("option",{key:t,value:t},t)))),
+                h("label",{className:"block"},h("span",{className:"ticker text-[10px] mb-1.5 block"},"Venue / location"),h("input",{className:"input",value:form.venue,onChange:e=>set("venue",e.target.value),placeholder:"e.g. The Crown, Clapham"})),
+                h("label",{className:"block"},h("span",{className:"ticker text-[10px] mb-1.5 block"},"Anything else?"),h("textarea",{className:"input",rows:3,value:form.message,onChange:e=>set("message",e.target.value),placeholder:"Guest numbers, specific songs, questions\u2026",style:{resize:"vertical"}})),
+                status==="error-val"&&h("p",{className:"text-sm text-red-600"},"Please fill in all required fields (marked *)."),
+                status==="error"&&h("p",{className:"text-sm text-red-600"},"Something went wrong \u2014 please try again or email us directly."),
+                h("button",{onClick:submit,disabled:status==="sending",className:"btn text-white font-semibold px-5 py-3 w-full text-sm",style:{background:"var(--berry)"}},status==="sending"?"Sending\u2026":"Send enquiry")
+              )
+        )
+      )
+    ),
+    h(Footer,{email})
+  );
+};
+ReactDOM.createRoot(document.getElementById("root")).render(h(App,null));
+</script>
+</body></html>
