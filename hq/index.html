@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 
 <html lang="en">
@@ -72,21 +71,22 @@
     .modal-bg { position: fixed; inset: 0; background: rgba(26,10,20,0.5); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 1rem; }
     .blink { animation: blink 1.4s ease-in-out infinite; }
     @keyframes blink { 50% { opacity: 0.5; } }
-    /* v0.23.0: availability calendar dot. Inline-block + fixed size + border-box so
-       size is predictable across browsers; explicitly NOT a flex item so it can't be
-       squashed by a parent flex container on narrow iPhone screens. 8px on mobile,
-       10px on tablet/desktop. */
+    /* v0.32.0: availability calendar dot. Block-level with explicit min dimensions so
+       iOS Safari can't sub-pixel shrink them; align-self:center handles vertical
+       positioning inside the flex slot row. 8px on mobile, 10px on tablet/desktop. */
     .sb-dot {
-      display: inline-block;
+      display: block;
       width: 8px; height: 8px;
+      min-width: 8px; min-height: 8px;
       border-radius: 9999px;
       border: 1px solid;
       box-sizing: border-box;
       flex-shrink: 0;
-      vertical-align: middle;
+      flex-grow: 0;
+      align-self: center;
     }
     @media (min-width: 640px) {
-      .sb-dot { width: 10px; height: 10px; }
+      .sb-dot { width: 10px; height: 10px; min-width: 10px; min-height: 10px; }
     }
     /* v0.18.0: brief flash to draw attention to a just-added song or just-navigated-to gig.
        Using box-shadow rather than background so it works on cards that already have backgrounds. */
@@ -256,7 +256,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.31.0";
+const APP_VERSION = "0.32.0";
 
 // v0.28.0: Supabase config. URL + publishable key are safe to ship in client code —
 // Row Level Security (set up on band_state) is the security boundary. Don't ever paste
@@ -2539,11 +2539,12 @@ const SettingsModal = ({memberProfiles, member, onClose, mutate, binId, state, o
   };
   return h("div",{className:"modal-bg",onClick:onClose},
     cropping && h(PhotoCropper, {src: cropping.srcDataUrl, onCancel: onCropCancelled, onConfirm: onCropConfirmed}),
-    h("div",{className:"card p-5 max-w-md w-full max-h-[90vh] overflow-y-auto",onClick:e=>e.stopPropagation()},
-      h("div",{className:"flex items-center justify-between mb-3"},
+    h("div",{className:"card p-0 max-w-md w-full max-h-[90vh] overflow-y-auto",onClick:e=>e.stopPropagation()},
+      h("div",{className:"sb-modal-sticky-header flex items-center justify-between"},
         h("h3",{className:"display text-2xl"},"Settings"),
         h("button",{onClick:onClose,className:"ticker text-[var(--ink-soft)]"},"Close ✕")
       ),
+      h("div",{className:"p-5"},
       h("div",{className:"mb-2"},
         h("div",{className:"ticker text-[var(--berry)] mb-2"},"Profile photos"),
         h("p",{className:"text-xs text-[var(--ink-soft)] mb-3"},"Visible to everyone in the band. After picking a photo you can pan and zoom to position it. Final size is 200×200 JPEG.")
@@ -2616,6 +2617,7 @@ const SettingsModal = ({memberProfiles, member, onClose, mutate, binId, state, o
           className:"btn bg-white px-4 py-2 text-sm font-semibold w-full"
         }, "Sign out")
       )
+      ) // close p-5 wrapper
     )
   );
 };
@@ -6077,7 +6079,10 @@ const PracticeView = ({practiceAvail, events, member, mutate, onGoToSchedule, on
   const todayIsoStr = todayISO();
 
   return h("div",null,
-    h("p",{className:"text-sm text-[var(--ink-soft)] mb-3"},"Mark days you're free. Tap a day for full detail (slots, in-person vs virtual)."),
+    h("p",{className:"text-sm text-[var(--ink-soft)] mb-3"},
+      h("span",{className:"sm:hidden"},"Tap a day to mark your availability."),
+      h("span",{className:"hidden sm:inline"},"Mark days you\u2019re free. Tap a day for full detail (slots, in-person vs virtual).")
+    ),
 
     // Month navigation
     h("div",{className:"flex items-center justify-between mb-3 flex-wrap gap-2"},
@@ -6741,6 +6746,7 @@ const PublicSiteView = ({songs, events, settings, mutate}) => {
   const [bookingEmail, setBookingEmail] = useState(ps.bookingEmail || "");
   const [region, setRegion] = useState(ps.region || "");
   const [travelRadius, setTravelRadius] = useState(ps.travelRadius || "");
+  const [aboutUs, setAboutUs] = useState(ps.aboutUs || "");
   const [savedMsg, setSavedMsg] = useState("");
 
   // Keep local form fields in sync if the parent settings change (e.g. another
@@ -6751,6 +6757,7 @@ const PublicSiteView = ({songs, events, settings, mutate}) => {
     setBookingEmail(p.bookingEmail || "");
     setRegion(p.region || "");
     setTravelRadius(p.travelRadius || "");
+    setAboutUs(p.aboutUs || "");
   }, [settings]);
 
   const saveSettings = () => {
@@ -6758,7 +6765,7 @@ const PublicSiteView = ({songs, events, settings, mutate}) => {
       const prevS = prev.settings || {};
       return Object.assign({}, prev, {
         settings: Object.assign({}, prevS, {
-          publicSite: { tagline: tagline.trim(), bookingEmail: bookingEmail.trim(), region: region.trim(), travelRadius: travelRadius.trim() }
+          publicSite: { tagline: tagline.trim(), bookingEmail: bookingEmail.trim(), region: region.trim(), travelRadius: travelRadius.trim(), aboutUs: aboutUs.trim() }
         })
       });
     });
@@ -6865,7 +6872,7 @@ const PublicSiteView = ({songs, events, settings, mutate}) => {
           className: "input mt-1",
           value: tagline,
           onChange: e => setTagline(e.target.value),
-          placeholder: "e.g. Make your party bounce!"
+          placeholder: "A covers band that keeps the dance floor moving."
         })
       ),
       h("label", {className: "block"},
@@ -6894,6 +6901,17 @@ const PublicSiteView = ({songs, events, settings, mutate}) => {
           value: travelRadius,
           onChange: e => setTravelRadius(e.target.value),
           placeholder: "e.g. Up to 2 hours from London"
+        })
+      ),
+      h("label", {className: "block"},
+        h("span", {className: "text-xs font-semibold"}, "About us / reception text"),
+        h("p", {className: "text-xs text-[var(--ink-soft)] mt-0.5 mb-1"}, "Short paragraph shown on the home page below the next-gig strip. Leave blank to hide."),
+        h("textarea", {
+          className: "input mt-1",
+          rows: "3",
+          value: aboutUs,
+          onChange: e => setAboutUs(e.target.value),
+          placeholder: "e.g. Sourberry are a London-based covers and function band for weddings, parties and events."
         })
       ),
       h("div", {className: "flex items-center gap-3"},
@@ -7846,7 +7864,7 @@ const App = () => {
             title:"Band stats"
           },"\ud83d\udcca stats")
         ),
-        h("span",{className:"display-italic text-right"},"Collaborative Rehearsal & Administration Platform \u00b7 C.R.A.P.")
+        h("span",{className:"display-italic text-right"},"Sourberry Headquarters Intranet Tool (S.H.I.T)")
       )
     ),
     // v0.26.0: Stats modal. Currently houses the WhatsApp-saved counter (delta from
