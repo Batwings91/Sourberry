@@ -2,198 +2,23 @@
 
 <html lang="en">
 <head>
-  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sourberry — London Function Band</title>
-  <meta name="description" content="Sourberry are a London-based covers and function band for weddings, parties and events." />
-  <link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,700;0,9..144,800;1,9..144,400;1,9..144,700&family=Inter+Tight:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script crossorigin src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <style>
-    :root{--bg:#f6f1e7;--bg-card:#fffaf0;--ink:#1a0a14;--ink-soft:#4a2a3a;--berry:#e93ca3;--acid:#d1db58;--line:#2a1018}
-    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-    html{scroll-behavior:smooth}
-    body{font-family:'Inter Tight',system-ui,sans-serif;background:var(--bg);color:var(--ink);
-      background-image:radial-gradient(circle at 1px 1px,rgba(26,10,20,0.07) 1px,transparent 0);background-size:22px 22px}
-    .display{font-family:'Fraunces',Georgia,serif;font-optical-sizing:auto;font-weight:700}
-    .ticker{letter-spacing:0.18em;text-transform:uppercase;font-weight:600;font-size:0.72rem}
-    .card{background:var(--bg-card);border:1.5px solid var(--line);box-shadow:4px 4px 0 var(--line)}
-    .btn{border:1.5px solid var(--line);box-shadow:3px 3px 0 var(--line);transition:transform 80ms ease,box-shadow 80ms ease;cursor:pointer;font-family:'Inter Tight',sans-serif;display:inline-block;text-decoration:none}
-    .btn:hover{transform:translate(-1px,-1px);box-shadow:4px 4px 0 var(--line)}
-    .btn:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--line)}
-    .pill{border:1.2px solid var(--line)}
-    .logo-img{mix-blend-mode:multiply;display:block}
-    .site-nav{position:sticky;top:0;z-index:40;background:var(--bg);border-bottom:2px solid var(--line)}
-    .acid-bar{background:var(--acid);border-bottom:2px solid var(--line)}
-    .song-row{border-bottom:1px solid rgba(42,16,24,.12)}.song-row:last-child{border-bottom:none}
-    @media(max-width:640px){body{background-size:18px 18px}.card{box-shadow:3px 3px 0 var(--line)}}
-  </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sourberry test</title>
 </head>
-<body><div id="root"></div>
+<body>
+<div id="root"></div>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script>
-const PUBLIC_VERSION="v1.2";
-const _R=React,h=_R.createElement,{useState,useEffect,useMemo}=_R;
-const sb=window.supabase.createClient("https://xyukmguafhddpasmjjyy.supabase.co","sb_publishable_wDjYrqirJiulohJC8I26UQ_ZxwMoJcw");
-const formatDate=iso=>{if(!iso)return"";return new Date(iso+"T00:00:00").toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"})};
-
-const Nav=function(){
-return h(“nav”,{className:“site-nav”},
-h(“div”,{className:“max-w-4xl mx-auto px-4 sm:px-6 flex items-center justify-between h-14 gap-4”},
-h(“span”,null),
-h(“div”,{className:“flex items-center gap-1 sm:gap-2”},
-h(“a”,{href:”/songs/”,className:“ticker text-[10px] sm:text-xs px-2.5 py-1.5 pill hover:bg-[var(–acid)]”},“Songs”),
-h(“a”,{href:”/gigs/”,className:“ticker text-[10px] sm:text-xs px-2.5 py-1.5 pill hover:bg-[var(–acid)]”},“Gigs”),
-h(“a”,{href:”/book/”,className:“ticker text-[10px] sm:text-xs px-2.5 py-1.5 btn text-white font-semibold”,style:{background:“var(–berry)”}},“Book us”)
-)
-)
-);
-};
-
-const Footer=function(props){
-var email=props.email||””;
-return h(“footer”,{className:“border-t-2 border-[var(–line)] py-8 px-4 sm:px-6 mt-8”},
-h(“div”,{className:“max-w-4xl mx-auto flex flex-wrap items-center justify-between gap-3 text-sm text-[var(–ink-soft)]”},
-h(“img”,{src:”/images/logo.png”,alt:“Sourberry”,className:“logo-img h-7 w-auto”}),
-email?h(“a”,{href:“mailto:”+email,className:“hover:text-[var(–berry)]”},email):null,
-h(“div”,{className:“flex items-center gap-3”},
-h(“span”,{className:“ticker text-[9px] opacity-40”},PUBLIC_VERSION),
-h(“a”,{href:”/hq/”,className:“ticker text-[9px] text-[var(–ink-soft)]/40 hover:text-[var(–ink-soft)] transition-colors”,title:“Band admin”},“Admin”)
-)
-)
-);
-};
-
-var FEATURES=[
-[“✓”,“All equipment provided”,“PA, instruments and lighting \u2014 we bring it all”],
-[“✓”,“Custom songs”,“We\u2019ll learn 3\u20135 specific tracks for your event”],
-[“✓”,“Music in the breaks”,“Your playlist through our PA between sets, or speeches at weddings”],
-[“✓”,“Venues up to 200 guests”,“Larger venues by arrangement”]
-];
-
-const App=function(){
-var stateHook=useState(null); var settings=stateHook[0]; var setSettings=stateHook[1];
-var gigsHook=useState([]); var gigs=gigsHook[0]; var setGigs=gigsHook[1];
-var songsHook=useState([]); var songs=songsHook[0]; var setSongs=songsHook[1];
-
-useEffect(function(){
-Promise.all([
-sb.from(“public_settings”).select(”*”).single(),
-sb.from(“public_gigs”).select(”*”),
-sb.from(“public_repertoire”).select(”*”)
-]).then(function(results){
-var s=results[0],g=results[1],r=results[2];
-if(s.data)setSettings(s.data);
-if(g.data)setGigs(g.data);
-if(r.data)setSongs(r.data);
-});
-sb.rpc(“log_page_view”,{page_name:“home”}).catch(function(){});
-},[]);
-
-var today=new Date().toISOString().slice(0,10);
-var nextGig=useMemo(function(){
-return gigs.filter(function(g){return g.status===“confirmed”&&g.event_date>=today;})
-.sort(function(a,b){return a.event_date.localeCompare(b.event_date);})[0];
-},[gigs,today]);
-
-var tagline=(settings&&settings.tagline&&settings.tagline.trim())||“A covers band that keeps the dance floor moving.”;
-var region=(settings&&settings.region)||””;
-var radius=(settings&&settings.travel_radius)||””;
-var email=(settings&&settings.booking_email)||””;
-var aboutUs=(settings&&settings.about_us)||””;
-var locationLine=[region,radius].filter(Boolean).join(” \u00b7 “);
-var preview=songs.slice(0,6);
-
-return h(“div”,null,
-h(Nav,null),
-
-```
-h("section",{className:"py-12 sm:py-20 border-b-2 border-[var(--line)]"},
-  h("div",{className:"max-w-4xl mx-auto px-4 sm:px-6"},
-    h("img",{src:"/images/logo.png",alt:"Sourberry",className:"logo-img w-full max-w-[260px] sm:max-w-xs md:max-w-sm mb-5"}),
-    h("p",{className:"display text-2xl sm:text-3xl mb-2"},tagline),
-    locationLine?h("p",{className:"ticker text-[var(--ink-soft)] mb-6"},locationLine):null,
-    h("a",{href:"/book/",className:"btn text-white font-semibold px-7 py-3 text-base",style:{background:"var(--berry)"}},"Book us")
-  )
-),
-
-nextGig?h("div",{className:"acid-bar py-5 px-4 sm:px-6"},
-  h("div",{className:"max-w-4xl mx-auto flex items-start sm:items-center justify-between flex-wrap gap-4"},
-    h("div",null,
-      h("div",{className:"ticker text-[10px] text-[var(--ink)]/60 mb-1"},"Next gig"),
-      h("div",{className:"font-bold text-lg leading-tight"},nextGig.title||nextGig.location||"Private event"),
-      (nextGig.title&&nextGig.location)?h("div",{className:"text-sm text-[var(--ink)]/70 mt-0.5"},nextGig.location):null,
-      h("div",{className:"ticker text-[10px] text-[var(--ink)]/60 mt-1.5"},
-        formatDate(nextGig.event_date),
-        nextGig.start_time?" \u00b7 "+nextGig.start_time.slice(0,5):""
-      )
-    ),
-    h("a",{href:"/gigs/",className:"btn bg-white text-sm font-semibold px-4 py-2 shrink-0"},"All gigs \u2192")
-  )
-):null,
-
-h("section",{className:"py-12 sm:py-16 border-b-2 border-[var(--line)]"},
-  h("div",{className:"max-w-4xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row gap-8 sm:gap-10 items-start"},
-    h("div",{className:"w-full sm:w-auto sm:max-w-[260px] shrink-0"},
-      h("img",{
-        src:"/images/band.webp",
-        alt:"Sourberry live on stage",
-        className:"card w-full",
-        style:{display:"block",objectFit:"cover",objectPosition:"center 30%"}
-      })
-    ),
-    aboutUs?h("div",{className:"flex-1"},
-      h("p",{className:"text-[var(--ink-soft)] text-base leading-relaxed mb-6",style:{whiteSpace:"pre-wrap"}},aboutUs),
-      h("a",{href:"/book/",className:"btn font-semibold px-6 py-3 text-base",style:{background:"var(--berry)",color:"#fff"}},"Book us")
-    ):null
-  )
-),
-
-h("section",{className:"py-12 sm:py-16 border-b-2 border-[var(--line)]"},
-  h("div",{className:"max-w-4xl mx-auto px-4 sm:px-6 grid sm:grid-cols-2 gap-3"},
-    FEATURES.map(function(f){
-      return h("div",{key:f[1],className:"card p-4"},
-        h("div",{className:"font-semibold mb-0.5"},f[0]+" "+f[1]),
-        h("div",{className:"text-sm text-[var(--ink-soft)]"},f[2])
-      );
-    })
-  )
-),
-
-songs.length>0?h("section",{className:"py-12 sm:py-16 border-b-2 border-[var(--line)]"},
-  h("div",{className:"max-w-4xl mx-auto px-4 sm:px-6"},
-    h("div",{className:"flex items-baseline justify-between mb-5 flex-wrap gap-2"},
-      h("h2",{className:"display text-2xl sm:text-3xl"},"What we play"),
-      h("a",{href:"/songs/",className:"ticker text-[10px] text-[var(--berry)] hover:underline"},"Full list \u2192")
-    ),
-    h("div",{className:"card"},
-      h("div",{className:"grid sm:grid-cols-2"},
-        preview.map(function(s){
-          return h("div",{key:s.id,className:"song-row flex items-baseline gap-3 px-4 py-3"},
-            h("span",{className:"font-semibold flex-1 truncate"},s.title),
-            h("span",{className:"text-sm text-[var(--ink-soft)] shrink-0 truncate max-w-[40%]"},s.artist)
-          );
-        })
-      ),
-      songs.length>6?h("a",{href:"/songs/",className:"block text-center ticker text-[10px] py-3 border-t border-[var(--line)]/20 hover:bg-[var(--acid)] text-[var(--berry)]"},"See all "+songs.length+" songs \u2192"):null
-    )
-  )
-):null,
-
-h("section",{className:"py-12 sm:py-16"},
-  h("div",{className:"max-w-4xl mx-auto px-4 sm:px-6 text-center"},
-    h("h2",{className:"display text-2xl sm:text-3xl mb-3"},"Ready to book?"),
-    h("p",{className:"text-[var(--ink-soft)] mb-6 max-w-lg mx-auto"},"Tell us about your event and we\u2019ll get back to you within a few days."),
-    h("a",{href:"/book/",className:"btn text-white font-semibold px-8 py-4 text-lg",style:{background:"var(--berry)"}},"Get in touch \u2192")
-  )
-),
-
-h(Footer,{email:email})
-```
-
-);
-};
-
-ReactDOM.createRoot(document.getElementById(“root”)).render(h(App,null));
-</script></body></html>
+  var h = React.createElement;
+  var App = function() {
+    return h("div", {style:{padding:"40px",fontFamily:"sans-serif"}},
+      h("h1", null, "React is working"),
+      h("p", null, "If you can see this, React renders fine.")
+    );
+  };
+  ReactDOM.createRoot(document.getElementById("root")).render(h(App, null));
+</script>
+</body>
+</html>
