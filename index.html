@@ -80,7 +80,7 @@ const App=()=>{
           })
         ),
         aboutUs&&h("div",{className:"flex-1"},
-          h("p",{className:"text-[var(--ink-soft)] text-base leading-relaxed mb-6"},aboutUs),
+          h("p",{className:"text-[var(--ink-soft)] text-base leading-relaxed mb-6",style:{whiteSpace:"pre-wrap"}},aboutUs),
           h("a",{href:"/book/",className:"btn font-semibold px-6 py-3 text-base",style:{background:"var(--berry)",color:"#fff"}},"Book us")
         )
       )
@@ -98,7 +98,7 @@ const App=()=>{
     ),
     h("section",{className:"py-12 sm:py-16 border-b-2 border-[var(--line)]"},
       h("div",{className:"max-w-4xl mx-auto px-4 sm:px-6 grid sm:grid-cols-2 gap-3"},
-        [["✓","All equipment provided","PA, instruments and lighting \u2014 we bring it all"],["✓","Custom songs","We'll learn 3\u20135 specific tracks for your event"],["✓","Music in the breaks","We can play your music through our PA between sets \u2014 perfect for background music or speeches at weddings"],["✓","Venues up to 200 guests","Larger venues by arrangement"]].map(([icon,title,desc])=>h("div",{key:title,className:"card p-4"},h("div",{className:"font-semibold mb-0.5"},icon+" "+title),h("div",{className:"text-sm text-[var(--ink-soft)]"},desc)))
+        [["✓","All equipment provided","PA, instruments and lighting \u2014 we bring it all"],["✓","Custom songs","We'll learn 3\u20135 specific tracks for your event"],["✓","Music in the breaks","Your playlist through our PA between sets, or speeches at weddings"],["✓","Venues up to 200 guests","Larger venues by arrangement"]].map(([icon,title,desc])=>h("div",{key:title,className:"card p-4"},h("div",{className:"font-semibold mb-0.5"},icon+" "+title),h("div",{className:"text-sm text-[var(--ink-soft)]"},desc)))
       )
     ),
     songs.length>0&&h("section",{className:"py-12 sm:py-16 border-b-2 border-[var(--line)]"},
