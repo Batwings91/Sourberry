@@ -167,7 +167,7 @@
  *
  * --- 1. CONSTANTS & SEED DATA -----------------------------------------------
  *   APP_VERSION                 — version string (semver, bump per release)
- *   MEMBERS / INSTRUMENTS       — band roster + instrument options
+ *   ROSTER / INSTRUMENTS        — roster helpers (roster itself lives in state.members)
  *   SONG_STATUSES / VENUE_TYPES / EQUIPMENT_CATEGORIES — enums
  *   SEED_EVENTS / SEED_SONGS / SEED_SETLISTS / SEED_EQUIPMENT — first-run data
  *   buildSeedState              — assembled initial bin contents
@@ -210,6 +210,7 @@
  *   ConflictBanner              — "someone else saved" → keep mine / use theirs
  *   SyncPanel / SyncBadge       — sync status modal + persistent badge
  *   SettingsModal + BackupsSection + BandSettingsSection + MemberInstrumentsSection
+ *                               + BandRosterSection (add/remove members, core vs dep)
  *   PhotoCropper                — touch-friendly profile photo crop UI
  *
  * --- 9. EVENTS (gigs + rehearsals) ------------------------------------------
@@ -270,17 +271,95 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 // we genericise into multi-band SaaS, this becomes a UUID per band.
 const BAND_STATE_ID = "sourberry";
 
-// Email → member id map. Lower-cased keys (we lower-case the auth email before lookup
-// to avoid case-sensitivity surprises with email providers). Add the rest of the band
-// here as they sign up; everyone else gets the "you're not a band member" screen.
-const EMAIL_TO_MEMBER_ID = {
+// === BAND ROSTER ===
+// v0.29.0: the roster lives in the database (state.members), not in this file. Members
+// are added and removed in Settings → Band roster by any core member, and take effect
+// immediately — no deploy, no edit here. The two LEGACY_ constants below are only the
+// v15 migration seed and an offline fallback; editing them no longer changes who can
+// log in.
+const LEGACY_MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
+const LEGACY_EMAIL_TO_MEMBER_ID = {
   "rehmanomar@yahoo.co.uk": "omar",
   "veena.marr@gmail.com": "veena",
   "mgatman007@gmail.com": "mike",
   "mgatman007@yahoo.com": "mike",
   "james.oldnall@gmail.com": "james",
 };
-const MEMBERS = [{id:"veena",name:"Veena"},{id:"james",name:"James"},{id:"mike",name:"Mike"},{id:"omar",name:"Omar"}];
+
+// Rebuilt by applyRoster() from state.members as soon as the state loads and on every
+// change, so the whole app reads one roster. Deliberately `let`, not `const`.
+//   MEMBERS            — everyone active, in roster order. DISPLAY: chips, pickers,
+//                        availability rows, owner dropdowns. Deps appear here.
+//   CORE_MEMBERS       — core members only. COUNTING: "4/4 can make it", the
+//                        everyone-available tick, unanimous song/equipment votes, the
+//                        best-rehearsal-slot maths. Deps are shown but never widen a
+//                        denominator, so a dep who hasn't voted can't block a tick.
+//   EMAIL_TO_MEMBER_ID — lower-cased email → member id, for the login gate.
+let MEMBERS = LEGACY_MEMBERS.slice();
+let CORE_MEMBERS = LEGACY_MEMBERS.slice();
+let EMAIL_TO_MEMBER_ID = Object.assign({}, LEGACY_EMAIL_TO_MEMBER_ID);
+
+// A roster entry in state.members:
+//   { [id]: {name, emails: ["a@b.com", ...], status: "core"|"dep", active: true, order: n} }
+// active:false is how a member is retired — their votes, availability and practice
+// history stay in the data, they just stop appearing and stop counting.
+const MEMBER_STATUSES = [
+  {id:"core", label:"Core member", hint:"Counts towards “everyone available” and unanimous votes."},
+  {id:"dep",  label:"Dep / stand-in", hint:"Full access, but never widens a denominator."}
+];
+
+const rosterList = (members) => {
+  if (!members || typeof members !== "object") return null;
+  const list = Object.keys(members)
+    .map(id => Object.assign({id: id}, members[id]))
+    .filter(m => m && m.active !== false && m.name)
+    .sort((a, b) => (a.order || 0) - (b.order || 0) || String(a.name).localeCompare(String(b.name)));
+  return list.length ? list : null;
+};
+
+// Returns true if it installed a roster, false if the argument was unusable (in which
+// case the LEGACY_ fallback stays in place — better a stale roster than an empty app).
+const applyRoster = (members) => {
+  const list = rosterList(members);
+  if (!list) return false;
+  MEMBERS = list.map(m => ({id: m.id, name: m.name}));
+  const core = list.filter(m => m.status !== "dep").map(m => ({id: m.id, name: m.name}));
+  // A roster of nothing but deps would make every denominator zero, so fall back to
+  // counting everyone rather than dividing by nought.
+  CORE_MEMBERS = core.length ? core : MEMBERS.slice();
+  const map = {};
+  list.forEach(m => (Array.isArray(m.emails) ? m.emails : []).forEach(e => {
+    if (typeof e === "string" && e.trim()) map[e.trim().toLowerCase()] = m.id;
+  }));
+  EMAIL_TO_MEMBER_ID = Object.keys(map).length ? map : Object.assign({}, LEGACY_EMAIL_TO_MEMBER_ID);
+  return true;
+};
+
+// Seed for the v15 migration: the four who were hardcoded, with their known emails.
+const buildMembersSeed = () => {
+  const out = {};
+  LEGACY_MEMBERS.forEach((m, i) => {
+    out[m.id] = {name: m.name, emails: [], status: "core", active: true, order: i + 1};
+  });
+  Object.keys(LEGACY_EMAIL_TO_MEMBER_ID).forEach(email => {
+    const id = LEGACY_EMAIL_TO_MEMBER_ID[email];
+    if (out[id]) out[id].emails.push(email);
+  });
+  return out;
+};
+
+const memberIdFromName = (name, existing) => {
+  const base = String(name || "").toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 20) || "member";
+  let id = base, n = 2;
+  while (existing && Object.prototype.hasOwnProperty.call(existing, id)) { id = base + n; n++; }
+  return id;
+};
+
+const normaliseEmails = (raw) => Array.from(new Set(String(raw || "")
+  .split(/[,;\s]+/)
+  .map(e => e.trim().toLowerCase())
+  .filter(e => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e))));
+
 
 // v0.24.0/v0.25.0: random musician quotes for the footer. Picked once per app load.
 // v0.25.0: refreshed lineup — heavily crude/rude/racy, leaning into rockstar misanthropy.
@@ -698,7 +777,7 @@ const buildEquipmentSeed = () => {
   });
   return eq;
 };
-const buildSeedState = () => ({schemaVersion: 14, events: buildEventsSeed(), songs: buildSongsSeed(), setlists: buildSetlistsSeed(), polls: {}, equipment: buildEquipmentSeed(), wishlist: {}, practiceAvail: {}, memberProfiles: {}, updatedAt: 0, lastSavedBy: null, settings: {}, videos: []});
+const buildSeedState = () => ({schemaVersion: 15, events: buildEventsSeed(), songs: buildSongsSeed(), setlists: buildSetlistsSeed(), polls: {}, equipment: buildEquipmentSeed(), wishlist: {}, practiceAvail: {}, memberProfiles: {}, members: buildMembersSeed(), updatedAt: 0, lastSavedBy: null, settings: {}, videos: []});
 
 const migrate = data => {
   let migrated = false;
@@ -857,6 +936,24 @@ const migrate = data => {
     // Each: { id, title, url, videoId, platform ('youtube'|'vimeo'), hidePublic, order }
     if (!Array.isArray(data.videos)) data.videos = [];
     data.schemaVersion = 14; migrated = true;
+  }
+  if (data.schemaVersion < 15) {
+    // v15: the band roster moved out of the code and into the state blob, so members can
+    // be added from Settings without a deploy. Seeded from the constants that used to be
+    // hardcoded at the top of this file, so nothing changes for the existing four.
+    //   members[id] = {name, emails: [...], status: "core"|"dep", active: true, order: n}
+    if (!data.members || typeof data.members !== "object" || !Object.keys(data.members).length) {
+      data.members = buildMembersSeed();
+    }
+    // Carry instruments already recorded in memberProfiles across to the roster entry so
+    // the roster is the single description of a member. memberProfiles keeps the photos.
+    Object.keys(data.members).forEach(id => {
+      const prof = data.memberProfiles && data.memberProfiles[id];
+      if (prof && Array.isArray(prof.instruments) && !Array.isArray(data.members[id].instruments)) {
+        data.members[id].instruments = prof.instruments.slice();
+      }
+    });
+    data.schemaVersion = 15; migrated = true;
   }
   return migrated;
 };
@@ -1519,18 +1616,38 @@ const uniqueLocations = events => {
 // authStatus reflects what we should render at the top level:
 //   "loading" → still figuring out if there's a session
 //   "anon"    → no session, show LoginScreen
-//   "signed"  → session exists AND email maps to a known band member
-//   "unknown" → session exists BUT email isn't in EMAIL_TO_MEMBER_ID (random visitor)
+//   "signed"  → session exists AND email is on the roster in state.members
+//   "unknown" → session exists BUT the email isn't on the roster (random visitor, or a
+//               member whose email nobody has added yet)
+// v0.29.0: the roster comes from the database, so we read band_state once on sign-in
+// before deciding. That's what lets a member added in Settings log in straight away,
+// and what makes removing someone take effect. RLS allows any signed-in user to read
+// this row, and the app loads the same blob a moment later anyway.
 // Returning the auth user too so the unknown-email screen can show what they signed in as.
 const useMemberIdentity = () => {
   const [authStatus, setAuthStatus] = useState("loading");
   const [member, setMember] = useState(null);
   const [authUser, setAuthUser] = useState(null);
   useEffect(() => {
-    const apply = (session) => {
+    let cancelled = false;
+    const loadRoster = async () => {
+      try {
+        const {data, error} = await sb.from("band_state").select("state").eq("id", BAND_STATE_ID).maybeSingle();
+        if (error) return false;
+        return applyRoster(data && data.state && data.state.members);
+      } catch (_) {
+        // Offline or RLS hiccup: applyRoster was never called, so the LEGACY_ fallback
+        // is still in force and the original four can still get in.
+        return false;
+      }
+    };
+    const apply = async (session) => {
       const user = session && session.user ? session.user : null;
+      if (cancelled) return;
       setAuthUser(user);
       if (!user) { setAuthStatus("anon"); setMember(null); return; }
+      await loadRoster();
+      if (cancelled) return;
       const email = (user.email || "").toLowerCase();
       const memberId = EMAIL_TO_MEMBER_ID[email] || null;
       if (!memberId) { setAuthStatus("unknown"); setMember(null); return; }
@@ -1541,7 +1658,7 @@ const useMemberIdentity = () => {
     sb.auth.getSession().then(({data}) => apply(data && data.session));
     // Subscribe to future changes (sign-in, sign-out, token refresh).
     const {data: listener} = sb.auth.onAuthStateChange((_event, session) => apply(session));
-    return () => { try { listener.subscription.unsubscribe(); } catch(_){} };
+    return () => { cancelled = true; try { listener.subscription.unsubscribe(); } catch(_){} };
   }, []);
   return {authStatus, member, authUser};
 };
@@ -1616,7 +1733,7 @@ const useSyncedState = (ready, memberId) => {
 
   const mutate = useCallback(updater => {
     setState(prev => {
-      const next = updater(prev || {schemaVersion:12, events:{}, songs:{}, setlists:{}, polls:{}, equipment:{}, wishlist:{}, practiceAvail:{}, memberProfiles:{}, updatedAt:0, lastSavedBy:null, settings:{}});
+      const next = updater(prev || {schemaVersion:15, events:{}, songs:{}, setlists:{}, polls:{}, equipment:{}, wishlist:{}, practiceAvail:{}, memberProfiles:{}, members:buildMembersSeed(), updatedAt:0, lastSavedBy:null, settings:{}});
       stateRef.current = next;
       return next;
     });
@@ -1827,7 +1944,7 @@ const NotABandMemberScreen = ({authUser}) => {
         ", but that email isn\u2019t on the band roster."
       ),
       h("p",{className:"text-sm text-[var(--ink-soft)] mb-4"},
-        "If you should be on it, ask Omar to add your email."
+        "If you should be on it, ask anyone in the band to add you in Settings \u2192 Band roster. It takes effect straight away."
       ),
       h("button",{
         onClick: signOut,
@@ -2497,6 +2614,144 @@ const MemberInstrumentsSection = ({memberProfiles, member, mutate, monikers, onR
 };
 // === END MEMBER INSTRUMENTS SECTION ===
 
+// === BAND ROSTER SECTION ===
+// v0.29.0: the roster used to be two hardcoded constants at the top of this file, so
+// adding a member meant editing code and deploying. It now lives in state.members and is
+// edited here by any core member. What a member is allowed to see doesn't depend on
+// status — a dep sees everything a core member sees. The only difference is arithmetic:
+// CORE_MEMBERS is the denominator for "everyone available" and unanimous votes, so a dep
+// who hasn't voted never stops a gig showing as fully available.
+//
+// Removing someone sets active:false rather than deleting them. Their votes, availability
+// and practice history are keyed by member id all through the state blob, so a hard delete
+// would leave orphaned entries and silently change historical counts.
+const BandRosterSection = ({members, member, mutate}) => {
+  const [addName, setAddName] = useState("");
+  const [addEmail, setAddEmail] = useState("");
+  const [addStatus, setAddStatus] = useState("dep");
+  const [editingId, setEditingId] = useState(null);
+  const [editEmails, setEditEmails] = useState("");
+  const [confirmId, setConfirmId] = useState(null);
+  const [error, setError] = useState("");
+  const list = rosterList(members) || [];
+  const coreCount = list.filter(m => m.status !== "dep").length;
+
+  const addMember = () => {
+    const name = addName.trim();
+    const emails = normaliseEmails(addEmail);
+    if (!name) { setError("Give them a name."); return; }
+    if (!emails.length) { setError("Add the email address they'll sign in with."); return; }
+    const clash = list.find(m => (m.emails || []).some(e => emails.indexOf(String(e).toLowerCase()) >= 0));
+    if (clash) { setError("That email is already on the roster, under " + clash.name + "."); return; }
+    setError("");
+    mutate(prev => {
+      const cur = Object.assign({}, prev.members || {});
+      const id = memberIdFromName(name, cur);
+      const order = Object.keys(cur).reduce((mx, k) => Math.max(mx, (cur[k] && cur[k].order) || 0), 0) + 1;
+      cur[id] = {name: name, emails: emails, status: addStatus, active: true, order: order, instruments: []};
+      return Object.assign({}, prev, {members: cur});
+    });
+    setAddName(""); setAddEmail(""); setAddStatus("dep");
+  };
+
+  const patch = (id, fields) => mutate(prev => {
+    const cur = Object.assign({}, prev.members || {});
+    if (!cur[id]) return prev;
+    cur[id] = Object.assign({}, cur[id], fields);
+    return Object.assign({}, prev, {members: cur});
+  });
+
+  const setStatusFor = (id, status) => {
+    // Don't let the last core member demote themselves to a dep — every denominator in
+    // the app would fall back to counting deps, which is not what anyone asked for.
+    if (status === "dep" && coreCount <= 1 && list.some(m => m.id === id && m.status !== "dep")) {
+      setError("Keep at least one core member."); return;
+    }
+    setError(""); patch(id, {status: status});
+  };
+
+  const saveEmails = (id) => {
+    const emails = normaliseEmails(editEmails);
+    if (!emails.length) { setError("A member needs at least one valid email to sign in with."); return; }
+    const clash = list.find(m => m.id !== id && (m.emails || []).some(e => emails.indexOf(String(e).toLowerCase()) >= 0));
+    if (clash) { setError("That email is already on the roster, under " + clash.name + "."); return; }
+    setError(""); patch(id, {emails: emails}); setEditingId(null); setEditEmails("");
+  };
+
+  const remove = (id) => {
+    // Removing yourself would lock you out with no way back in from the app, and removing
+    // the last core member would leave the counting with nothing to count.
+    if (member && member.id === id) { setError("You can't remove yourself — ask another core member to do it."); return; }
+    if (list.some(m => m.id === id && m.status !== "dep") && coreCount <= 1) { setError("Keep at least one core member."); return; }
+    setError(""); setConfirmId(null); patch(id, {active: false});
+  };
+
+  const inputCls = "w-full rounded-lg border border-[var(--line)]/30 bg-transparent px-2.5 py-1.5 text-sm";
+
+  return h("div",{className:"mt-5 pt-4 border-t border-[var(--line)]/15"},
+    h("div",{className:"ticker text-[var(--berry)] mb-2"},"Band roster"),
+    h("p",{className:"text-xs text-[var(--ink-soft)] mb-3"},
+      "Anyone here can sign in with the email listed. Core members count towards “everyone available” and unanimous votes; deps have the same access but don’t affect those counts."
+    ),
+    error && h("p",{className:"text-xs text-[var(--berry)] mb-2"}, error),
+    h("div",{className:"space-y-2"},
+      list.map(m => {
+        const isMe = member && member.id === m.id;
+        const isEditing = editingId === m.id;
+        return h("div",{key:m.id, className:"card-flat p-2.5"},
+          h("div",{className:"flex items-center gap-2 flex-wrap"},
+            h("div",{className:"text-sm font-semibold"}, m.name, isMe && h("span",{className:"text-[var(--ink-soft)] font-normal"}," (you)")),
+            h("div",{className:"flex gap-1 ml-auto"},
+              MEMBER_STATUSES.map(s => h("button",{
+                key: s.id,
+                onClick: () => setStatusFor(m.id, s.id),
+                title: s.hint,
+                className: "pill px-2 py-0.5 text-[11px] font-semibold " + ((m.status !== "dep" ? "core" : "dep") === s.id ? "berry-bg text-white" : "text-[var(--ink-soft)] border border-[var(--line)]/30")
+              }, s.id === "core" ? "Core" : "Dep"))
+            )
+          ),
+          isEditing
+            ? h("div",{className:"mt-2 space-y-1.5"},
+                h("input",{className:inputCls, value:editEmails, placeholder:"email, second email", onChange:e => setEditEmails(e.target.value)}),
+                h("div",{className:"flex gap-1.5"},
+                  h("button",{onClick:() => saveEmails(m.id), className:"btn berry-bg px-3 py-1 text-xs font-semibold"},"Save"),
+                  h("button",{onClick:() => { setEditingId(null); setError(""); }, className:"btn px-3 py-1 text-xs border border-[var(--line)]/30"},"Cancel")
+                )
+              )
+            : h("div",{className:"mt-1 flex items-center gap-2 flex-wrap"},
+                h("div",{className:"text-xs text-[var(--ink-soft)] break-all"}, (m.emails || []).join(", ") || "No email — they can’t sign in yet"),
+                h("button",{
+                  onClick: () => { setEditingId(m.id); setEditEmails((m.emails || []).join(", ")); setError(""); },
+                  className:"text-xs underline text-[var(--ink-soft)] ml-auto"
+                },"Edit"),
+                confirmId === m.id
+                  ? h("button",{onClick:() => remove(m.id), className:"text-xs font-semibold text-[var(--berry)]"},"Really remove?")
+                  : h("button",{onClick:() => { setConfirmId(m.id); setError(""); }, className:"text-xs underline text-[var(--ink-soft)]"},"Remove")
+              )
+        );
+      })
+    ),
+    h("div",{className:"mt-3 pt-3 border-t border-[var(--line)]/10 space-y-1.5"},
+      h("div",{className:"text-xs font-semibold"},"Add someone"),
+      h("input",{className:inputCls, value:addName, placeholder:"Name", onChange:e => setAddName(e.target.value)}),
+      h("input",{className:inputCls, value:addEmail, placeholder:"Email they’ll sign in with", onChange:e => setAddEmail(e.target.value)}),
+      h("div",{className:"flex items-center gap-1.5"},
+        MEMBER_STATUSES.map(s => h("button",{
+          key:s.id,
+          onClick: () => setAddStatus(s.id),
+          title: s.hint,
+          className: "pill px-2.5 py-1 text-xs font-semibold " + (addStatus === s.id ? "berry-bg text-white" : "text-[var(--ink-soft)] border border-[var(--line)]/30")
+        }, s.label)),
+        h("button",{onClick:addMember, className:"btn berry-bg px-3 py-1 text-xs font-semibold ml-auto"},"Add")
+      ),
+      h("p",{className:"text-[11px] text-[var(--ink-soft)]"},
+        "They sign in at this page with that address — no invite needed, and nothing to deploy."
+      )
+    )
+  );
+};
+// === END BAND ROSTER SECTION ===
+
 const SettingsModal = ({memberProfiles, member, onClose, mutate, binId, state, onRestore, settings}) => {
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState("");
@@ -2614,6 +2869,9 @@ const SettingsModal = ({memberProfiles, member, onClose, mutate, binId, state, o
       ),
       error && h("div",{className:"mt-3 text-sm text-[var(--berry)]"}, error),
       h(MemberInstrumentsSection, {memberProfiles: memberProfiles, member: member, mutate: mutate, monikers: monikers, onRollMoniker: rollMoniker}),
+      // v0.29.0: roster editing is for core members. A dep sees everything else in here,
+      // just not the controls that decide who's in the band.
+      member && CORE_MEMBERS.some(m => m.id === member.id) && h(BandRosterSection, {members: state && state.members, member: member, mutate: mutate}),
       h(BandSettingsSection, {settings: settings, mutate: mutate}),
       binId && h(BackupsSection, {binId: binId, state: state, onRestore: onRestore}),
       // v0.28.0: sign-out lives at the bottom of Settings so it's discoverable but not
@@ -3065,7 +3323,7 @@ const EventForm = ({initial, onSave, onCancel, onDelete, locationSuggestions, sa
 
 const EventCard = ({ev, member, memberProfiles, songs, events, pinnedSetlist, onEdit, onSetAvailability, onDelete, onStartRehearsal, onLocate, settings, onUpdateEvent}) => {
   const owner = MEMBERS.find(m => m.id === ev.bookingOwner);
-  const yesCount = MEMBERS.filter(m => ev.availability && ev.availability[m.id] === "yes").length;
+  const yesCount = CORE_MEMBERS.filter(m => ev.availability && ev.availability[m.id] === "yes").length;
   const isRehearsal = ev.type === "rehearsal";
   const past = isPast(ev.date);
   // Auto-geocode the location once per event, but only for upcoming events that have
@@ -3275,7 +3533,7 @@ const EventCard = ({ev, member, memberProfiles, songs, events, pinnedSetlist, on
         !past && h(React.Fragment, null,
           h("div",{className:"mt-3 flex flex-wrap items-center gap-x-4 gap-y-2"},
             h(AvailabilityRow,{ev:ev, memberProfiles:memberProfiles}),
-            h("span",{className:"text-xs text-[var(--ink-soft)]"}, yesCount + "/" + MEMBERS.length + " can make it")
+            h("span",{className:"text-xs text-[var(--ink-soft)]"}, yesCount + "/" + CORE_MEMBERS.length + " can make it")
           ),
           // Access codes — shown for upcoming events. Prominent because people
           // are reading these on their phone outside a locked door, in the rain,
@@ -3706,9 +3964,9 @@ const SongCard = ({song, member, memberProfiles, onEdit, onVote, onSetStatus, on
   const [expanded, setExpanded] = useState(false);
   const showVotes = song.status === "suggested";
   const showPractice = ["shortlist","learning","repertoire"].includes(song.status);
-  const yesCount = MEMBERS.filter(m => song.votes && song.votes[m.id] === "yes").length;
-  const noCount = MEMBERS.filter(m => song.votes && song.votes[m.id] === "no").length;
-  const allYes = yesCount === MEMBERS.length;
+  const yesCount = CORE_MEMBERS.filter(m => song.votes && song.votes[m.id] === "yes").length;
+  const noCount = CORE_MEMBERS.filter(m => song.votes && song.votes[m.id] === "no").length;
+  const allYes = yesCount === CORE_MEMBERS.length;
   const myVote = member ? (song.votes && song.votes[member.id]) : null;
   const fresh = isNew(song.createdAt);
   const lengthLabel = formatDuration(song.lengthSec);
@@ -3855,8 +4113,8 @@ const SongsView = ({songs, events, member, memberProfiles, mutate, settings}) =>
       if (aNew && !bNew) return -1;
       if (!aNew && bNew) return 1;
       if (aNew && bNew) return (b.createdAt||0) - (a.createdAt||0);
-      const yA = MEMBERS.filter(m => a.votes && a.votes[m.id] === "yes").length;
-      const yB = MEMBERS.filter(m => b.votes && b.votes[m.id] === "yes").length;
+      const yA = CORE_MEMBERS.filter(m => a.votes && a.votes[m.id] === "yes").length;
+      const yB = CORE_MEMBERS.filter(m => b.votes && b.votes[m.id] === "yes").length;
       if (yA !== yB) return yB - yA;
     }
     return (a.title||"").localeCompare(b.title||"");
@@ -4012,7 +4270,7 @@ const SongsView = ({songs, events, member, memberProfiles, mutate, settings}) =>
     return all.filter(s => s.title && s.artist && (!s.lengthSec || !s.coverArtUrl || !s.album || !s.iTunesUrl)).map(s => s.id);
   }, [all]);
 
-  const allInSuggested = all.filter(c => c.status==="suggested" && MEMBERS.every(m => c.votes && c.votes[m.id]==="yes")).length;
+  const allInSuggested = all.filter(c => c.status==="suggested" && CORE_MEMBERS.every(m => c.votes && c.votes[m.id]==="yes")).length;
   const newSuggested = all.filter(c => c.status==="suggested" && isNew(c.createdAt)).length;
   const currentStatus = SONG_STATUSES.find(s => s.id === view);
 
@@ -5772,7 +6030,7 @@ const yesCountForSlot = (practiceAvail, iso, slotId) => {
   const day = practiceAvail && practiceAvail[iso];
   if (!day) return 0;
   let count = 0;
-  MEMBERS.forEach(m => {
+  CORE_MEMBERS.forEach(m => {
     const v = day[m.id];
     if (!v) return;
     let slot = null;
@@ -6243,7 +6501,7 @@ const PracticeView = ({practiceAvail, events, member, mutate, onGoToSchedule, on
             const isHoliday = bankHolidaySet.has(iso);
             const visibleSlots = visibleSlotsFor(date, iso, practiceAvail, bankHolidaySet);
             const bestYes = bestYesCountForDay(practiceAvail, iso, visibleSlots);
-            const cellColor = dayCellColor(bestYes, MEMBERS.length);
+            const cellColor = dayCellColor(bestYes, CORE_MEMBERS.length);
             const isToday = iso === todayIsoStr;
             const isPastDate = iso < todayIsoStr;
             const dimClass = !inCurrentMonth ? "opacity-40" : (isPastDate ? "opacity-50" : "");
@@ -6280,7 +6538,7 @@ const PracticeView = ({practiceAvail, events, member, mutate, onGoToSchedule, on
                         });
                       })
                     ),
-                    slotYes === MEMBERS.length && h("span",{className:"text-[var(--good)] text-[10px] font-bold leading-none ml-0.5 shrink-0", title:"Everyone available"},"✓")
+                    slotYes === CORE_MEMBERS.length && h("span",{className:"text-[var(--good)] text-[10px] font-bold leading-none ml-0.5 shrink-0", title:"Everyone available"},"✓")
                   );
                 })
               )
@@ -6367,7 +6625,7 @@ const DayDetailPanel = ({iso, practiceAvail, bankHolidayName, member, existingEv
 
       // Book a rehearsal — defaults to the best slot
       !existingEvent && h("div",{className:"mt-4 pt-3 border-t border-[var(--line)]/20"},
-        h("p",{className:"text-xs text-[var(--ink-soft)] mb-2"}, bestSlot.count >= 0 ? (bestSlot.count + "/" + MEMBERS.length + " can do " + SLOT_LABELS[bestSlot.sid]) : "Nobody marked yet."),
+        h("p",{className:"text-xs text-[var(--ink-soft)] mb-2"}, bestSlot.count >= 0 ? (bestSlot.count + "/" + CORE_MEMBERS.length + " can do " + SLOT_LABELS[bestSlot.sid]) : "Nobody marked yet."),
         h("div",{className:"flex flex-wrap gap-2"},
           visibleSlots.map(sid => h("button",{
             key:"book-"+sid,
@@ -6400,7 +6658,7 @@ const SlotRow = ({slotId, iso, practiceAvail, member, onSetSlot}) => {
         h("span",{className:"display text-lg leading-tight"}, SLOT_LABELS[slotId]),
         h("span",{className:"text-xs text-[var(--ink-soft)] ml-2"}, SLOT_DESCS[slotId])
       ),
-      h("span",{className:"ticker text-[var(--ink-soft)]"}, yesCountForSlot(practiceAvail, iso, slotId) + " / " + MEMBERS.length + " yes")
+      h("span",{className:"ticker text-[var(--ink-soft)]"}, yesCountForSlot(practiceAvail, iso, slotId) + " / " + CORE_MEMBERS.length + " yes")
     ),
 
     // Per-member readout
@@ -6608,8 +6866,8 @@ const WishItemForm = ({initial, onSave, onCancel, onDelete}) => {
 
 const WishItemCard = ({item, member, memberProfiles, onEdit, onVote, onSetStatus}) => {
   const status = WISHLIST_STATUSES.find(s => s.id === item.status) || WISHLIST_STATUSES[0];
-  const yesCount = MEMBERS.filter(m => item.votes && item.votes[m.id] === "yes").length;
-  const noCount = MEMBERS.filter(m => item.votes && item.votes[m.id] === "no").length;
+  const yesCount = CORE_MEMBERS.filter(m => item.votes && item.votes[m.id] === "yes").length;
+  const noCount = CORE_MEMBERS.filter(m => item.votes && item.votes[m.id] === "no").length;
   const myVote = member ? (item.votes && item.votes[member.id]) : null;
   return h("div",{className:"card-flat p-3 sm:p-4"},
     h("div",{className:"flex items-start gap-3 flex-wrap"},
@@ -6657,8 +6915,8 @@ const WishlistView = ({wishlist, member, memberProfiles, mutate}) => {
   if (statusFilter === "active") list = all.filter(x => x.status !== "bought" && x.status !== "rejected");
   else if (statusFilter !== "all") list = all.filter(x => x.status === statusFilter);
   list.sort((a, b) => {
-    const yA = MEMBERS.filter(m => a.votes && a.votes[m.id]==="yes").length;
-    const yB = MEMBERS.filter(m => b.votes && b.votes[m.id]==="yes").length;
+    const yA = CORE_MEMBERS.filter(m => a.votes && a.votes[m.id]==="yes").length;
+    const yB = CORE_MEMBERS.filter(m => b.votes && b.votes[m.id]==="yes").length;
     if (yA !== yB) return yB - yA;
     return (a.name||"").localeCompare(b.name||"");
   });
@@ -7888,6 +8146,12 @@ const App = () => {
   // auth session, which RLS rejects. Switching the param from null → BAND_STATE_ID on
   // sign-in is what triggers the first real read.
   const sync = useSyncedState(authStatus === "signed" ? BAND_STATE_ID : null, member && member.id);
+  // v0.29.0: keep the module-level roster (MEMBERS / CORE_MEMBERS / EMAIL_TO_MEMBER_ID)
+  // in step with the loaded state. Done during render rather than in an effect so the
+  // very first render after a load already has the right roster — an effect would run
+  // one paint too late and briefly show the old line-up. applyRoster is idempotent and
+  // ignores anything unusable, so re-running it every render is cheap and safe.
+  applyRoster(sync.state && sync.state.members);
   // v0.24.0: pick a musician quote once per app load. useState initializer ensures
   // it stays stable for this session (re-renders won't reroll the dice).
   const [sessionQuote] = useState(() => pickRandom(MUSICIAN_QUOTES));
@@ -8079,7 +8343,7 @@ const App = () => {
       const saved = (eventsDelta * 7) + (setlistsDelta * 4);
       const sinceISO = baseline.at ? new Date(baseline.at).toISOString().slice(0,10) : null;
       // Bulletproof songs: every member marked "good" in practice. Safe to open with.
-      const bulletproof = Object.keys(songs || {}).map(id => songs[id]).filter(s => s.status === "repertoire" && MEMBERS.every(m => s.practice && s.practice[m.id] === "good")).length;
+      const bulletproof = Object.keys(songs || {}).map(id => songs[id]).filter(s => s.status === "repertoire" && CORE_MEMBERS.every(m => s.practice && s.practice[m.id] === "good")).length;
       // Band nights out: manually tracked counter stored on settings.bandNightsOut.
       const nightsOut = (settings && typeof settings.bandNightsOut === "number") ? settings.bandNightsOut : 0;
       const adjustNightsOut = (delta) => {
