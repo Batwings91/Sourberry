@@ -60,10 +60,26 @@
     @media (min-width: 640px) {
       .tab-nav-wrap::after { display: none; }
     }
+    /* Long labels everywhere except a narrow phone. Declared before the media query so
+       the mobile override below wins — equal specificity, so source order decides. */
+    .tab-label-short { display: none; }
+    .tab-label-long { display: inline; }
     @media (max-width: 640px) {
       .card { box-shadow: 3px 3px 0 var(--line); }
       .modal-bg { padding: 0.5rem; }
       body { background-size: 18px 18px; }
+      /* v0.31.0: the tab bar has to fit a phone without swiping. The ticker's 0.18em
+         tracking is lovely in a heading and ruinous in a nav — at full tracking the row
+         was ~600px wide inside a 350px viewport, which is why Setlists was invisible to
+         anyone who didn't know the strip scrolled. Not Tailwind classes, because these
+         have to beat the utilities already on the buttons. */
+      .tab-nav-wrap nav button,
+      .tab-nav-wrap [role="menu"] button {
+        letter-spacing: 0.02em; font-size: 0.6rem;
+        padding-left: 0.34rem; padding-right: 0.34rem;
+      }
+      .tab-label-long { display: none; }
+      .tab-label-short { display: inline; }
     }
     @media (min-width: 1280px) {
       body { background-size: 26px 26px; }
@@ -1873,6 +1889,43 @@ const LAST_EMAIL_KEY = "sourberry.lastEmail";
 const getLastEmail = () => { try { return localStorage.getItem(LAST_EMAIL_KEY) || ""; } catch (_) { return ""; } };
 const rememberEmail = (e) => { try { if (e) localStorage.setItem(LAST_EMAIL_KEY, e); } catch (_) {} };
 
+// v0.31.1: verifying the six-digit code needs a `type`, and which one is right depends on
+// how GoTrue filed the token — a magic link to an existing user is not recorded the same
+// way as a signup confirmation (the auth log calls it user_recovery_requested). Passing
+// "email" alone rejected perfectly good codes with "Token has expired or is invalid"
+// while the link from the same email still worked, which is how we know the token was
+// alive and only the label was wrong.
+//
+// Rather than bet on one, try them in turn and remember the one that worked so later
+// sign-ins go straight to it. A wrong type fails without consuming the token; only a
+// correct one spends it. Order matters: most likely first, to keep the usual case to one
+// request.
+const OTP_TYPES = ["email", "magiclink", "recovery", "signup"];
+const OTP_TYPE_KEY = "sourberry.otpType";
+const getKnownOtpType = () => { try { return localStorage.getItem(OTP_TYPE_KEY) || ""; } catch (_) { return ""; } };
+const rememberOtpType = (t) => { try { if (t) localStorage.setItem(OTP_TYPE_KEY, t); } catch (_) {} };
+
+// Returns null on success, or the last error to report.
+const verifyEmailToken = async (email, token) => {
+  const known = getKnownOtpType();
+  const order = known ? [known].concat(OTP_TYPES.filter(t => t !== known)) : OTP_TYPES.slice();
+  let lastErr = null;
+  for (const type of order) {
+    try {
+      const {error: err} = await sb.auth.verifyOtp({ email: email, token: token, type: type });
+      if (!err) { rememberOtpType(type); return null; }
+      lastErr = err;
+      // Only keep trying while the failure looks like "wrong sort of token". Anything
+      // else (rate limited, network, bad email) won't be fixed by another type, and
+      // hammering the endpoint would just trip the rate limiter.
+      if (!/expired|invalid|not found/i.test(err.message || "")) break;
+    } catch (e) {
+      lastErr = e; break;
+    }
+  }
+  return lastErr || new Error("That code didn’t work.");
+};
+
 // v0.28.0: LoginScreen - magic link by default, password as secondary path.
 // Why magic link first: nobody in the band remembers a fifth password, and the
 // emails Supabase sends are short and clear. Password mode reveals when toggled.
@@ -1925,7 +1978,7 @@ const LoginScreen = () => {
     if (token.length < 6) { setError("Enter the six-digit code from the email."); return; }
     setBusy(true); setError(""); setMsg("");
     try {
-      const {error: err} = await sb.auth.verifyOtp({ email: e, token: token, type: "email" });
+      const err = await verifyEmailToken(e, token);
       if (err) throw err;
       rememberEmail(e);
       // Auth listener picks up the session change automatically.
@@ -8266,6 +8319,25 @@ const RehearsalRunMode = ({event, songs, member, memberProfiles, mutate, onClose
 };
 // === END REHEARSAL RUN MODE ===
 
+// v0.31.0: the tab strip was one non-wrapping scrollable row of eight. On a phone only
+// the first three or four fit, and there was no scrollbar, arrow or fade to suggest the
+// rest existed — so Setlists was effectively invisible on mobile, which is how Veena came
+// to report that she "couldn't access the setlist" when the setlist was fine all along.
+// The five everyday tabs now always show; the three occasional ones live behind "More".
+// Keep this list short: if it grows past five, mobile overflows again.
+const PRIMARY_TABS = [
+  {id:"gigs",label:"Gigs"},
+  {id:"rehearsals",label:"Rehearsals", short:"Rehearse"},
+  {id:"practice",label:"Availability", short:"Avail"},
+  {id:"songs",label:"Songs"},
+  {id:"setlists",label:"Setlists"}
+];
+const MORE_TABS = [
+  {id:"equipment",label:"Kit"},
+  {id:"publicsite",label:"Website", short:"Site"},
+  {id:"feedback",label:"App feedback", short:"Feedback"}
+];
+
 const App = () => {
   // v0.28.0: auth-driven identity. The hook returns three pieces:
   //   authStatus ("loading"/"anon"/"unknown"/"signed") drives the early-return chain
@@ -8279,6 +8351,9 @@ const App = () => {
   // as the home for any future band stats we add. Hook lives at the top alongside other
   // top-level UI state so it sits before the early-returns (Rules of Hooks).
   const [showStats, setShowStats] = useState(false);
+  // v0.31.0: whether the "More" tab menu is open. Top-level state, above the
+  // early-returns, to satisfy the Rules of Hooks like everything else here.
+  const [showMoreTabs, setShowMoreTabs] = useState(false);
   // Iteration C.1: when set, App takes over with the focused Run Rehearsal page.
   const [runRehearsalId, setRunRehearsalId] = useState(null);
   // Iteration D.1 (rebuild): when set, App takes over with the full-screen Gig Mode.
@@ -8425,16 +8500,48 @@ const App = () => {
       ),
       h("div",{className:"tab-nav-wrap mt-3 sm:mt-6"},
         h("nav",{className:"flex items-center border-y-2 border-[var(--line)] overflow-x-auto",style:{WebkitOverflowScrolling:"touch"}},
-          [
-            {id:"gigs",label:"Gigs"},
-            {id:"rehearsals",label:"Rehearsals"},
-            {id:"practice",label:"Availability"},
-            {id:"songs",label:"Songs"},
-            {id:"setlists",label:"Setlists"},
-            {id:"equipment",label:"Kit"},
-            {id:"publicsite",label:"Website"},
-            {id:"feedback",label:"App feedback"}
-          ].map(t => h("button",{key:t.id,onClick:()=>setTab(t.id),className:"px-3 sm:px-4 py-2 sm:py-2.5 ticker whitespace-nowrap text-[10px] sm:text-xs " + (tab===t.id?"tab-active":"hover:bg-[var(--acid)]")}, t.label)),
+          // v0.31.0: two labels per tab — the short one shows only on a narrow phone, via
+          // CSS, so the markup is identical at every width and nothing depends on JS
+          // knowing the viewport. Tabs without a `short` just use their normal label.
+          PRIMARY_TABS.map(t => h("button",{key:t.id,onClick:()=>{setTab(t.id); setShowMoreTabs(false);},className:"px-3 sm:px-4 py-2 sm:py-2.5 ticker whitespace-nowrap text-[10px] sm:text-xs " + (tab===t.id?"tab-active":"hover:bg-[var(--acid)]")},
+            t.short ? h(React.Fragment,null,
+              h("span",{className:"tab-label-long"}, t.label),
+              h("span",{className:"tab-label-short"}, t.short)
+            ) : t.label
+          )),
+          // v0.31.0: the occasional tabs. When one of them is the current tab, the button
+          // shows that tab's name rather than "More", so you can always see where you are.
+          (() => {
+            const activeMore = MORE_TABS.find(t => t.id === tab);
+            // On a phone the button shrinks to "•••" when nothing inside is selected —
+            // the last 40px needed to keep the whole bar on screen at 390px.
+            const face = activeMore || {label:"More", short:"•••"};
+            return h("div",{className:"relative shrink-0"},
+              h("button",{
+                onClick:()=>setShowMoreTabs(v => !v),
+                "aria-haspopup":"menu",
+                "aria-expanded": showMoreTabs ? "true" : "false",
+                "aria-label": activeMore ? activeMore.label : "More tabs",
+                "data-testid":"more-tabs",
+                className:"px-3 sm:px-4 py-2 sm:py-2.5 ticker whitespace-nowrap text-[10px] sm:text-xs " + (activeMore ? "tab-active" : "hover:bg-[var(--acid)]")
+              },
+                h("span",{className:"tab-label-long"}, face.label + " ▾"),
+                h("span",{className:"tab-label-short"}, face.short || face.label)
+              ),
+              showMoreTabs && h(React.Fragment, null,
+                // Full-screen catcher so a tap anywhere else closes the menu. Cheaper and
+                // more reliable on touch than a document-level listener.
+                h("div",{onClick:()=>setShowMoreTabs(false), className:"fixed inset-0 z-40", "data-testid":"more-backdrop"}),
+                h("div",{role:"menu", className:"absolute left-0 top-full z-50 min-w-[10rem] bg-[var(--bg-card)] border-2 border-[var(--line)] shadow-lg"},
+                  MORE_TABS.map(t => h("button",{
+                    key:t.id, role:"menuitem",
+                    onClick:()=>{ setTab(t.id); setShowMoreTabs(false); },
+                    className:"block w-full text-left px-3 py-2.5 ticker whitespace-nowrap text-[10px] sm:text-xs " + (tab===t.id?"tab-active":"hover:bg-[var(--acid)]")
+                  }, t.label))
+                )
+              )
+            );
+          })(),
           h("div",{className:"ml-auto pl-2 pr-1 shrink-0 flex items-center gap-1.5"},
             // v0.29.0: quick link to the public site — navigates in the same tab so
             // there's no new window. Browser back returns to CRAP.
