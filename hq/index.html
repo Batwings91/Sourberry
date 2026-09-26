@@ -60,26 +60,17 @@
     @media (min-width: 640px) {
       .tab-nav-wrap::after { display: none; }
     }
-    /* Long labels everywhere except a narrow phone. Declared before the media query so
-       the mobile override below wins — equal specificity, so source order decides. */
-    .tab-label-short { display: none; }
-    .tab-label-long { display: inline; }
     @media (max-width: 640px) {
       .card { box-shadow: 3px 3px 0 var(--line); }
       .modal-bg { padding: 0.5rem; }
       body { background-size: 18px 18px; }
-      /* v0.31.0: the tab bar has to fit a phone without swiping. The ticker's 0.18em
-         tracking is lovely in a heading and ruinous in a nav — at full tracking the row
-         was ~600px wide inside a 350px viewport, which is why Setlists was invisible to
-         anyone who didn't know the strip scrolled. Not Tailwind classes, because these
-         have to beat the utilities already on the buttons. */
-      .tab-nav-wrap nav button,
-      .tab-nav-wrap [role="menu"] button {
-        letter-spacing: 0.02em; font-size: 0.6rem;
-        padding-left: 0.34rem; padding-right: 0.34rem;
+      /* v0.31.2: a light touch only — the nav keeps the app's look, it just stops the
+         ticker's 0.18em tracking from making an eight-item bar three screens wide.
+         Reverted from the much tighter v0.31.0 settings, which read as cramped. */
+      .tab-nav-wrap nav > button {
+        letter-spacing: 0.08em;
+        padding-left: 0.55rem; padding-right: 0.55rem;
       }
-      .tab-label-long { display: none; }
-      .tab-label-short { display: inline; }
     }
     @media (min-width: 1280px) {
       body { background-size: 26px 26px; }
@@ -3179,14 +3170,22 @@ const SyncPanel = ({sync, onClose}) => {
     )
   );
 };
+// v0.31.2: the "synced 12s ago" ticker was eating nav width and telling nobody anything
+// they needed — the normal state is "it saved", which is the default assumption. So the
+// healthy state is now a quiet dot, and words are spent only when something is wrong or
+// in flight. Still tappable, still opens the sync panel.
 const SyncBadge = ({sync, onOpen}) => {
   const ago = sync.lastSyncedAt ? Math.round((Date.now() - sync.lastSyncedAt)/1000) : null;
   let label, cls = "text-[var(--ink-soft)]";
   if (sync.status === "saving") label = "saving…";
   else if (sync.status === "loading") label = "loading…";
   else if (sync.status === "error") { label = "⚠ sync error · tap"; cls = "text-[var(--berry)] font-semibold"; }
-  else label = ago!==null ? ("synced " + ago + "s ago") : "synced";
-  return h("button",{onClick:onOpen,className:"display-italic text-[10px] sm:text-xs hover:underline text-right " + cls + (sync.status==="error"?" blink":"")}, label);
+  else label = null; // healthy: no words
+  const title = sync.status === "ok" && ago !== null ? ("Synced " + ago + "s ago — tap for sync details") : "Sync status";
+  return h("button",{
+    onClick:onOpen, title: title, "aria-label": title,
+    className:"display-italic text-[10px] sm:text-xs hover:underline text-right " + cls + (sync.status==="error"?" blink":"")
+  }, label || h("span",{className:"inline-block w-2 h-2 rounded-full align-middle", style:{background:"var(--good)"}, "aria-hidden":"true"}));
 };
 
 const AvailabilityRow = ({ev, memberProfiles}) => h("div",{className:"flex items-center gap-3 text-xs"},
@@ -8325,17 +8324,22 @@ const RehearsalRunMode = ({event, songs, member, memberProfiles, mutate, onClose
 // to report that she "couldn't access the setlist" when the setlist was fine all along.
 // The five everyday tabs now always show; the three occasional ones live behind "More".
 // Keep this list short: if it grows past five, mobile overflows again.
+// Three is what fits on a phone at full size with normal spacing — measured, not guessed:
+// Gigs 74px, Songs 67px, Setlists 84px, More 71px = 296px inside a 350px bar at 390px
+// wide, and still inside a 360px phone. Adding a fourth pushes Setlists off the edge,
+// which is the exact fault that made Veena think the app was broken. If you want a tab
+// promoted to the front row, demote another one rather than adding.
 const PRIMARY_TABS = [
   {id:"gigs",label:"Gigs"},
-  {id:"rehearsals",label:"Rehearsals", short:"Rehearse"},
-  {id:"practice",label:"Availability", short:"Avail"},
   {id:"songs",label:"Songs"},
   {id:"setlists",label:"Setlists"}
 ];
 const MORE_TABS = [
+  {id:"rehearsals",label:"Rehearsals"},
+  {id:"practice",label:"Availability"},
   {id:"equipment",label:"Kit"},
-  {id:"publicsite",label:"Website", short:"Site"},
-  {id:"feedback",label:"App feedback", short:"Feedback"}
+  {id:"publicsite",label:"Website"},
+  {id:"feedback",label:"App feedback"}
 ];
 
 const App = () => {
@@ -8500,57 +8504,48 @@ const App = () => {
       ),
       h("div",{className:"tab-nav-wrap mt-3 sm:mt-6"},
         h("nav",{className:"flex items-center border-y-2 border-[var(--line)] overflow-x-auto",style:{WebkitOverflowScrolling:"touch"}},
-          // v0.31.0: two labels per tab — the short one shows only on a narrow phone, via
-          // CSS, so the markup is identical at every width and nothing depends on JS
-          // knowing the viewport. Tabs without a `short` just use their normal label.
-          PRIMARY_TABS.map(t => h("button",{key:t.id,onClick:()=>{setTab(t.id); setShowMoreTabs(false);},className:"px-3 sm:px-4 py-2 sm:py-2.5 ticker whitespace-nowrap text-[10px] sm:text-xs " + (tab===t.id?"tab-active":"hover:bg-[var(--acid)]")},
-            t.short ? h(React.Fragment,null,
-              h("span",{className:"tab-label-long"}, t.label),
-              h("span",{className:"tab-label-short"}, t.short)
-            ) : t.label
-          )),
+          PRIMARY_TABS.map(t => h("button",{key:t.id,onClick:()=>{setTab(t.id); setShowMoreTabs(false);},className:"px-3 sm:px-4 py-2 sm:py-2.5 ticker whitespace-nowrap text-[10px] sm:text-xs " + (tab===t.id?"tab-active":"hover:bg-[var(--acid)]")}, t.label)),
           // v0.31.0: the occasional tabs. When one of them is the current tab, the button
           // shows that tab's name rather than "More", so you can always see where you are.
           (() => {
             const activeMore = MORE_TABS.find(t => t.id === tab);
-            // On a phone the button shrinks to "•••" when nothing inside is selected —
-            // the last 40px needed to keep the whole bar on screen at 390px.
-            const face = activeMore || {label:"More", short:"•••"};
-            return h("div",{className:"relative shrink-0"},
-              h("button",{
-                onClick:()=>setShowMoreTabs(v => !v),
-                "aria-haspopup":"menu",
-                "aria-expanded": showMoreTabs ? "true" : "false",
-                "aria-label": activeMore ? activeMore.label : "More tabs",
-                "data-testid":"more-tabs",
-                className:"px-3 sm:px-4 py-2 sm:py-2.5 ticker whitespace-nowrap text-[10px] sm:text-xs " + (activeMore ? "tab-active" : "hover:bg-[var(--acid)]")
-              },
-                h("span",{className:"tab-label-long"}, face.label + " ▾"),
-                h("span",{className:"tab-label-short"}, face.short || face.label)
-              ),
-              showMoreTabs && h(React.Fragment, null,
-                // Full-screen catcher so a tap anywhere else closes the menu. Cheaper and
-                // more reliable on touch than a document-level listener.
-                h("div",{onClick:()=>setShowMoreTabs(false), className:"fixed inset-0 z-40", "data-testid":"more-backdrop"}),
-                h("div",{role:"menu", className:"absolute left-0 top-full z-50 min-w-[10rem] bg-[var(--bg-card)] border-2 border-[var(--line)] shadow-lg"},
-                  MORE_TABS.map(t => h("button",{
-                    key:t.id, role:"menuitem",
-                    onClick:()=>{ setTab(t.id); setShowMoreTabs(false); },
-                    className:"block w-full text-left px-3 py-2.5 ticker whitespace-nowrap text-[10px] sm:text-xs " + (tab===t.id?"tab-active":"hover:bg-[var(--acid)]")
-                  }, t.label))
-                )
-              )
-            );
+            return h("button",{
+              onClick:()=>setShowMoreTabs(v => !v),
+              "aria-haspopup":"menu",
+              "aria-expanded": showMoreTabs ? "true" : "false",
+              "aria-label": activeMore ? activeMore.label : "More tabs",
+              "data-testid":"more-tabs",
+              className:"shrink-0 px-3 sm:px-4 py-2 sm:py-2.5 ticker whitespace-nowrap text-[10px] sm:text-xs " + (activeMore ? "tab-active" : "hover:bg-[var(--acid)]")
+            }, (activeMore ? activeMore.label : "More") + " ▾");
           })(),
           h("div",{className:"ml-auto pl-2 pr-1 shrink-0 flex items-center gap-1.5"},
             // v0.29.0: quick link to the public site — navigates in the same tab so
             // there's no new window. Browser back returns to CRAP.
+            // v0.31.2: icon only. The word "site" cost width in the one place width is
+            // scarcest, and the arrow already reads as "leave here".
             h("a",{href:"https://sourberry.co.uk",
-              className:"ticker text-[9px] text-[var(--ink-soft)] hover:text-[var(--berry)] px-1.5 py-0.5 hover:bg-[var(--acid)]/40 rounded",
-              title:"Go to sourberry.co.uk"},
-              "↗ site"),
+              className:"text-sm text-[var(--ink-soft)] hover:text-[var(--berry)] px-1.5 py-0.5 hover:bg-[var(--acid)]/40 rounded leading-none",
+              title:"Go to sourberry.co.uk","aria-label":"Go to sourberry.co.uk"},
+              "↗"),
             !member && h("button",{onClick:()=>setShowSettings(true),className:"text-base px-1.5 py-0.5 hover:bg-[var(--acid)]/40 rounded",title:"Settings","aria-label":"Settings"},"⚙"),
             h(SyncBadge,{sync:sync,onOpen:()=>setShowSyncPanel(true)})
+          )
+        ),
+        // v0.31.2: the menu lives OUTSIDE the <nav>, as a child of .tab-nav-wrap.
+        // This is why the dots did nothing: an absolutely-positioned panel inside a
+        // container with overflow-x-auto is clipped by that container, so the menu was
+        // rendering into a strip a few pixels tall and was effectively invisible. The
+        // wrap is position:relative and doesn't clip, so anchoring here works.
+        showMoreTabs && h(React.Fragment, null,
+          // Full-screen catcher so a tap anywhere else closes the menu. Cheaper and more
+          // reliable on touch than a document-level listener.
+          h("div",{onClick:()=>setShowMoreTabs(false), className:"fixed inset-0 z-40", "data-testid":"more-backdrop"}),
+          h("div",{role:"menu", className:"absolute right-0 top-full z-50 min-w-[11rem] bg-[var(--bg-card)] border-2 border-[var(--line)] shadow-lg"},
+            MORE_TABS.map(t => h("button",{
+              key:t.id, role:"menuitem",
+              onClick:()=>{ setTab(t.id); setShowMoreTabs(false); },
+              className:"block w-full text-left px-4 py-3 ticker whitespace-nowrap text-xs " + (tab===t.id?"tab-active":"hover:bg-[var(--acid)]")
+            }, t.label))
           )
         )
       )
