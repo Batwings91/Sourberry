@@ -51,14 +51,15 @@
     details > summary { cursor: pointer; list-style: none; }
     details > summary::-webkit-details-marker { display: none; }
     .tab-nav-wrap { position: relative; }
-    .tab-nav-wrap::after {
+    .tab-scroll { position: relative; }
+    .tab-scroll::after {
       content: "";
       position: absolute; top: 0; right: 0; bottom: 0; width: 24px;
       background: linear-gradient(to right, transparent, var(--bg));
       pointer-events: none;
     }
     @media (min-width: 640px) {
-      .tab-nav-wrap::after { display: none; }
+      .tab-scroll::after { display: none; }
     }
     @media (max-width: 640px) {
       .card { box-shadow: 3px 3px 0 var(--line); }
@@ -8324,18 +8325,19 @@ const RehearsalRunMode = ({event, songs, member, memberProfiles, mutate, onClose
 // to report that she "couldn't access the setlist" when the setlist was fine all along.
 // The five everyday tabs now always show; the three occasional ones live behind "More".
 // Keep this list short: if it grows past five, mobile overflows again.
-// Three is what fits on a phone at full size with normal spacing — measured, not guessed:
-// Gigs 74px, Songs 67px, Setlists 84px, More 71px = 296px inside a 350px bar at 390px
-// wide, and still inside a 360px phone. Adding a fourth pushes Setlists off the edge,
-// which is the exact fault that made Veena think the app was broken. If you want a tab
-// promoted to the front row, demote another one rather than adding.
+// The front row. Four fits a current iPhone with room to spare; on a genuinely small
+// screen the row scrolls rather than dropping anything, and the More button is pinned
+// outside the scrolling area so it can never scroll out of reach. Order matches the old
+// bar so nobody has to relearn where things are.
 const PRIMARY_TABS = [
   {id:"gigs",label:"Gigs"},
-  {id:"songs",label:"Songs"},
-  {id:"setlists",label:"Setlists"}
+  {id:"rehearsals",label:"Rehearsals"},
+  {id:"setlists",label:"Setlists"},
+  // Songs is last on purpose: on a small screen this is the one that gets clipped, and
+  // of the four it's the one you're least likely to be hunting for in a hurry.
+  {id:"songs",label:"Songs"}
 ];
 const MORE_TABS = [
-  {id:"rehearsals",label:"Rehearsals"},
   {id:"practice",label:"Availability"},
   {id:"equipment",label:"Kit"},
   {id:"publicsite",label:"Website"},
@@ -8503,8 +8505,16 @@ const App = () => {
         )
       ),
       h("div",{className:"tab-nav-wrap mt-3 sm:mt-6"},
-        h("nav",{className:"flex items-center border-y-2 border-[var(--line)] overflow-x-auto",style:{WebkitOverflowScrolling:"touch"}},
-          PRIMARY_TABS.map(t => h("button",{key:t.id,onClick:()=>{setTab(t.id); setShowMoreTabs(false);},className:"px-3 sm:px-4 py-2 sm:py-2.5 ticker whitespace-nowrap text-[10px] sm:text-xs " + (tab===t.id?"tab-active":"hover:bg-[var(--acid)]")}, t.label)),
+        h("div",{className:"flex items-center border-y-2 border-[var(--line)]"},
+        h("div",{className:"tab-scroll flex-1 min-w-0"},
+        h("nav",{className:"flex items-center overflow-x-auto",style:{WebkitOverflowScrolling:"touch"}},
+          PRIMARY_TABS.map(t => h("button",{key:t.id,onClick:()=>{setTab(t.id); setShowMoreTabs(false);},className:"px-3 sm:px-4 py-2 sm:py-2.5 ticker whitespace-nowrap text-[10px] sm:text-xs " + (tab===t.id?"tab-active":"hover:bg-[var(--acid)]")}, t.label))
+        )),
+        // v0.31.3: the More button and the status icons sit OUTSIDE the scrolling strip,
+        // pinned to the right. If the front row ever outgrows a narrow screen it scrolls,
+        // but the way to reach everything else can never scroll out of sight — which was
+        // the original sin of the eight-tab bar.
+        h("div",{className:"shrink-0 flex items-center gap-1.5 pl-1 pr-1"},
           // v0.31.0: the occasional tabs. When one of them is the current tab, the button
           // shows that tab's name rather than "More", so you can always see where you are.
           (() => {
@@ -8518,18 +8528,17 @@ const App = () => {
               className:"shrink-0 px-3 sm:px-4 py-2 sm:py-2.5 ticker whitespace-nowrap text-[10px] sm:text-xs " + (activeMore ? "tab-active" : "hover:bg-[var(--acid)]")
             }, (activeMore ? activeMore.label : "More") + " ▾");
           })(),
-          h("div",{className:"ml-auto pl-2 pr-1 shrink-0 flex items-center gap-1.5"},
-            // v0.29.0: quick link to the public site — navigates in the same tab so
-            // there's no new window. Browser back returns to CRAP.
-            // v0.31.2: icon only. The word "site" cost width in the one place width is
-            // scarcest, and the arrow already reads as "leave here".
-            h("a",{href:"https://sourberry.co.uk",
-              className:"text-sm text-[var(--ink-soft)] hover:text-[var(--berry)] px-1.5 py-0.5 hover:bg-[var(--acid)]/40 rounded leading-none",
-              title:"Go to sourberry.co.uk","aria-label":"Go to sourberry.co.uk"},
-              "↗"),
-            !member && h("button",{onClick:()=>setShowSettings(true),className:"text-base px-1.5 py-0.5 hover:bg-[var(--acid)]/40 rounded",title:"Settings","aria-label":"Settings"},"⚙"),
-            h(SyncBadge,{sync:sync,onOpen:()=>setShowSyncPanel(true)})
-          )
+          // v0.29.0: quick link to the public site — navigates in the same tab so
+          // there's no new window. Browser back returns to CRAP.
+          // v0.31.2: icon only. The word "site" cost width in the one place width is
+          // scarcest, and the arrow already reads as "leave here".
+          h("a",{href:"https://sourberry.co.uk",
+            className:"text-sm text-[var(--ink-soft)] hover:text-[var(--berry)] px-1.5 py-0.5 hover:bg-[var(--acid)]/40 rounded leading-none",
+            title:"Go to sourberry.co.uk","aria-label":"Go to sourberry.co.uk"},
+            "↗"),
+          !member && h("button",{onClick:()=>setShowSettings(true),className:"text-base px-1.5 py-0.5 hover:bg-[var(--acid)]/40 rounded",title:"Settings","aria-label":"Settings"},"⚙"),
+          h(SyncBadge,{sync:sync,onOpen:()=>setShowSyncPanel(true)})
+        )
         ),
         // v0.31.2: the menu lives OUTSIDE the <nav>, as a child of .tab-nav-wrap.
         // This is why the dots did nothing: an absolutely-positioned panel inside a
