@@ -1183,19 +1183,43 @@ const mapsUrlFor = (locationStr) => {
 // Used once per location and the result is cached on the event so we don't hammer
 // Nominatim. Per their usage policy: low volume, identifying user-agent, etc.
 // Returns {lat, lng} on success, null on failure (caller should keep silent).
-const geocodeLocation = async (locationStr) => {
-  if (!locationStr) return null;
-  try {
-    const url = "https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" + encodeURIComponent(locationStr);
-    const r = await fetch(url, { headers: { "Accept": "application/json" } });
-    if (!r.ok) return null;
-    const arr = await r.json();
-    if (!Array.isArray(arr) || arr.length === 0) return null;
-    const lat = parseFloat(arr[0].lat);
-    const lng = parseFloat(arr[0].lon);
-    if (isNaN(lat) || isNaN(lng)) return null;
-    return { lat, lng };
-  } catch (e) { return null; }
+// v0.31.4: remember what we've already asked Nominatim, for this page load. Without this,
+// every visit to a tab re-requests the same lookups — and for a location that can never
+// resolve ("Online — session link TBC") that's an endless stream of pointless requests
+// against a free service that asks you not to do that.
+//
+// The cache holds the in-flight promise, not just the result, so that three rehearsals at
+// the same studio rendering together produce one request rather than three.
+const geocodeCache = new Map();  // location string → Promise<{lat,lng} | null>
+
+// Some "locations" aren't places at all. Asking a map service to find "Online — session
+// link TBC" is never going to work, so don't ask.
+const isUnmappableLocation = (locationStr) =>
+  !locationStr || /\b(online|tbc|tba|zoom|jamkazam|teams|meet|link)\b/i.test(locationStr);
+
+const geocodeLocation = (locationStr) => {
+  if (!locationStr) return Promise.resolve(null);
+  if (geocodeCache.has(locationStr)) return geocodeCache.get(locationStr);
+  if (isUnmappableLocation(locationStr)) {
+    const miss = Promise.resolve(null);
+    geocodeCache.set(locationStr, miss);
+    return miss;
+  }
+  const pending = (async () => {
+    try {
+      const url = "https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" + encodeURIComponent(locationStr);
+      const r = await fetch(url, { headers: { "Accept": "application/json" } });
+      if (!r.ok) return null;
+      const arr = await r.json();
+      if (!Array.isArray(arr) || arr.length === 0) return null;
+      const lat = parseFloat(arr[0].lat);
+      const lng = parseFloat(arr[0].lon);
+      if (isNaN(lat) || isNaN(lng)) return null;
+      return { lat, lng };
+    } catch (e) { return null; }
+  })();
+  geocodeCache.set(locationStr, pending);
+  return pending;
 };
 // Build an OSM embed iframe URL centred on lat/lng with a small bbox around it.
 // `boxDeg` controls the zoom (~ 0.005 ≈ neighbourhood, ~ 0.02 ≈ town).
@@ -3534,6 +3558,8 @@ const EventCard = ({ev, member, memberProfiles, songs, events, pinnedSetlist, on
   useEffect(() => {
     if (past) return;
     if (!ev.location) return;
+    // v0.31.4: don't send non-places (online sessions, "link TBC") to a map service.
+    if (ev.venueType === "jamkazam" || isUnmappableLocation(ev.location)) return;
     if (ev.locationGeo && typeof ev.locationGeo.lat === "number") return;
     if (!onLocate) return;
     if (geocodingRef.current) return;
@@ -3988,7 +4014,14 @@ const TypedScheduleView = ({events, songs, setlists, member, memberProfiles, mut
           : h(EventCard,{key:ev.id, ev:ev, member:member, memberProfiles:memberProfiles, songs:songs, events:events, pinnedSetlist: setlistByGig[ev.id], settings: settings, onEdit:()=>{setEditingId(ev.id); setAdding(false);}, onSetAvailability:setAvailability, onStartRehearsal: onStartRehearsal, onUpdateEvent: (data) => mutate(prev => Object.assign({}, prev, {events: Object.assign({}, prev.events||{}, {[ev.id]: Object.assign({}, (prev.events&&prev.events[ev.id])||{}, data)})})), onLocate: async () => {
             if (!ev.location) return;
             const geo = await geocodeLocation(ev.location);
-            if (!geo) { alert("Couldn't find that location on the map. Try editing it to be more specific (e.g. add the city)."); return; }
+            // v0.31.4: silence. This handler is only ever called by EventCard's automatic
+            // background lookup — nothing in the UI invokes it — so a failure is not
+            // something the user did and there is nothing for them to act on. It used to
+            // raise a browser alert, which meant every visit to the Rehearsals tab popped
+            // "Couldn't find that location on the map" because one upcoming rehearsal is
+            // at "Online — session link TBC", which is not a place. The card simply shows
+            // no map, which is the correct outcome and says so by itself.
+            if (!geo) return;
             updateEvent(ev.id, {locationGeo: {lat: geo.lat, lng: geo.lng, geocodedAt: Date.now(), source: "nominatim"}});
           }, onDelete:()=>{ if(confirm("Delete this past event?")) deleteEvent(ev.id); }});
         return h("div",{key:ev.id, ref: isHighlighted ? highlightRef : null, className: isHighlighted ? "flash-target rounded" : ""}, inner);
