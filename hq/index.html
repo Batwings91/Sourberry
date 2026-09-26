@@ -52,6 +52,16 @@
     details > summary::-webkit-details-marker { display: none; }
     .tab-nav-wrap { position: relative; }
     .tab-scroll { position: relative; }
+    /* v0.31.5: the More menu is a small-screen accommodation, nothing more. On a desktop
+       there is room for the whole bar, so every tab shows and the menu button disappears
+       entirely. Boundary matches Tailwind's sm: (640px) so it lines up with the sm:
+       utilities already on these buttons. */
+    .tab-desktop-only { display: none; }
+    .tab-mobile-only { display: inline-block; }
+    @media (min-width: 640px) {
+      .tab-desktop-only { display: inline-block; }
+      .tab-mobile-only { display: none; }
+    }
     .tab-scroll::after {
       content: "";
       position: absolute; top: 0; right: 0; bottom: 0; width: 24px;
@@ -8548,8 +8558,16 @@ const App = () => {
         // but the way to reach everything else can never scroll out of sight — which was
         // the original sin of the eight-tab bar.
         h("div",{className:"shrink-0 flex items-center gap-1.5 pl-1 pr-1"},
-          // v0.31.0: the occasional tabs. When one of them is the current tab, the button
-          // shows that tab's name rather than "More", so you can always see where you are.
+          // v0.31.5: on a desktop the rest of the tabs simply appear, in their old order.
+          // Rendered inside the pinned group so they sit right after the scrolling four
+          // and never take part in the mobile scroll.
+          MORE_TABS.map(t => h("button",{
+            key:t.id, onClick:()=>{setTab(t.id); setShowMoreTabs(false);},
+            className:"tab-desktop-only shrink-0 px-3 sm:px-4 py-2 sm:py-2.5 ticker whitespace-nowrap text-[10px] sm:text-xs " + (tab===t.id?"tab-active":"hover:bg-[var(--acid)]")
+          }, t.label)),
+          // v0.31.0: the occasional tabs, on a phone only. When one of them is the current
+          // tab, the button shows that tab's name rather than "More", so you can always
+          // see where you are.
           (() => {
             const activeMore = MORE_TABS.find(t => t.id === tab);
             return h("button",{
@@ -8558,7 +8576,7 @@ const App = () => {
               "aria-expanded": showMoreTabs ? "true" : "false",
               "aria-label": activeMore ? activeMore.label : "More tabs",
               "data-testid":"more-tabs",
-              className:"shrink-0 px-3 sm:px-4 py-2 sm:py-2.5 ticker whitespace-nowrap text-[10px] sm:text-xs " + (activeMore ? "tab-active" : "hover:bg-[var(--acid)]")
+              className:"tab-mobile-only shrink-0 px-3 sm:px-4 py-2 sm:py-2.5 ticker whitespace-nowrap text-[10px] sm:text-xs " + (activeMore ? "tab-active" : "hover:bg-[var(--acid)]")
             }, (activeMore ? activeMore.label : "More") + " ▾");
           })(),
           // v0.29.0: quick link to the public site — navigates in the same tab so
