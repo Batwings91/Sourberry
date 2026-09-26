@@ -51,7 +51,11 @@
     details > summary { cursor: pointer; list-style: none; }
     details > summary::-webkit-details-marker { display: none; }
     .tab-nav-wrap { position: relative; }
-    .tab-scroll { position: relative; }
+    /* On a phone the strip grows to fill the bar so the four tabs can scroll inside it.
+       On a desktop it must NOT grow, or it pushes the remaining tabs to the far right
+       and leaves a canyon in the middle of the nav. */
+    .tab-scroll { position: relative; flex: 1 1 auto; min-width: 0; }
+    @media (min-width: 640px) { .tab-scroll { flex: 0 1 auto; } }
     /* v0.31.5: the More menu is a small-screen accommodation, nothing more. On a desktop
        there is room for the whole bar, so every tab shows and the menu button disappears
        entirely. Boundary matches Tailwind's sm: (640px) so it lines up with the sm:
@@ -8549,7 +8553,7 @@ const App = () => {
       ),
       h("div",{className:"tab-nav-wrap mt-3 sm:mt-6"},
         h("div",{className:"flex items-center border-y-2 border-[var(--line)]"},
-        h("div",{className:"tab-scroll flex-1 min-w-0"},
+        h("div",{className:"tab-scroll"},
         h("nav",{className:"flex items-center overflow-x-auto",style:{WebkitOverflowScrolling:"touch"}},
           PRIMARY_TABS.map(t => h("button",{key:t.id,onClick:()=>{setTab(t.id); setShowMoreTabs(false);},className:"px-3 sm:px-4 py-2 sm:py-2.5 ticker whitespace-nowrap text-[10px] sm:text-xs " + (tab===t.id?"tab-active":"hover:bg-[var(--acid)]")}, t.label))
         )),
@@ -8557,7 +8561,7 @@ const App = () => {
         // pinned to the right. If the front row ever outgrows a narrow screen it scrolls,
         // but the way to reach everything else can never scroll out of sight — which was
         // the original sin of the eight-tab bar.
-        h("div",{className:"shrink-0 flex items-center gap-1.5 pl-1 pr-1"},
+        h("div",{className:"shrink-0 flex items-center"},
           // v0.31.5: on a desktop the rest of the tabs simply appear, in their old order.
           // Rendered inside the pinned group so they sit right after the scrolling four
           // and never take part in the mobile scroll.
@@ -8579,6 +8583,11 @@ const App = () => {
               className:"tab-mobile-only shrink-0 px-3 sm:px-4 py-2 sm:py-2.5 ticker whitespace-nowrap text-[10px] sm:text-xs " + (activeMore ? "tab-active" : "hover:bg-[var(--acid)]")
             }, (activeMore ? activeMore.label : "More") + " ▾");
           })(),
+        ),
+        // v0.31.6: status icons are their own group, pushed to the far right by ml-auto.
+        // On a phone the strip already eats the slack so this is a no-op; on a desktop it
+        // is what keeps the tabs together on the left and these two on the right.
+        h("div",{className:"ml-auto shrink-0 flex items-center gap-1.5 pl-2 pr-1"},
           // v0.29.0: quick link to the public site — navigates in the same tab so
           // there's no new window. Browser back returns to CRAP.
           // v0.31.2: icon only. The word "site" cost width in the one place width is
