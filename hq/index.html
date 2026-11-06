@@ -805,7 +805,7 @@ const buildEquipmentSeed = () => {
   });
   return eq;
 };
-const buildSeedState = () => ({schemaVersion: 16, events: buildEventsSeed(), songs: buildSongsSeed(), setlists: buildSetlistsSeed(), polls: {}, equipment: buildEquipmentSeed(), wishlist: {}, practiceAvail: {}, memberProfiles: {}, members: buildMembersSeed(), updatedAt: 0, lastSavedBy: null, settings: {}, videos: []});
+const buildSeedState = () => ({schemaVersion: 17, events: buildEventsSeed(), songs: buildSongsSeed(), setlists: buildSetlistsSeed(), polls: {}, equipment: buildEquipmentSeed(), wishlist: {}, practiceAvail: {}, memberProfiles: {}, members: buildMembersSeed(), updatedAt: 0, lastSavedBy: null, settings: {}, videos: []});
 
 const migrate = data => {
   let migrated = false;
@@ -998,6 +998,21 @@ const migrate = data => {
       if (typeof eq[id].spec !== "string") eq[id].spec = "";
     });
     data.schemaVersion = 16; migrated = true;
+  }
+  if (data.schemaVersion < 17) {
+    // v17: `make` split out from `model`, so an item reads Item / Number / Make / Model.
+    // Anything already typed into the combined v16 box stays in `model` untouched —
+    // splitting "JBL IRX112BT" into a make and a model automatically means guessing where
+    // the brand ends, and a wrong guess on a gear list is worse than one that needs a tidy
+    // by hand. The card prints make and model together, so a v16 entry still reads right.
+    const eq = data.equipment && typeof data.equipment === "object" ? data.equipment : {};
+    Object.keys(eq).forEach(id => {
+      if (!eq[id] || typeof eq[id] !== "object") return;
+      if (typeof eq[id].make !== "string") eq[id].make = "";
+      if (typeof eq[id].model !== "string") eq[id].model = "";
+      if (typeof eq[id].spec !== "string") eq[id].spec = "";
+    });
+    data.schemaVersion = 17; migrated = true;
   }
   return migrated;
 };
@@ -1801,7 +1816,7 @@ const useSyncedState = (ready, memberId) => {
 
   const mutate = useCallback(updater => {
     setState(prev => {
-      const next = updater(prev || {schemaVersion:16, events:{}, songs:{}, setlists:{}, polls:{}, equipment:{}, wishlist:{}, practiceAvail:{}, memberProfiles:{}, members:buildMembersSeed(), updatedAt:0, lastSavedBy:null, settings:{}});
+      const next = updater(prev || {schemaVersion:17, events:{}, songs:{}, setlists:{}, polls:{}, equipment:{}, wishlist:{}, practiceAvail:{}, memberProfiles:{}, members:buildMembersSeed(), updatedAt:0, lastSavedBy:null, settings:{}});
       stateRef.current = next;
       return next;
     });
@@ -6986,7 +7001,12 @@ const SlotRow = ({slotId, iso, practiceAvail, member, onSetSlot}) => {
 // attic" belongs; it's the wrong place for "XLR in, 2x combo jack, 48V phantom". Keeping
 // them apart means the Kit tab can show the technical line prominently and the domestic
 // one quietly, and that someone scanning for a model number finds it immediately.
-const blankEquipment = () => ({name:"",category:"pa",model:"",spec:"",ownerType:"band",ownerMember:"",heldBy:"",quantity:1,status:"available",notes:""});
+const blankEquipment = () => ({name:"",category:"pa",make:"",model:"",spec:"",ownerType:"band",ownerMember:"",heldBy:"",quantity:1,status:"available",notes:""});
+// v0.32.2: an item is Item / Number / Make / Model, all but the item name optional.
+// Make and model are separate because they're searched and compared differently — "do we
+// own any Shures?" is a different question from "is that the SM58 or the SM57?" — and a
+// single combined box quietly encourages "Shure SM58 (x3, one crackly)".
+const equipmentMakeModel = (item) => [item && item.make, item && item.model].filter(Boolean).join(" ").trim();
 const EQUIPMENT_STATUSES = [
   {id:"available",label:"Available",bg:"bg-green-100",color:"var(--good)"},
   {id:"partial",label:"Partial",bg:"bg-yellow-100",color:"var(--rusty)"},
@@ -7000,7 +7020,12 @@ const EquipmentForm = ({initial, onSave, onCancel, onDelete, holderSuggestions})
   const set = (k, v) => setF(prev => Object.assign({}, prev, {[k]: v}));
   return h("div",{className:"card p-5 mb-4"},
     h("div",{className:"grid grid-cols-1 md:grid-cols-2 gap-3"},
-      h("label",{className:"text-sm md:col-span-2"}, h("div",{className:"ticker mb-1"},"Item"), h("input",{className:"input",value:f.name,onChange:e=>set("name",e.target.value),placeholder:"e.g. PA speakers, Mixer"})),
+      h("label",{className:"text-sm"}, h("div",{className:"ticker mb-1"},"Item"), h("input",{className:"input",value:f.name,onChange:e=>set("name",e.target.value),placeholder:"e.g. Microphones, PA speakers, Mixer"})),
+      h("label",{className:"text-sm"}, h("div",{className:"ticker mb-1"},"Number"), h("input",{className:"input",type:"number",min:"0",value:f.quantity,onChange:e=>set("quantity",Number(e.target.value)||0)})),
+      h("label",{className:"text-sm"}, h("div",{className:"ticker mb-1"},"Make (optional)"),
+        h("input",{className:"input",value:f.make||"",onChange:e=>set("make",e.target.value),placeholder:"e.g. Shure"})),
+      h("label",{className:"text-sm"}, h("div",{className:"ticker mb-1"},"Model (optional)"),
+        h("input",{className:"input",value:f.model||"",onChange:e=>set("model",e.target.value),placeholder:"e.g. SM58"})),
       h("label",{className:"text-sm"}, h("div",{className:"ticker mb-1"},"Category"),
         h("select",{className:"input",value:f.category,onChange:e=>set("category",e.target.value)}, EQUIPMENT_CATEGORIES.map(c => h("option",{key:c.id,value:c.id}, c.label)))),
       h("label",{className:"text-sm"}, h("div",{className:"ticker mb-1"},"Status"),
@@ -7009,10 +7034,7 @@ const EquipmentForm = ({initial, onSave, onCancel, onDelete, holderSuggestions})
         h("select",{className:"input",value: f.ownerType==="band" ? "band" : f.ownerMember, onChange:e=>{ if (e.target.value==="band") { set("ownerType","band"); set("ownerMember",""); } else { set("ownerType","member"); set("ownerMember",e.target.value); } }},
           h("option",{value:"band"},"Band (shared)"),
           MEMBERS.map(m => h("option",{key:m.id,value:m.id}, m.name + " (personal)")))),
-      h("label",{className:"text-sm"}, h("div",{className:"ticker mb-1"},"Quantity"), h("input",{className:"input",type:"number",min:"0",value:f.quantity,onChange:e=>set("quantity",Number(e.target.value)||0)})),
-      h("label",{className:"text-sm md:col-span-2"}, h("div",{className:"ticker mb-1"},"Make & model"),
-        h("input",{className:"input",value:f.model||"",onChange:e=>set("model",e.target.value),placeholder:"e.g. JBL IRX112BT, Shure SM58, Behringer X Air XR18"})),
-      h("label",{className:"text-sm md:col-span-2"}, h("div",{className:"ticker mb-1"},"Tech spec"),
+      h("label",{className:"text-sm md:col-span-2"}, h("div",{className:"ticker mb-1"},"Tech spec (optional)"),
         h("textarea",{className:"input",rows:"2",value:f.spec||"",onChange:e=>set("spec",e.target.value),placeholder:"Anything sound needs: channels, connectors, power, quirks"})),
       h("label",{className:"text-sm md:col-span-2"}, h("div",{className:"ticker mb-1"},"Currently with"),
         h("input",{className:"input",value:f.heldBy,onChange:e=>set("heldBy",e.target.value),placeholder:"e.g. Veena, James, in storage…",list:"holder-suggestions"}),
@@ -7045,7 +7067,7 @@ const EquipmentCard = ({item, member, onEdit, onAssign}) => {
             ? h("span",{className:"ticker px-2 py-0.5 bg-[var(--berry)]/12 text-[var(--berry-deep)] border border-[var(--berry)]/30"}, owner.name + "'s own")
             : h("span",{className:"ticker px-2 py-0.5 bg-[var(--acid)]/40"},"Band kit")
         ),
-        item.model && h("p",{className:"text-sm mt-1.5 font-semibold"}, item.model),
+        equipmentMakeModel(item) && h("p",{className:"text-sm mt-1.5 font-semibold"}, equipmentMakeModel(item)),
         item.spec && h("p",{className:"text-xs mt-1 whitespace-pre-wrap text-[var(--ink-soft)]",style:{fontFamily:"ui-monospace, Menlo, Consolas, monospace"}}, item.spec),
         item.notes && h("p",{className:"text-sm mt-2 italic text-[var(--ink-soft)]"}, item.notes)
       ),
