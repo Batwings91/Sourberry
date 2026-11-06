@@ -571,6 +571,9 @@ const INSTRUMENTS = [
   {id:"drums", label:"Drums", icon:"🥁"},
   {id:"keys", label:"Keys", icon:"🎹"},
   {id:"percussion", label:"Percussion", icon:"🪘"},
+  // v0.32.0: not an instrument, but this list is really "what you do at a rehearsal or a
+  // gig", and a sound engineer needed somewhere to live.
+  {id:"sound", label:"Sound", icon:"🎛️"},
   {id:"other", label:"Other", icon:"🎵"}
 ];
 const instrumentMeta = (id) => INSTRUMENTS.find(i => i.id === id);
@@ -588,6 +591,9 @@ const PRACTICE_COLOR = {good:"var(--good)",rusty:"var(--rusty)",learn:"var(--lea
 const EQUIPMENT_CATEGORIES = [
   {id:"pa",label:"PA & sound"},
   {id:"instruments",label:"Instruments"},
+  // v0.32.1: recording gear was landing in "Other". It's a category of its own now that
+  // there's a sound engineer reading this list and personal recording kit to track.
+  {id:"recording",label:"Recording"},
   {id:"lighting",label:"Lighting & FX"},
   {id:"cables",label:"Cables & misc"},
   {id:"other",label:"Other"}
@@ -799,7 +805,7 @@ const buildEquipmentSeed = () => {
   });
   return eq;
 };
-const buildSeedState = () => ({schemaVersion: 15, events: buildEventsSeed(), songs: buildSongsSeed(), setlists: buildSetlistsSeed(), polls: {}, equipment: buildEquipmentSeed(), wishlist: {}, practiceAvail: {}, memberProfiles: {}, members: buildMembersSeed(), updatedAt: 0, lastSavedBy: null, settings: {}, videos: []});
+const buildSeedState = () => ({schemaVersion: 16, events: buildEventsSeed(), songs: buildSongsSeed(), setlists: buildSetlistsSeed(), polls: {}, equipment: buildEquipmentSeed(), wishlist: {}, practiceAvail: {}, memberProfiles: {}, members: buildMembersSeed(), updatedAt: 0, lastSavedBy: null, settings: {}, videos: []});
 
 const migrate = data => {
   let migrated = false;
@@ -976,6 +982,22 @@ const migrate = data => {
       }
     });
     data.schemaVersion = 15; migrated = true;
+  }
+  if (data.schemaVersion < 16) {
+    // v16: equipment gains `model` and `spec` so the kit list is useful to a sound
+    // engineer, not just to whoever is loading the van. Existing items get empty strings
+    // rather than undefined so the form's controlled inputs don't warn.
+    // The one model name already recorded lives inside a name — "PA speakers (2x JBL
+    // IRX112BT)" — and is deliberately left alone: moving it automatically would mean
+    // guessing where a name ends and a model begins, and getting that wrong on a gear
+    // list is worse than leaving it where its owner put it.
+    const eq = data.equipment && typeof data.equipment === "object" ? data.equipment : {};
+    Object.keys(eq).forEach(id => {
+      if (!eq[id] || typeof eq[id] !== "object") return;
+      if (typeof eq[id].model !== "string") eq[id].model = "";
+      if (typeof eq[id].spec !== "string") eq[id].spec = "";
+    });
+    data.schemaVersion = 16; migrated = true;
   }
   return migrated;
 };
@@ -1779,7 +1801,7 @@ const useSyncedState = (ready, memberId) => {
 
   const mutate = useCallback(updater => {
     setState(prev => {
-      const next = updater(prev || {schemaVersion:15, events:{}, songs:{}, setlists:{}, polls:{}, equipment:{}, wishlist:{}, practiceAvail:{}, memberProfiles:{}, members:buildMembersSeed(), updatedAt:0, lastSavedBy:null, settings:{}});
+      const next = updater(prev || {schemaVersion:16, events:{}, songs:{}, setlists:{}, polls:{}, equipment:{}, wishlist:{}, practiceAvail:{}, memberProfiles:{}, members:buildMembersSeed(), updatedAt:0, lastSavedBy:null, settings:{}});
       stateRef.current = next;
       return next;
     });
@@ -6960,7 +6982,11 @@ const SlotRow = ({slotId, iso, practiceAvail, member, onSetSlot}) => {
   );
 };
 
-const blankEquipment = () => ({name:"",category:"pa",ownerType:"band",ownerMember:"",heldBy:"",quantity:1,status:"available",notes:""});
+// v0.32.0: `model` and `spec` added for the sound engineer. Notes is where "in Omar's
+// attic" belongs; it's the wrong place for "XLR in, 2x combo jack, 48V phantom". Keeping
+// them apart means the Kit tab can show the technical line prominently and the domestic
+// one quietly, and that someone scanning for a model number finds it immediately.
+const blankEquipment = () => ({name:"",category:"pa",model:"",spec:"",ownerType:"band",ownerMember:"",heldBy:"",quantity:1,status:"available",notes:""});
 const EQUIPMENT_STATUSES = [
   {id:"available",label:"Available",bg:"bg-green-100",color:"var(--good)"},
   {id:"partial",label:"Partial",bg:"bg-yellow-100",color:"var(--rusty)"},
@@ -6984,6 +7010,10 @@ const EquipmentForm = ({initial, onSave, onCancel, onDelete, holderSuggestions})
           h("option",{value:"band"},"Band (shared)"),
           MEMBERS.map(m => h("option",{key:m.id,value:m.id}, m.name + " (personal)")))),
       h("label",{className:"text-sm"}, h("div",{className:"ticker mb-1"},"Quantity"), h("input",{className:"input",type:"number",min:"0",value:f.quantity,onChange:e=>set("quantity",Number(e.target.value)||0)})),
+      h("label",{className:"text-sm md:col-span-2"}, h("div",{className:"ticker mb-1"},"Make & model"),
+        h("input",{className:"input",value:f.model||"",onChange:e=>set("model",e.target.value),placeholder:"e.g. JBL IRX112BT, Shure SM58, Behringer X Air XR18"})),
+      h("label",{className:"text-sm md:col-span-2"}, h("div",{className:"ticker mb-1"},"Tech spec"),
+        h("textarea",{className:"input",rows:"2",value:f.spec||"",onChange:e=>set("spec",e.target.value),placeholder:"Anything sound needs: channels, connectors, power, quirks"})),
       h("label",{className:"text-sm md:col-span-2"}, h("div",{className:"ticker mb-1"},"Currently with"),
         h("input",{className:"input",value:f.heldBy,onChange:e=>set("heldBy",e.target.value),placeholder:"e.g. Veena, James, in storage…",list:"holder-suggestions"}),
         holderSuggestions && holderSuggestions.length>0 && h("datalist",{id:"holder-suggestions"}, holderSuggestions.map(x => h("option",{key:x,value:x})))),
@@ -7009,8 +7039,14 @@ const EquipmentCard = ({item, member, onEdit, onAssign}) => {
         ),
         h("div",{className:"flex flex-wrap items-center gap-1.5 mt-1.5"},
           h("span",{className:"ticker px-2 py-0.5 " + status.bg}, status.label),
-          h("span",{className:"ticker text-[var(--ink-soft)]"}, owner ? (owner.name + "'s") : "Band-owned")
+          // v0.32.1: ownership is a badge, not a mumble. Band kit and someone's personal
+          // gear are different things to a sound engineer and to whoever packs the van.
+          owner
+            ? h("span",{className:"ticker px-2 py-0.5 bg-[var(--berry)]/12 text-[var(--berry-deep)] border border-[var(--berry)]/30"}, owner.name + "'s own")
+            : h("span",{className:"ticker px-2 py-0.5 bg-[var(--acid)]/40"},"Band kit")
         ),
+        item.model && h("p",{className:"text-sm mt-1.5 font-semibold"}, item.model),
+        item.spec && h("p",{className:"text-xs mt-1 whitespace-pre-wrap text-[var(--ink-soft)]",style:{fontFamily:"ui-monospace, Menlo, Consolas, monospace"}}, item.spec),
         item.notes && h("p",{className:"text-sm mt-2 italic text-[var(--ink-soft)]"}, item.notes)
       ),
       h("button",{onClick:onEdit,className:"ticker text-[var(--ink-soft)] hover:text-[var(--berry)] shrink-0"},"Edit ▸")
@@ -7033,7 +7069,16 @@ const OwnedEquipmentView = ({equipment, member, mutate}) => {
   const [editingId, setEditingId] = useState(null);
   const [adding, setAdding] = useState(false);
   const [groupBy, setGroupBy] = useState("category");
-  const all = equipmentList(equipment);
+  // v0.32.1: most of the kit is band-owned, but Omar's recording gear is his. Keeping the
+  // two apart matters when you're packing a van (take the band's) or telling a sound
+  // engineer what's guaranteed to be at a gig (also the band's).
+  const [ownerFilter, setOwnerFilter] = useState("all"); // "all" | "band" | "mine"
+  const everything = equipmentList(equipment);
+  const all = everything.filter(e =>
+    ownerFilter === "band" ? e.ownerType !== "member"
+    : ownerFilter === "mine" ? (e.ownerType === "member" && member && e.ownerMember === member.id)
+    : true
+  );
   const holders = Array.from(new Set(all.map(e => e.heldBy).filter(Boolean))).sort();
   const update = (id, data) => { mutate(prev => Object.assign({}, prev, {equipment: Object.assign({}, prev.equipment||{}, {[id]: Object.assign({}, (prev.equipment && prev.equipment[id])||{}, data)})})); setEditingId(null); };
   const create = data => { mutate(prev => Object.assign({}, prev, {equipment: Object.assign({}, prev.equipment||{}, {[newId("eq")]: Object.assign({}, data, {createdAt: Date.now()})})})); setAdding(false); };
@@ -7049,25 +7094,50 @@ const OwnedEquipmentView = ({equipment, member, mutate}) => {
     groups = Object.keys(map).sort().map(ht => ({key:ht, label:ht, items: map[ht].sort((a,b)=>a.name.localeCompare(b.name))}));
   } else if (groupBy === "status") {
     groups = EQUIPMENT_STATUSES.map(s => ({key:s.id, label:s.label, items: all.filter(e => e.status === s.id).sort((a,b)=>a.name.localeCompare(b.name))})).filter(g => g.items.length>0);
+  } else if (groupBy === "owner") {
+    // Band kit first — it's the bulk of it and the part that turns up to every gig —
+    // then each person's own gear, in roster order.
+    const byName = (a,b) => a.name.localeCompare(b.name);
+    groups = [{key:"band", label:"Band kit", items: all.filter(e => e.ownerType !== "member").sort(byName)}]
+      .concat(MEMBERS.map(m => ({
+        key: m.id,
+        label: m.name + "'s own",
+        items: all.filter(e => e.ownerType === "member" && e.ownerMember === m.id).sort(byName)
+      })))
+      .filter(g => g.items.length > 0);
   }
   const total = all.length;
+  const bandCount = everything.filter(e => e.ownerType !== "member").length;
+  const personalCount = everything.length - bandCount;
   const issues = all.filter(e => e.status === "missing" || e.status === "broken").length;
 
   return h("div",null,
     h("div",{className:"card p-4 mb-4"},
       h("div",{className:"ticker text-[var(--berry)]"},"Kit list"),
       h("p",{className:"display text-2xl leading-tight mt-1"},"Who has what."),
-      h("p",{className:"text-sm text-[var(--ink-soft)] mt-1"}, total + " item" + (total===1?"":"s") + " tracked" + (issues>0 ? (" · " + issues + " need attention") : "") + (member ? "" : " · pick who you are above to mark items as yours"))
+      h("p",{className:"text-sm text-[var(--ink-soft)] mt-1"},
+        bandCount + " band-owned \u00b7 " + personalCount + " personally owned"
+        + (issues>0 ? (" \u00b7 " + issues + " need attention") : "")
+        + (ownerFilter !== "all" ? (" \u00b7 showing " + total + " of " + everything.length) : ""))
     ),
     h("div",{className:"flex items-center justify-between mb-3 gap-2 flex-wrap"},
       h("div",{className:"flex gap-1.5 items-center overflow-x-auto pb-1"},
         h("span",{className:"ticker text-[var(--ink-soft)] shrink-0"},"Group by"),
-        [{id:"category",label:"Category"},{id:"holder",label:"Who has it"},{id:"status",label:"Status"}].map(g => h("button",{key:g.id,onClick:()=>setGroupBy(g.id),className:"pill px-2.5 py-1 text-xs font-semibold whitespace-nowrap shrink-0 " + (groupBy===g.id?"berry-bg text-white":"bg-white")}, g.label))
+        [{id:"category",label:"Category"},{id:"owner",label:"Owner"},{id:"holder",label:"Who has it"},{id:"status",label:"Status"}].map(g => h("button",{key:g.id,onClick:()=>setGroupBy(g.id),className:"pill px-2.5 py-1 text-xs font-semibold whitespace-nowrap shrink-0 " + (groupBy===g.id?"berry-bg text-white":"bg-white")}, g.label))
+      ),
+      h("div",{className:"flex gap-1.5 items-center overflow-x-auto pb-1"},
+        h("span",{className:"ticker text-[var(--ink-soft)] shrink-0"},"Show"),
+        [{id:"all",label:"Everything"},{id:"band",label:"Band kit"}]
+          .concat(member ? [{id:"mine",label:"Mine"}] : [])
+          .map(f => h("button",{key:f.id,onClick:()=>setOwnerFilter(f.id),"data-testid":"filter-"+f.id,className:"pill px-2.5 py-1 text-xs font-semibold whitespace-nowrap shrink-0 " + (ownerFilter===f.id?"berry-bg text-white":"bg-white")}, f.label))
       ),
       h("button",{onClick:()=>{setAdding(true); setEditingId(null);},className:"btn berry-bg px-3 py-2 text-sm font-semibold whitespace-nowrap shrink-0"},"+ Add item")
     ),
     adding && h(EquipmentForm,{onSave:create,onCancel:()=>setAdding(false),holderSuggestions:holders}),
-    groups.length===0 && !adding && h("div",{className:"card p-6 text-center"}, h("p",{className:"display text-xl"},"No equipment tracked yet.")),
+    groups.length===0 && !adding && h("div",{className:"card p-6 text-center"},
+      h("p",{className:"display text-xl"}, everything.length === 0 ? "No equipment tracked yet." : "Nothing matches that filter."),
+      everything.length > 0 && h("button",{onClick:()=>setOwnerFilter("all"),className:"btn bg-white px-3 py-1.5 text-sm mt-3"},"Show everything")
+    ),
     h("div",{className:"space-y-6"},
       groups.map(g => h("section",{key:g.key},
         h("h2",{className:"display text-2xl mb-3"}, g.label, " ", h("span",{className:"text-[var(--ink-soft)] text-base"},"(" + g.items.length + ")")),
