@@ -33,7 +33,7 @@
 </head>
 <body><div id="root"></div>
 <script>
-const PUBLIC_VERSION="v1.4";
+const PUBLIC_VERSION="v1.5";
 const _R=React,h=_R.createElement,{useState,useEffect,useMemo}=_R;
 const sb=window.supabase.createClient("https://xyukmguafhddpasmjjyy.supabase.co","sb_publishable_wDjYrqirJiulohJC8I26UQ_ZxwMoJcw");
 const formatDate=iso=>{if(!iso)return"";return new Date(iso+"T00:00:00").toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"})};
@@ -94,7 +94,7 @@ const App=()=>{
     songs.length>0&&h("section",{className:"py-12 sm:py-16 border-b-2 border-[var(--line)]"},
       h("div",{className:"max-w-4xl mx-auto px-4 sm:px-6"},
         h("div",{className:"flex items-baseline justify-between mb-5 flex-wrap gap-2"},h("h2",{className:"display text-2xl sm:text-3xl"},"What we play"),h("a",{href:"/songs/",className:"ticker text-[10px] text-[var(--berry)] hover:underline"},"Full list \u2192")),
-        h("div",{className:"card"},h("div",{className:"grid sm:grid-cols-2"},preview.map(s=>h("div",{key:s.id,className:"song-row flex items-center gap-3 px-4 py-2.5"},s.cover_art_url&&h("img",{src:s.cover_art_url,alt:"",loading:"lazy",className:"shrink-0 rounded-sm border border-[var(--line)]/30",style:{width:36,height:36,objectFit:"cover"},onError:e=>{e.target.style.display="none";}}),h("span",{className:"font-semibold flex-1 truncate"},s.title),h("span",{className:"text-sm text-[var(--ink-soft)] shrink-0 truncate max-w-[40%]"},s.artist)))),songs.length>12&&h("a",{href:"/songs/",className:"block text-center ticker text-[10px] py-3 border-t border-[var(--line)]/20 hover:bg-[var(--acid)] text-[var(--berry)]"},"See all "+songs.length+" songs \u2192"))
+        h("div",{className:"card"},h("div",{className:"grid sm:grid-cols-2"},preview.map(s=>h("div",{key:s.id,className:"song-row flex items-center gap-3 px-4 py-2.5 min-w-0"},s.cover_art_url&&h("img",{src:s.cover_art_url,alt:"",loading:"lazy",className:"shrink-0 rounded-sm border border-[var(--line)]/30",style:{width:36,height:36,objectFit:"cover"},onError:e=>{e.target.style.display="none";}}),h("div",{className:"flex-1 min-w-0"},h("div",{className:"font-semibold truncate"},s.title),h("div",{className:"text-sm text-[var(--ink-soft)] truncate"},s.artist))))),songs.length>12&&h("a",{href:"/songs/",className:"block text-center ticker text-[10px] py-3 border-t border-[var(--line)]/20 hover:bg-[var(--acid)] text-[var(--berry)]"},"See all "+songs.length+" songs \u2192"))
       )
     ),
     videos.length>0&&h("section",{className:"py-12 sm:py-16 border-b-2 border-[var(--line)]"},
