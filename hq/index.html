@@ -279,7 +279,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.34.3";
+const APP_VERSION = "0.34.4";
 
 // v0.28.0: Supabase config. URL + publishable key are safe to ship in client code —
 // Row Level Security (set up on band_state) is the security boundary. Don't ever paste
@@ -1944,7 +1944,7 @@ const AUTH_LINK_ERROR = (() => {
       // Supabase's own wording is accurate but sounds alarming, and "expired" is usually
       // the wrong diagnosis — the link is far more often already used than an hour old.
       message: spent
-        ? "That sign-in link had already been used. Links only work once — send yourself a fresh one below, or use the six-digit code from the email instead."
+        ? "That sign-in link had already been used. Links only work once — send yourself a fresh one below, or use the verification code from the email instead."
         : ((p.get("error_description") || "").replace(/\+/g, " ") || "That sign-in link didn’t work.")
     };
   } catch (_) { return null; }
@@ -1956,7 +1956,7 @@ const LAST_EMAIL_KEY = "sourberry.lastEmail";
 const getLastEmail = () => { try { return localStorage.getItem(LAST_EMAIL_KEY) || ""; } catch (_) { return ""; } };
 const rememberEmail = (e) => { try { if (e) localStorage.setItem(LAST_EMAIL_KEY, e); } catch (_) {} };
 
-// v0.31.1: verifying the six-digit code needs a `type`, and which one is right depends on
+// v0.31.1: verifying the verification code needs a `type`, and which one is right depends on
 // how GoTrue filed the token — a magic link to an existing user is not recorded the same
 // way as a signup confirmation (the auth log calls it user_recovery_requested). Passing
 // "email" alone rejected perfectly good codes with "Token has expired or is invalid"
@@ -2001,7 +2001,7 @@ const verifyEmailToken = async (email, token) => {
 // v0.30.0: three changes, all aimed at the same recurring failure - a link that has been
 // used already, whether by Gmail's scanner pre-fetching it, a second tap, or an older
 // email further up the inbox. The screen now explains a bounced link, remembers the
-// email, and accepts the six-digit code from the same email as an alternative to tapping
+// email, and accepts the verification code from the same email as an alternative to tapping
 // the link at all. The code path is the robust one: there is nothing for a scanner to
 // consume, and it works when the email is open on a different device from the browser.
 const LoginScreen = () => {
@@ -2030,19 +2030,19 @@ const LoginScreen = () => {
       if (err) throw err;
       rememberEmail(e);
       setSent(true);
-      setMsg("Sent. Tap the link in the email, or type the six-digit code from it below.");
+      setMsg("Sent. Tap the link in the email, or type the verification code from it below.");
     } catch (err) {
       setError(err.message || "Couldn’t send the link.");
     } finally { setBusy(false); }
   };
-  // v0.30.0: the same email carries a six-digit code. Typing it sidesteps every way a link
+  // v0.30.0: the same email carries a verification code. Typing it sidesteps every way a link
   // can break. Supabase only includes the code if the Magic Link email template contains
   // {{ .Token }} - if the code box ever stops working, check the template first.
   const verifyCode = async () => {
     const e = email.trim().toLowerCase();
-    const token = code.replace(/\D/g, "");
+    const token = code.replace(/\s/g, "");
     if (!e) { setError("Enter your email."); return; }
-    if (token.length < 6) { setError("Enter the six-digit code from the email."); return; }
+    if (!/^\d{6,10}$/.test(token)) { setError("Enter the full code from the email (6–10 digits)."); return; }
     setBusy(true); setError(""); setMsg("");
     try {
       const err = await verifyEmailToken(e, token);
@@ -2090,7 +2090,7 @@ const LoginScreen = () => {
       h("h2",{className:"display text-2xl mb-1"}, mode === "magic" ? "Sign in" : (pwAction === "signin" ? "Sign in" : "Create account")),
       h("p",{className:"text-sm text-[var(--ink-soft)] mb-4"},
         mode === "magic"
-          ? "Type your email and we’ll send you a sign-in link and a six-digit code — use whichever works."
+          ? "Type your email and we’ll send you a sign-in link and a verification code — use whichever works."
           : "Enter your email and password."
       ),
       h("input",{
@@ -2118,11 +2118,11 @@ const LoginScreen = () => {
                   // below runs, so pasting "123 456" would land as "12345".
                   className:"input flex-1 tracking-[0.3em] text-center", placeholder:"000000",
                   "data-testid":"code-input",
-                  value:code, onChange:e=>setCode(e.target.value.replace(/\D/g,"").slice(0,6)),
+                  value:code, onChange:e=>setCode(e.target.value),
                   onKeyDown:e=>{ if (e.key === "Enter") verifyCode(); }
                 }),
                 h("button",{
-                  onClick: verifyCode, disabled: busy || code.length < 6, "data-testid":"verify-code",
+                  onClick: verifyCode, disabled: busy || !/^\d{6,10}$/.test(code.replace(/\s/g, "")), "data-testid":"verify-code",
                   className:"btn berry-bg px-4 py-2.5 text-sm font-semibold disabled:opacity-50"
                 }, "Sign in")
               )
@@ -8844,3 +8844,4 @@ ReactDOM.createRoot(document.getElementById("root")).render(h(App, null));
 
 </body>
 </html>
+
