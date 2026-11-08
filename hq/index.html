@@ -279,7 +279,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.34.4";
+const APP_VERSION = "0.35.0";
 
 // v0.28.0: Supabase config. URL + publishable key are safe to ship in client code —
 // Row Level Security (set up on band_state) is the security boundary. Don't ever paste
@@ -7736,8 +7736,8 @@ const PublicSiteView = ({songs, events, settings, analytics, videos, mutate}) =>
               d.setMonth(d.getMonth() - i);
               months.push(d.toISOString().slice(0, 7));
             }
-            const pages = ["home", "songs", "gigs", "book"];
-            const pageLabels = {home: "Home", songs: "Songs", gigs: "Gigs", book: "Book"};
+            const pages = ["home", "songs", "gigs", "video", "book"];
+            const pageLabels = {home: "Home", songs: "Songs", gigs: "Gigs", video: "Video", book: "Book"};
             const hasAnyData = months.some(m => analytics[m] && pages.some(p => analytics[m][p]));
             if (!hasAnyData) return h("p", {className: "text-sm text-[var(--ink-soft)] italic"},
               "No data yet \u2014 views will appear here as people visit the site."
@@ -8490,6 +8490,24 @@ const App = () => {
   //   authUser is the raw Supabase user object (we use the email on the unknown screen)
   const {authStatus, member, authUser} = useMemberIdentity();
   const [tab, setTab] = useState("gigs");
+  // v0.35.0: page views live in their own table (page_views), not in the blob —
+  // the blob is rewritten wholesale on every HQ save, which would overwrite counts
+  // logged in between. Fetched whenever the Website tab is open.
+  const [analytics, setAnalytics] = useState({});
+  useEffect(() => {
+    if (tab !== "publicsite") return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await sb.from("page_views").select("month,page,count");
+        if (error || cancelled || !Array.isArray(data)) return;
+        const byMonth = {};
+        data.forEach(r => { (byMonth[r.month] = byMonth[r.month] || {})[r.page] = r.count; });
+        setAnalytics(byMonth);
+      } catch (_) {}
+    })();
+    return () => { cancelled = true; };
+  }, [tab]);
   const [showSyncPanel, setShowSyncPanel] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   // v0.26.0: footer stats modal — currently shows the WhatsApp-saved counter, reserved
@@ -8592,7 +8610,6 @@ const App = () => {
   const memberProfiles = sync.state.memberProfiles || {};
   const settings = sync.state.settings || {};
   const feedback = sync.state.feedback || {};
-  const analytics = sync.state.analytics || {};
   const videos = Array.isArray(sync.state.videos) ? sync.state.videos : [];
 
   // v0.28.0: the old "Who are you?" picker is gone — identity comes from the auth
