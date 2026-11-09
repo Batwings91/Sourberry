@@ -1,10 +1,25 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sourberry — London Function Band</title>
-  <meta name="description" content="Sourberry are a London-based covers and function band for weddings, parties and events." />
+  <title>Sourberry — London Covers & Function Band for Hire</title>
+  <meta name="description" content="Sourberry is a four-piece London covers band for hire — weddings, parties and corporate events across London & the South East. Own PA, fully insured, no agency markup." />
+  <link rel="canonical" href="https://sourberry.co.uk/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Sourberry" />
+  <meta property="og:locale" content="en_GB" />
+  <meta property="og:url" content="https://sourberry.co.uk/" />
+  <meta property="og:title" content="Sourberry — London Covers & Function Band for Hire" />
+  <meta property="og:description" content="Sourberry is a four-piece London covers band for hire — weddings, parties and corporate events across London & the South East. Own PA, fully insured, no agency markup." />
+  <meta property="og:image" content="https://sourberry.co.uk/images/og-image.jpg" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Sourberry live on stage" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Sourberry — London Covers & Function Band for Hire" />
+  <meta name="twitter:description" content="Sourberry is a four-piece London covers band for hire — weddings, parties and corporate events across London & the South East. Own PA, fully insured, no agency markup." />
+  <meta name="twitter:image" content="https://sourberry.co.uk/images/og-image.jpg" />
+  <script type="application/ld+json">{"@context": "https://schema.org", "@type": "MusicGroup", "name": "Sourberry", "url": "https://sourberry.co.uk/", "image": "https://sourberry.co.uk/images/og-image.jpg", "logo": "https://sourberry.co.uk/images/logo.png", "description": "Sourberry is a four-piece London covers band for hire — weddings, parties and corporate events across London & the South East. Own PA, fully insured, no agency markup.", "genre": ["Pop", "Rock", "Covers"], "email": "bookings@sourberry.co.uk", "areaServed": [{"@type": "City", "name": "London"}, {"@type": "AdministrativeArea", "name": "South East England"}], "foundingLocation": {"@type": "City", "name": "London"}, "potentialAction": {"@type": "ReserveAction", "target": "https://sourberry.co.uk/book/", "name": "Book Sourberry"}}</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,700;0,9..144,800;1,9..144,400;1,9..144,700&family=Inter+Tight:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com"></script>
@@ -31,9 +46,17 @@
     @media(max-width:640px){body{background-size:18px 18px}.card{box-shadow:3px 3px 0 var(--line)}}
   </style>
 </head>
-<body><div id="root"></div>
+<body><div id="root"><!-- Static fallback: replaced by the app on load; gives crawlers and share-scrapers real text -->
+<main style="max-width:56rem;margin:0 auto;padding:2rem 1rem;font-family:system-ui,sans-serif">
+<h1>Sourberry — London covers &amp; function band for hire</h1>
+<p>Sourberry are a four-piece London function band for hire: weddings, parties, corporate events, you name it. Every song is picked to keep the floor moving, and we’ll learn specific tracks for your occasion.</p>
+<p>We bring all our own kit, can fill the gaps with your playlist or curate one for you, and you can use our equipment for speeches or background music. We are PAT certified and fully insured. Booking direct means no agency markup.</p>
+<p>Based in London, playing across London &amp; the South East — up to 3 hours from London.</p>
+<ul><li><a href="/songs/">What we play</a></li><li><a href="/gigs/">Gigs</a></li><li><a href="/video/">Watch us play</a></li><li><a href="/book/">Book us</a></li></ul>
+<p><a href="mailto:bookings@sourberry.co.uk">bookings@sourberry.co.uk</a></p>
+</main></div>
 <script>
-const PUBLIC_VERSION="v1.5";
+const PUBLIC_VERSION="v1.6";
 const _R=React,h=_R.createElement,{useState,useEffect,useMemo}=_R;
 const sb=window.supabase.createClient("https://xyukmguafhddpasmjjyy.supabase.co","sb_publishable_wDjYrqirJiulohJC8I26UQ_ZxwMoJcw");
 const formatDate=iso=>{if(!iso)return"";return new Date(iso+"T00:00:00").toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"})};

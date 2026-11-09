@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /hq/
+
+Sitemap: https://sourberry.co.uk/sitemap.xml

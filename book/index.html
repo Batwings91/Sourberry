@@ -3,8 +3,23 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Book Sourberry</title>
-  <meta name="description" content="Book Sourberry for your wedding, party or event." />
+  <title>Book Sourberry — London Covers Band</title>
+  <meta name="description" content="Book Sourberry for your wedding, party or corporate event in London & the South East. Own PA, fully insured, no agency markup." />
+  <link rel="canonical" href="https://sourberry.co.uk/book/" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Sourberry" />
+  <meta property="og:locale" content="en_GB" />
+  <meta property="og:url" content="https://sourberry.co.uk/book/" />
+  <meta property="og:title" content="Book Sourberry — London Covers Band" />
+  <meta property="og:description" content="Book Sourberry for your wedding, party or corporate event in London & the South East. Own PA, fully insured, no agency markup." />
+  <meta property="og:image" content="https://sourberry.co.uk/images/og-image.jpg" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Sourberry live on stage" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Book Sourberry — London Covers Band" />
+  <meta name="twitter:description" content="Book Sourberry for your wedding, party or corporate event in London & the South East. Own PA, fully insured, no agency markup." />
+  <meta name="twitter:image" content="https://sourberry.co.uk/images/og-image.jpg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,700;0,9..144,800;1,9..144,400;1,9..144,700&family=Inter+Tight:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <script src="https://cdn.tailwindcss.com"></script>
@@ -37,7 +52,7 @@
 const WEB3FORMS_KEY="YOUR_WEB3FORMS_KEY_HERE";
 const EVENT_TYPES=["Wedding","Birthday party","Corporate event","Charity event","Private party","Pub / bar night","Other"];
 const _R=React,h=_R.createElement,{useState,useEffect}=_R;
-const PUBLIC_VERSION="v1.2";
+const PUBLIC_VERSION="v1.6";
 const sb=window.supabase.createClient("https://xyukmguafhddpasmjjyy.supabase.co","sb_publishable_wDjYrqirJiulohJC8I26UQ_ZxwMoJcw");
 const Nav=()=>h("nav",{className:"site-nav"},h("div",{className:"max-w-4xl mx-auto px-4 sm:px-6 flex items-center justify-between h-14 gap-4"},h("a",{href:"/","aria-label":"Sourberry home"},h("img",{src:"/images/logo.png",alt:"Sourberry",className:"logo-img h-8 sm:h-9 w-auto"})),h("div",{className:"flex items-center gap-1 sm:gap-2"},h("a",{href:"/songs/",className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 pill hover:bg-[var(--acid)]"},"Songs"),h("a",{href:"/gigs/",className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 pill hover:bg-[var(--acid)]"},"Gigs"),h("a",{href:"/book/",className:"ticker text-[10px] sm:text-xs px-2.5 py-1.5 btn text-white font-semibold",style:{background:"var(--berry)"}},"Book us"))));
 const Footer=({email=""})=>h("footer",{className:"border-t-2 border-[var(--line)] py-8 px-4 sm:px-6 mt-8"},h("div",{className:"max-w-4xl mx-auto flex flex-wrap items-center justify-between gap-3 text-sm text-[var(--ink-soft)]"},h("img",{src:"/images/logo.png",alt:"Sourberry",className:"logo-img h-7 w-auto"}),email&&h("a",{href:"mailto:"+email,className:"hover:text-[var(--berry)]"},email),h("span",null,"\u00a9 "+new Date().getFullYear()),h("div",{className:"flex items-center gap-3"},h("span",{className:"ticker text-[9px] opacity-40"},PUBLIC_VERSION),h("a",{href:"/hq/",className:"ticker text-[9px] text-[var(--ink-soft)]/40 hover:text-[var(--ink-soft)] transition-colors",title:"Band admin"},"Admin"))));
