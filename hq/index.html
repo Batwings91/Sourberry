@@ -279,7 +279,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.35.0";
+const APP_VERSION = "0.36.0";
 
 // v0.28.0: Supabase config. URL + publishable key are safe to ship in client code —
 // Row Level Security (set up on band_state) is the security boundary. Don't ever paste
@@ -7426,6 +7426,66 @@ const MediaAdmin = ({videos, mutate}) => {
 };
 
 // v0.29.0: Public site management tab.
+// v0.36.0: page-view table. One row per month; tap a month to expand it into days.
+// Hooks live here rather than inside PublicSiteView's IIFE (see engineering notes on
+// hooks inside conditionals).
+const AnalyticsTable = ({analytics}) => {
+  const [openMonth, setOpenMonth] = useState(null);
+  const months = [];
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i);
+    months.push(d.toISOString().slice(0, 7));
+  }
+  const pages = ["home", "songs", "gigs", "video", "book"];
+  const pageLabels = {home: "Home", songs: "Songs", gigs: "Gigs", video: "Video", book: "Book"};
+  const hasAnyData = months.some(m => analytics[m] && pages.some(p => analytics[m].pages[p]));
+  const th = (txt, cls) => h("th", {className: "text-xs text-[var(--ink-soft)] font-semibold pb-2 " + cls}, txt);
+  const cells = (row, bold) => [
+    pages.map(p => h("td", {key: p, className: "py-2 px-2 text-right tabular-nums " + (!row[p] ? "text-[var(--ink-soft)]/30" : "")}, row[p] || "\u2014")),
+    (() => { const total = pages.reduce((s, p) => s + (row[p] || 0), 0);
+      return h("td", {key: "t", className: "py-2 pl-2 text-right tabular-nums " + (bold ? "font-semibold " : "") + (!total ? "text-[var(--ink-soft)]/30" : "")}, total || "\u2014"); })()
+  ];
+  return h("div", {className: "card p-4"},
+    h("div", {className: "ticker text-[var(--berry)] mb-3"}, "Page views"),
+    !hasAnyData
+      ? h("p", {className: "text-sm text-[var(--ink-soft)] italic"}, "No data yet \u2014 views will appear here as people visit the site.")
+      : h("div", {className: "overflow-x-auto"},
+        h("table", {className: "w-full text-sm border-collapse"},
+          h("thead", null, h("tr", null,
+            th("Month", "text-left pr-3"),
+            pages.map(p => h(React.Fragment, {key: p}, th(pageLabels[p], "text-right px-2"))),
+            th("Total", "text-right pl-2")
+          )),
+          h("tbody", null, months.map(m => {
+            const mo = analytics[m] || {pages: {}, days: {}};
+            const isOpen = openMonth === m;
+            const hasDays = Object.keys(mo.days).length > 0;
+            const label = new Date(m + "-02").toLocaleDateString("en-GB", {month: "short", year: "numeric"});
+            const rows = [
+              h("tr", {key: m, className: "border-t border-[var(--line)]/15 " + (hasDays ? "cursor-pointer hover:bg-[var(--acid)]/30" : ""),
+                       onClick: () => hasDays && setOpenMonth(isOpen ? null : m),
+                       title: hasDays ? (isOpen ? "Hide days" : "Show days") : undefined},
+                h("td", {className: "py-2 pr-3 font-medium whitespace-nowrap"},
+                  h("span", {className: "inline-block w-4 text-[var(--ink-soft)]"}, hasDays ? (isOpen ? "\u25BE" : "\u25B8") : ""), label),
+                cells(mo.pages, true)
+              )
+            ];
+            if (isOpen) {
+              Object.keys(mo.days).sort().reverse().forEach(day => {
+                const dl = new Date(day + "T12:00:00").toLocaleDateString("en-GB", {weekday: "short", day: "numeric"});
+                rows.push(h("tr", {key: day, className: "border-t border-[var(--line)]/10 text-[var(--ink-soft)]"},
+                  h("td", {className: "py-1.5 pr-3 pl-4 text-xs whitespace-nowrap"}, dl),
+                  cells(mo.days[day], false)
+                ));
+              });
+            }
+            return h(React.Fragment, {key: m}, rows);
+          }))
+        )
+      )
+  );
+};
+
 const PublicSiteView = ({songs, events, settings, analytics, videos, mutate}) => {
   const ps = (settings && settings.publicSite) || {};
   const [tagline, setTagline] = useState(ps.tagline || "");
@@ -7726,47 +7786,7 @@ const PublicSiteView = ({songs, events, settings, analytics, videos, mutate}) =>
         ),
 
         // ── Analytics ──────────────────────────────────────────────────────
-        subTab === "analytics" && h("div", {className: "card p-4"},
-          h("div", {className: "ticker text-[var(--berry)] mb-3"}, "Page views"),
-          (() => {
-            const months = [];
-            for (let i = 0; i < 6; i++) {
-              const d = new Date();
-              d.setDate(1);
-              d.setMonth(d.getMonth() - i);
-              months.push(d.toISOString().slice(0, 7));
-            }
-            const pages = ["home", "songs", "gigs", "video", "book"];
-            const pageLabels = {home: "Home", songs: "Songs", gigs: "Gigs", video: "Video", book: "Book"};
-            const hasAnyData = months.some(m => analytics[m] && pages.some(p => analytics[m][p]));
-            if (!hasAnyData) return h("p", {className: "text-sm text-[var(--ink-soft)] italic"},
-              "No data yet \u2014 views will appear here as people visit the site."
-            );
-            return h("div", {className: "overflow-x-auto"},
-              h("table", {className: "w-full text-sm border-collapse"},
-                h("thead", null,
-                  h("tr", null,
-                    h("th", {className: "text-left text-xs text-[var(--ink-soft)] font-semibold pb-2 pr-3"}, "Month"),
-                    pages.map(p => h("th", {key: p, className: "text-right text-xs text-[var(--ink-soft)] font-semibold pb-2 px-2"}, pageLabels[p])),
-                    h("th", {className: "text-right text-xs text-[var(--ink-soft)] font-semibold pb-2 pl-2"}, "Total")
-                  )
-                ),
-                h("tbody", null,
-                  months.map(m => {
-                    const row = analytics[m] || {};
-                    const total = pages.reduce((s, p) => s + (row[p] || 0), 0);
-                    const label = new Date(m + "-02").toLocaleDateString("en-GB", {month: "short", year: "numeric"});
-                    return h("tr", {key: m, className: "border-t border-[var(--line)]/15"},
-                      h("td", {className: "py-2 pr-3 font-medium"}, label),
-                      pages.map(p => h("td", {key: p, className: "py-2 px-2 text-right tabular-nums " + (!row[p] ? "text-[var(--ink-soft)]/30" : "")}, row[p] || "\u2014")),
-                      h("td", {className: "py-2 pl-2 text-right font-semibold tabular-nums " + (!total ? "text-[var(--ink-soft)]/30" : "")}, total || "\u2014")
-                    );
-                  })
-                )
-              )
-            );
-          })()
-        ),
+        subTab === "analytics" && h(AnalyticsTable, {analytics: analytics}),
 
         // ── Media (video admin) ────────────────────────────────────────────
         subTab === "media" && h(MediaAdmin, {videos: videos, mutate: mutate}),
@@ -8499,10 +8519,16 @@ const App = () => {
     let cancelled = false;
     (async () => {
       try {
-        const { data, error } = await sb.from("page_views").select("month,page,count");
+        const { data, error } = await sb.from("page_views").select("day,page,count");
         if (error || cancelled || !Array.isArray(data)) return;
+        // v0.36.0: rows are per day; months are derived here so a month can expand into its days.
         const byMonth = {};
-        data.forEach(r => { (byMonth[r.month] = byMonth[r.month] || {})[r.page] = r.count; });
+        data.forEach(r => {
+          const m = String(r.day).slice(0, 7);
+          const mo = byMonth[m] = byMonth[m] || {pages: {}, days: {}};
+          mo.pages[r.page] = (mo.pages[r.page] || 0) + r.count;
+          (mo.days[r.day] = mo.days[r.day] || {})[r.page] = r.count;
+        });
         setAnalytics(byMonth);
       } catch (_) {}
     })();
