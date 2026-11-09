@@ -56,7 +56,7 @@
 <p><a href="mailto:bookings@sourberry.co.uk">bookings@sourberry.co.uk</a></p>
 </main></div>
 <script>
-const PUBLIC_VERSION="v1.7";
+const PUBLIC_VERSION="v1.8";
 // v1.7: visit logging. Skips band members (anyone with an HQ session or remembered
 // HQ email in this browser) and counts each visitor once per page per UK day via a
 // localStorage flag. Nothing identifying is stored.
@@ -70,7 +70,34 @@ function logPageView(page){
     for(var j=ls.length-1;j>=0;j--){var k2=ls.key(j);if(k2&&k2.indexOf("sourberry.seen.")===0&&k2.slice(-10)!==day)ls.removeItem(k2);}
     ls.setItem(flag,"1");
   }catch(e){}
-  try{sb.rpc("log_page_view",{page_name:page}).then(function(){}).catch(function(){});}catch(e){}
+  try{sb.rpc("log_page_view",{page_name:page,source:visitSource()}).then(function(){}).catch(function(){});}catch(e){}
+}
+// v1.8: where the visit came from. ?src=xyz on a link we handed out wins (qr, ig, fb, wa…);
+// otherwise the referring site's host is mapped to a short label; same-site navigation
+// keeps the first value for the browsing session. No personal data involved.
+function visitSource(){
+  try{
+    var ss=window.sessionStorage;
+    var q=new URLSearchParams(location.search).get("src");
+    if(q&&/^[a-z0-9_-]{1,20}$/.test(q.toLowerCase())){ss.setItem("sourberry.src",q.toLowerCase());return q.toLowerCase();}
+    var kept=ss.getItem("sourberry.src");if(kept)return kept;
+    var r=document.referrer?new URL(document.referrer).hostname.replace(/^www\./,""):"";
+    var s="direct";
+    if(!r||r===location.hostname)s="direct";
+    else if(/google\./.test(r))s="google";
+    else if(/bing\.com/.test(r))s="bing";
+    else if(/duckduckgo/.test(r))s="duckduckgo";
+    else if(/facebook\.com|fb\.com|^l\.facebook|^lm\.facebook/.test(r))s="facebook";
+    else if(/instagram\.com|^l\.instagram/.test(r))s="instagram";
+    else if(/whatsapp\.com/.test(r))s="whatsapp";
+    else if(/tiktok\.com/.test(r))s="tiktok";
+    else if(/youtube\.com|youtu\.be/.test(r))s="youtube";
+    else if(/^t\.co$|twitter\.com|^x\.com$/.test(r))s="x";
+    else if(/linkedin\.com/.test(r))s="linkedin";
+    else if(/nextdoor/.test(r))s="nextdoor";
+    else s="other";
+    ss.setItem("sourberry.src",s);return s;
+  }catch(e){return "direct";}
 }
 const _R=React,h=_R.createElement,{useState,useEffect,useMemo}=_R;
 const sb=window.supabase.createClient("https://xyukmguafhddpasmjjyy.supabase.co","sb_publishable_wDjYrqirJiulohJC8I26UQ_ZxwMoJcw");

@@ -279,7 +279,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.36.1";
+const APP_VERSION = "0.37.0";
 
 // v0.28.0: Supabase config. URL + publishable key are safe to ship in client code —
 // Row Level Security (set up on band_state) is the security boundary. Don't ever paste
@@ -7429,6 +7429,9 @@ const MediaAdmin = ({videos, mutate}) => {
 // v0.36.0: page-view table. One row per month; tap a month to expand it into days.
 // Hooks live here rather than inside PublicSiteView's IIFE (see engineering notes on
 // hooks inside conditionals).
+const SOURCE_LABELS = {direct: "Direct / typed", qr: "QR code", google: "Google", bing: "Bing", duckduckgo: "DuckDuckGo",
+  facebook: "Facebook", fb: "Facebook", instagram: "Instagram", ig: "Instagram", whatsapp: "WhatsApp", wa: "WhatsApp",
+  tiktok: "TikTok", youtube: "YouTube", x: "X / Twitter", linkedin: "LinkedIn", nextdoor: "Nextdoor", other: "Other sites"};
 const AnalyticsTable = ({analytics}) => {
   const [openMonth, setOpenMonth] = useState(null);
   const months = [];
@@ -7458,7 +7461,7 @@ const AnalyticsTable = ({analytics}) => {
             th("Total", "text-right pl-2")
           )),
           h("tbody", null, months.map(m => {
-            const mo = analytics[m] || {pages: {}, days: {}};
+            const mo = analytics[m] || {pages: {}, days: {}, sources: {}};
             const isOpen = openMonth === m;
             const hasDays = Object.keys(mo.days).length > 0;
             const label = new Date(m + "-02").toLocaleDateString("en-GB", {month: "short", year: "numeric"});
@@ -7472,6 +7475,12 @@ const AnalyticsTable = ({analytics}) => {
               )
             ];
             if (isOpen) {
+              const srcs = Object.entries(mo.sources || {}).sort((a, b) => b[1] - a[1]);
+              if (srcs.length) rows.push(h("tr", {key: m + "-src", className: "border-t border-[var(--line)]/10"},
+                h("td", {colSpan: pages.length + 2, className: "py-1.5 pr-3 pl-4 text-xs text-[var(--ink-soft)]"},
+                  h("span", {className: "font-semibold"}, "Came from: "),
+                  srcs.map(([s, n], i) => h("span", {key: s}, (i ? " \u00b7 " : "") + (SOURCE_LABELS[s] || s), " ", h("span", {className: "tabular-nums font-semibold"}, n)))
+                )));
               Object.keys(mo.days).sort().reverse().forEach(day => {
                 const dl = new Date(day + "T12:00:00").toLocaleDateString("en-GB", {weekday: "short", day: "numeric"});
                 rows.push(h("tr", {key: day, className: "border-t border-[var(--line)]/10 text-[var(--ink-soft)]"},
@@ -8520,15 +8529,19 @@ const App = () => {
     let cancelled = false;
     (async () => {
       try {
-        const { data, error } = await sb.from("page_views").select("day,page,count");
+        const { data, error } = await sb.from("page_views").select("day,page,source,count");
         if (error || cancelled || !Array.isArray(data)) return;
         // v0.36.0: rows are per day; months are derived here so a month can expand into its days.
+        // v0.37.0: rows also carry a source (qr, instagram, google, direct…), summed per month.
         const byMonth = {};
         data.forEach(r => {
           const m = String(r.day).slice(0, 7);
-          const mo = byMonth[m] = byMonth[m] || {pages: {}, days: {}};
+          const mo = byMonth[m] = byMonth[m] || {pages: {}, days: {}, sources: {}};
           mo.pages[r.page] = (mo.pages[r.page] || 0) + r.count;
-          (mo.days[r.day] = mo.days[r.day] || {})[r.page] = r.count;
+          const d = mo.days[r.day] = mo.days[r.day] || {};
+          d[r.page] = (d[r.page] || 0) + r.count;
+          const s = r.source || "direct";
+          mo.sources[s] = (mo.sources[s] || 0) + r.count;
         });
         setAnalytics(byMonth);
       } catch (_) {}
