@@ -279,7 +279,7 @@ const _React = React,
   useMemo = _React.useMemo;
 // App version (semver: MAJOR.MINOR.PATCH).
 // Bump PATCH for fixes, MINOR for new features, MAJOR for breaking changes.
-const APP_VERSION = "0.36.0";
+const APP_VERSION = "0.36.1";
 
 // v0.28.0: Supabase config. URL + publishable key are safe to ship in client code —
 // Row Level Security (set up on band_state) is the security boundary. Don't ever paste
@@ -7446,7 +7446,8 @@ const AnalyticsTable = ({analytics}) => {
       return h("td", {key: "t", className: "py-2 pl-2 text-right tabular-nums " + (bold ? "font-semibold " : "") + (!total ? "text-[var(--ink-soft)]/30" : "")}, total || "\u2014"); })()
   ];
   return h("div", {className: "card p-4"},
-    h("div", {className: "ticker text-[var(--berry)] mb-3"}, "Page views"),
+    h("div", {className: "ticker text-[var(--berry)] mb-3"}, "Visits"),
+    h("p", {className: "text-xs text-[var(--ink-soft)] mb-3"}, "One per visitor per page per day. Band members' own visits aren't counted. Tap a month for days."),
     !hasAnyData
       ? h("p", {className: "text-sm text-[var(--ink-soft)] italic"}, "No data yet \u2014 views will appear here as people visit the site.")
       : h("div", {className: "overflow-x-auto"},

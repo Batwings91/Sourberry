@@ -56,7 +56,22 @@
 <p><a href="mailto:bookings@sourberry.co.uk">bookings@sourberry.co.uk</a></p>
 </main></div>
 <script>
-const PUBLIC_VERSION="v1.6";
+const PUBLIC_VERSION="v1.7";
+// v1.7: visit logging. Skips band members (anyone with an HQ session or remembered
+// HQ email in this browser) and counts each visitor once per page per UK day via a
+// localStorage flag. Nothing identifying is stored.
+function logPageView(page){
+  try{
+    var ls=window.localStorage;
+    for(var i=0;i<ls.length;i++){var k=ls.key(i);if(/^sb-.*-auth-token/.test(k)||k==="sourberry.lastEmail")return;}
+    var day=new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/London",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+    var flag="sourberry.seen."+page+"."+day;
+    if(ls.getItem(flag))return;
+    for(var j=ls.length-1;j>=0;j--){var k2=ls.key(j);if(k2&&k2.indexOf("sourberry.seen.")===0&&k2.slice(-10)!==day)ls.removeItem(k2);}
+    ls.setItem(flag,"1");
+  }catch(e){}
+  try{sb.rpc("log_page_view",{page_name:page}).then(function(){}).catch(function(){});}catch(e){}
+}
 const _R=React,h=_R.createElement,{useState,useEffect,useMemo}=_R;
 const sb=window.supabase.createClient("https://xyukmguafhddpasmjjyy.supabase.co","sb_publishable_wDjYrqirJiulohJC8I26UQ_ZxwMoJcw");
 const formatDate=iso=>{if(!iso)return"";return new Date(iso+"T00:00:00").toLocaleDateString("en-GB",{weekday:"long",day:"numeric",month:"long",year:"numeric"})};
@@ -66,7 +81,7 @@ const App=()=>{
   const [settings,setSettings]=useState(null);const [gigs,setGigs]=useState([]);const [songs,setSongs]=useState([]);const [videos,setVideos]=useState([]);
   useEffect(()=>{
     Promise.all([sb.from("public_settings").select("*").single(),sb.from("public_gigs").select("*"),sb.from("public_repertoire").select("*"),sb.from("public_videos").select("*")]).then(([s,g,r,v])=>{if(s.data)setSettings(s.data);if(g.data)setGigs(g.data);if(r.data)setSongs(r.data);if(v.data)setVideos(v.data);});
-    try{sb.rpc("log_page_view",{page_name:"home"}).then(function(){}).catch(function(){});}catch(e){}
+    logPageView("home");
   },[]);
   const today=new Date().toISOString().slice(0,10);
   const nextGig=useMemo(()=>gigs.filter(g=>g.status==="confirmed"&&g.event_date>=today).sort((a,b)=>a.event_date.localeCompare(b.event_date))[0],[gigs,today]);
